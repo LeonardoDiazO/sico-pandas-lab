@@ -1,0 +1,15 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "10000:10000"
+    environment:
+      - PORT=10000
+      - FLASK_ENV=development
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "4300:10000"
+    environment:
+      - PORT=10000
