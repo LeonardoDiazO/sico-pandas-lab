@@ -1,0 +1,112 @@
+.code-cell {
+  border: 1px solid #e2e2ef;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #fff;
+  margin-bottom: 1rem;
+}
+
+.editor-row {
+  border: 1px solid #d5d5e6;
+  border-radius: 6px;
+  overflow: hidden;
+  // Monaco needs an explicit pixel height (it doesn't grow with content like
+  // a textarea) -- tall enough for a handful of lines, scrolls internally
+  // past that.
+  height: 140px;
+}
+
+.editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.run-btn {
+  background: #51599b;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+.save-btn {
+  background: transparent;
+  border: 1px solid #b8b8d0;
+  color: #51599b;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.remove-btn {
+  background: transparent;
+  border: none;
+  color: #a12020;
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-left: auto;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.hint {
+  font-size: 0.72rem;
+  color: #9a9ab0;
+}
+
+.save-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+
+  input {
+    flex: 1;
+    min-width: 140px;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid #d5d5e6;
+    border-radius: 6px;
+    font-size: 0.82rem;
+  }
+
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .confirm {
+    background: #51599b;
+    color: #fff;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
+  .cancel {
+    background: transparent;
+    color: #8a8aa0;
+  }
+}

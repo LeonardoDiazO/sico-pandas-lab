@@ -1,0 +1,70 @@
+.tour-highlight {
+  position: fixed;
+  border-radius: 8px;
+  border: 2px solid #51599b;
+  // The huge spread creates the darkened backdrop everywhere OUTSIDE this
+  // box, without needing a separate full-screen overlay element.
+  box-shadow: 0 0 0 9999px rgba(20, 20, 35, 0.6);
+  pointer-events: none;
+  z-index: 9998;
+  transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+
+.tour-tooltip {
+  position: fixed;
+  width: 300px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  padding: 1rem 1.1rem;
+  z-index: 9999;
+
+  h4 {
+    margin: 0 0 0.4rem;
+    color: #2a2f5b;
+    font-size: 1rem;
+  }
+
+  p {
+    margin: 0 0 0.9rem;
+    font-size: 0.85rem;
+    color: #3a3a55;
+    line-height: 1.4;
+  }
+}
+
+.tour-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .progress {
+    font-size: 0.75rem;
+    color: #9a9ab0;
+    margin-right: auto;
+  }
+
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .skip {
+    background: transparent;
+    color: #8a8aa0;
+  }
+
+  .secondary {
+    background: #eceefb;
+    color: #51599b;
+  }
+
+  .primary {
+    background: #51599b;
+    color: #fff;
+    font-weight: 600;
+  }
+}

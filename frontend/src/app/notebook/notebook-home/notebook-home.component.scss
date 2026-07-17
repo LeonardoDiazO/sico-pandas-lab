@@ -1,0 +1,80 @@
+.notebook {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+
+  h2 {
+    margin: 0;
+    color: #2a2f5b;
+  }
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.restart,
+.tour-btn {
+  background: #fff;
+  border: 1px solid #51599b;
+  color: #51599b;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.banner {
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+
+  &.ok {
+    background: #e8f5e8;
+    color: #2c6b2c;
+    border: 1px solid #bfe0bf;
+  }
+
+  &.bad {
+    background: #fdecec;
+    color: #a12020;
+    border: 1px solid #f3c0c0;
+  }
+}
+
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.discard-btn {
+  background: transparent;
+  border: 1px solid #2c6b2c;
+  color: #2c6b2c;
+  border-radius: 6px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.add-cell {
+  background: transparent;
+  border: 1px dashed #b8b8d0;
+  color: #51599b;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  width: 100%;
+}

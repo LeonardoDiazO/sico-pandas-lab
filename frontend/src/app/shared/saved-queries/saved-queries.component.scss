@@ -1,0 +1,74 @@
+.saved-queries {
+  background: #f2f4fd;
+  border: 1px solid #d5d9f5;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #3a3f75;
+  }
+}
+
+.note {
+  font-size: 0.8rem;
+  color: #5a5a7a;
+  margin: 0.6rem 0 0;
+}
+
+.snippet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid #e0e3f7;
+
+  &:first-of-type {
+    border-top: none;
+  }
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  .name {
+    font-weight: 600;
+    color: #2a2f5b;
+    font-size: 0.85rem;
+  }
+
+  .note-text {
+    font-size: 0.75rem;
+    color: #6a6a90;
+  }
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .insert-btn {
+    background: #51599b;
+    color: #fff;
+  }
+
+  .remove-btn {
+    background: transparent;
+    color: #a12020;
+  }
+}

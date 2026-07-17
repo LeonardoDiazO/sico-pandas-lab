@@ -1,0 +1,25 @@
+<details class="saved-queries" open>
+  <summary>💾 Mis consultas guardadas ({{ snippets.length }})</summary>
+
+  @if (snippets.length === 0) {
+    <p class="note">
+      Aún no has guardado ninguna. Usa el botón "💾 Guardar" en cualquier celda para agregarla aquí y
+      reutilizarla después sin reescribirla.
+    </p>
+  } @else {
+    @for (s of snippets; track s.id) {
+      <div class="snippet-row">
+        <div class="info">
+          <span class="name">{{ s.name }}</span>
+          @if (s.note) {
+            <span class="note-text">{{ s.note }}</span>
+          }
+        </div>
+        <div class="row-actions">
+          <button class="insert-btn" (click)="insert.emit(s.code)">Insertar</button>
+          <button class="remove-btn" (click)="remove.emit(s.id)">Eliminar</button>
+        </div>
+      </div>
+    }
+  }
+</details>

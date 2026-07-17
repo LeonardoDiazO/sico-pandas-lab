@@ -1,0 +1,44 @@
+<section class="notebook">
+  <header class="toolbar">
+    <h2>Notebook de práctica</h2>
+    <div class="toolbar-actions">
+      <button class="tour-btn" (click)="startTour()" title="Ver el tour de esta pantalla otra vez">❓ Ver tour</button>
+      <button class="restart" (click)="restart()">↺ Reiniciar sesión</button>
+    </div>
+  </header>
+
+  @if (banner) {
+    <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok">{{ banner.text }}</div>
+  }
+
+  @if (restoredDraft) {
+    <div class="banner ok draft-banner">
+      Recuperamos tu borrador de la última vez que estuviste aquí.
+      <button class="discard-btn" (click)="discardDraft()">Empezar de cero</button>
+    </div>
+  }
+
+  <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+
+  <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
+
+  <app-saved-queries [snippets]="snippets" (insert)="insertCode($event)" (remove)="onRemoveSnippet($event)"></app-saved-queries>
+
+  <app-chart-helper [variables]="knownVariables" (insert)="insertCode($event)"></app-chart-helper>
+
+  @for (cell of cells; track $index) {
+    <app-code-cell
+      [code]="cell.code"
+      [result]="cell.result"
+      [running]="cell.running"
+      [removable]="cells.length > 1"
+      [allowSave]="true"
+      (codeChange)="cell.code = $event"
+      (run)="runCell($index, $event)"
+      (remove)="removeCell($index)"
+      (save)="onSaveSnippet($event)"
+    ></app-code-cell>
+  }
+
+  <button class="add-cell" (click)="addCell()">+ Agregar celda</button>
+</section>

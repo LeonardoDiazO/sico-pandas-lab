@@ -1,0 +1,130 @@
+.data-panel {
+  background: #f0f1ff;
+  border: 1px solid #dfe0ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #2a2f5b;
+  }
+}
+
+.badge {
+  font-size: 0.68rem;
+  background: #4a8f4a;
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.1rem 0.5rem;
+  vertical-align: middle;
+
+  &.off {
+    background: #b06a2c;
+  }
+}
+
+.search-box {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #c9caee;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  margin-top: 0.5rem;
+
+  &:focus {
+    outline: none;
+    border-color: #51599b;
+  }
+}
+
+.count {
+  margin: 0.25rem 0 0;
+}
+
+.tables {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.6rem 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.table-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #e4e5fa;
+  border-radius: 5px;
+  padding: 0.3rem 0.6rem;
+}
+
+.table-name {
+  font-family: 'Consolas', monospace;
+  font-size: 0.82rem;
+  color: #2a2f5b;
+}
+
+.link {
+  background: none;
+  border: none;
+  color: #51599b;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 0.78rem;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.load-btn {
+  background: #51599b;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.note {
+  font-size: 0.75rem;
+  color: #66668a;
+  margin: 0.3rem 0 0;
+}
+
+code {
+  background: #e2e3ff;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+
+.excel-toggle {
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+
+  summary {
+    cursor: pointer;
+    color: #51599b;
+  }
+
+  input[type='file'] {
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+  }
+}

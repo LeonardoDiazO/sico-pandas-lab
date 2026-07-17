@@ -1,0 +1,17 @@
+<section class="guided-home">
+  <h2>Módulo guiado</h2>
+  <p class="intro">Aprende el flujo de pandas paso a paso con datos de sico. Elige una lección:</p>
+
+  @if (loading) {
+    <p>Cargando lecciones…</p>
+  } @else {
+    <div class="lesson-list">
+      @for (lesson of lessons; track lesson.id) {
+        <a class="lesson-card" [class.complete]="isComplete(lesson.id)" [routerLink]="['/guiado', lesson.id]">
+          <h3>{{ lesson.title }} @if (isComplete(lesson.id)) { <span class="check">✓</span> }</h3>
+          <p>{{ lesson.summary }}</p>
+        </a>
+      }
+    </div>
+  }
+</section>

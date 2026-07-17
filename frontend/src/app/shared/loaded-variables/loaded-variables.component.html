@@ -1,0 +1,8 @@
+@if (variables.length > 0) {
+  <div class="loaded-variables">
+    <span class="label">Variables disponibles ahora:</span>
+    @for (v of variables; track v.name) {
+      <span class="chip" [title]="v.columns.join(', ')">{{ v.name }} ({{ v.columns.length }} col.)</span>
+    }
+  </div>
+}

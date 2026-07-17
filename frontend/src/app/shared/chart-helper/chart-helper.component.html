@@ -1,0 +1,57 @@
+<details class="chart-helper">
+  <summary>📊 Ayudante de gráficas — insertar código sin memorizar sintaxis</summary>
+
+  @if (variables.length === 0) {
+    <p class="note">Carga o crea al menos un DataFrame primero (arriba, o ejecutando una celda) para poder graficarlo.</p>
+  } @else {
+    <div class="row">
+      <label>
+        Tipo de gráfica
+        <select [(ngModel)]="kind">
+          @for (t of chartTypes; track t.value) {
+            <option [value]="t.value">{{ t.label }}</option>
+          }
+        </select>
+      </label>
+
+      <label>
+        Variable (DataFrame)
+        <select [(ngModel)]="variable" (ngModelChange)="onVariableChange()">
+          <option value="" disabled>elige...</option>
+          @for (v of variables; track v.name) {
+            <option [value]="v.name">{{ v.name }}</option>
+          }
+        </select>
+      </label>
+    </div>
+
+    @if (variable) {
+      <div class="row">
+        <label>
+          Columna {{ needsY ? 'X' : '' }}
+          <select [(ngModel)]="columnX">
+            <option value="" disabled>elige...</option>
+            @for (c of selectedColumns; track c) {
+              <option [value]="c">{{ c }}</option>
+            }
+          </select>
+        </label>
+
+        @if (needsY) {
+          <label>
+            Columna Y
+            <select [(ngModel)]="columnY">
+              <option value="" disabled>elige...</option>
+              @for (c of selectedColumns; track c) {
+                <option [value]="c">{{ c }}</option>
+              }
+            </select>
+          </label>
+        }
+      </div>
+    }
+
+    <button class="insert-btn" (click)="insertCode()" [disabled]="!canInsert">+ Insertar como nueva celda</button>
+    <p class="note">Se agrega el código real de seaborn como una celda nueva — puedes editarlo y ejecutarlo, así aprendes la sintaxis viéndola en acción.</p>
+  }
+</details>

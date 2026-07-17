@@ -1,0 +1,22 @@
+@if (tour.active() && rect && currentStep) {
+  <div
+    class="tour-highlight"
+    [style.left.px]="highlightLeft"
+    [style.top.px]="highlightTop"
+    [style.width.px]="highlightWidth"
+    [style.height.px]="highlightHeight"
+  ></div>
+
+  <div class="tour-tooltip" [style.left.px]="tooltipLeft" [style.top.px]="tooltipTop">
+    <h4>{{ currentStep.title }}</h4>
+    <p>{{ currentStep.text }}</p>
+    <div class="tour-controls">
+      <button class="skip" (click)="skip()">Saltar</button>
+      <span class="progress">{{ tour.stepIndex() + 1 }} / {{ tour.steps().length }}</span>
+      @if (tour.stepIndex() > 0) {
+        <button class="secondary" (click)="prev()">← Atrás</button>
+      }
+      <button class="primary" (click)="next()">{{ isLast ? 'Terminar' : 'Siguiente →' }}</button>
+    </div>
+  </div>
+}

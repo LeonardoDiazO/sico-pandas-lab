@@ -1,0 +1,22 @@
+.loaded-variables {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+}
+
+.label {
+  color: #5a5a7a;
+  font-weight: 600;
+  margin-right: 0.2rem;
+}
+
+.chip {
+  background: #e8eaf9;
+  color: #3a3f75;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-family: 'Courier New', monospace;
+}

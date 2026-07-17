@@ -1,0 +1,141 @@
+.guided-lesson {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+
+  h2 {
+    color: #2a2f5b;
+    margin: 0.5rem 0;
+  }
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.back {
+  color: #51599b;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.tour-btn {
+  background: #fff;
+  border: 1px solid #51599b;
+  color: #51599b;
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.summary {
+  color: #55557a;
+  margin-bottom: 1.5rem;
+}
+
+.step {
+  margin-bottom: 1.5rem;
+
+  h3 {
+    color: #51599b;
+    margin: 0 0 0.4rem;
+  }
+}
+
+.explanation {
+  background: #f7f7ff;
+  border-left: 3px solid #51599b;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.88rem;
+  color: #3a3a55;
+  margin-bottom: 0.75rem;
+}
+
+.banner {
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+
+  &.ok {
+    background: #e8f5e8;
+    color: #2c6b2c;
+  }
+
+  &.bad {
+    background: #fdecec;
+    color: #a12020;
+  }
+}
+
+.finish {
+  border-top: 1px solid #e2e2ef;
+  padding-top: 1.2rem;
+  text-align: center;
+
+  p {
+    color: #55557a;
+  }
+
+  .done {
+    color: #2c6b2c;
+    font-weight: 600;
+  }
+}
+
+.challenge {
+  background: #fff8ec;
+  border: 1px solid #f0d9a0;
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin: 1.5rem 0;
+
+  h3 {
+    margin: 0 0 0.5rem;
+    color: #8a6100;
+  }
+
+  .prompt {
+    font-size: 0.88rem;
+    color: #6b5518;
+    margin-bottom: 0.75rem;
+  }
+}
+
+.verdict {
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.88rem;
+  margin-top: 0.5rem;
+
+  &.passed {
+    background: #e8f5e8;
+    color: #2c6b2c;
+  }
+
+  &.failed {
+    background: #fdecec;
+    color: #a12020;
+  }
+}
+
+.free-btn {
+  display: inline-block;
+  background: #51599b;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  text-decoration: none;
+  font-weight: 600;
+  margin: 0.3rem;
+
+  &.secondary {
+    background: transparent;
+    color: #51599b;
+    border: 1px solid #51599b;
+  }
+}

@@ -1,4 +1,31 @@
-<main>
-  <h1>sico-pandas-lab</h1>
-  <p>El notebook de práctica de pandas está en construcción.</p>
+<header class="app-header">
+  <div class="brand">sico-pandas-lab</div>
+  <nav>
+    <a routerLink="/notebook" routerLinkActive="active">Notebook</a>
+    <a routerLink="/guiado" routerLinkActive="active">Módulo guiado</a>
+  </nav>
+  @if (userName) {
+    <button class="user-chip" (click)="editName()" title="Cambiar nombre">👤 {{ userName }}</button>
+  }
+</header>
+
+@if (!userName) {
+  <div class="onboarding">
+    <p>¿Cómo te llamas? Así identificamos tu progreso en este navegador — no se envía a ningún servidor.</p>
+    <div class="onboarding-form">
+      <input
+        [(ngModel)]="nameInput"
+        (keyup.enter)="saveName()"
+        placeholder="Tu nombre"
+        autocomplete="off"
+      />
+      <button (click)="saveName()" [disabled]="!nameInput.trim()">Guardar</button>
+    </div>
+  </div>
+}
+
+<main class="app-main">
+  <router-outlet></router-outlet>
 </main>
+
+<app-tour-overlay></app-tour-overlay>

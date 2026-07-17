@@ -1,0 +1,55 @@
+<div class="data-panel">
+  <div class="panel-header">
+    <h3>Cargar datos</h3>
+  </div>
+
+  <p class="note">Sube tu Excel (.xlsx o .xls) para practicar con él.</p>
+  <input type="file" accept=".xlsx,.xls" (change)="onExcel($event)" [disabled]="excelBusy" />
+  <p class="note">Se cargará como la variable <code>df</code>.</p>
+
+  <details class="excel-toggle">
+    <summary>Conectar a la base de datos de sico (deshabilitado por el momento)</summary>
+
+    <div class="panel-header">
+      <h3>Esquema {{ schema }} <span class="badge" [class.off]="!configured">{{ configured ? 'conectado' : 'sin conexión' }}</span></h3>
+      <button class="link" (click)="refreshTables()">↻ actualizar lista</button>
+    </div>
+
+    @if (!configured) {
+      <p class="note">La conexión a la base de datos de sico no está configurada en el servidor.</p>
+    } @else {
+      <p class="note">
+        Carga cualquier tabla como su propio DataFrame (queda disponible como <code>df_&lt;tabla&gt;</code>).
+        Para combinarlas, usa <code>pd.merge(...)</code> en tus celdas — así practicas el join en pandas.
+      </p>
+    }
+
+    @if (configured && tables.length > 0) {
+      <input
+        class="search-box"
+        type="search"
+        placeholder="Buscar tabla... (ej. movimiento, item, sueldos)"
+        [(ngModel)]="search"
+        (ngModelChange)="onSearchChange()"
+      />
+      <p class="note count">{{ filteredTables.length }} de {{ tables.length }} tablas</p>
+    }
+
+    <div class="tables">
+      @for (t of filteredTables; track t.table) {
+        <div class="table-row">
+          <span class="table-name">{{ t.table }}</span>
+          <button class="load-btn" (click)="loadSingle(t.table)" [disabled]="loadingTable === t.table">
+            {{ loadingTable === t.table ? 'cargando…' : 'cargar' }}
+          </button>
+        </div>
+      } @empty {
+        @if (configured && tables.length > 0) {
+          <p class="note">Ninguna tabla coincide con "{{ search }}".</p>
+        } @else if (configured) {
+          <p class="note">No se encontraron tablas en el esquema.</p>
+        }
+      }
+    </div>
+  </details>
+</div>

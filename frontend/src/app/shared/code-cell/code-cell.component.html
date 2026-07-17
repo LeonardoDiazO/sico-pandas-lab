@@ -1,0 +1,34 @@
+<div class="code-cell">
+  <div class="editor-row">
+    <ngx-monaco-editor
+      class="editor"
+      [options]="editorOptions"
+      [ngModel]="code"
+      (ngModelChange)="onCodeEdit($event)"
+      (onInit)="onEditorInit($event)"
+    ></ngx-monaco-editor>
+  </div>
+  <div class="actions">
+    <button class="run-btn" (click)="onRun()" [disabled]="running">
+      {{ running ? 'Ejecutando…' : runLabel }}
+    </button>
+    <span class="hint">Ctrl/Cmd + Enter</span>
+    @if (allowSave) {
+      <button class="save-btn" (click)="toggleSaveForm()">💾 Guardar</button>
+    }
+    @if (removable) {
+      <button class="remove-btn" (click)="remove.emit()" [disabled]="running">Eliminar</button>
+    }
+  </div>
+
+  @if (savingOpen) {
+    <div class="save-form">
+      <input [(ngModel)]="saveName" placeholder="Nombre (ej: Ventas por ítem)" autocomplete="off" />
+      <input [(ngModel)]="saveNote" placeholder="Nota opcional" autocomplete="off" />
+      <button class="confirm" (click)="confirmSave()" [disabled]="!saveName.trim()">Guardar</button>
+      <button class="cancel" (click)="cancelSave()">Cancelar</button>
+    </div>
+  }
+
+  <app-cell-result [result]="result"></app-cell-result>
+</div>

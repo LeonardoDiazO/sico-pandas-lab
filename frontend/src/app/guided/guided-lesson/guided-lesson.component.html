@@ -1,0 +1,65 @@
+@if (lesson) {
+  <section class="guided-lesson">
+    <div class="top-row">
+      <a class="back" routerLink="/guiado">← Todas las lecciones</a>
+      <button class="tour-btn" (click)="startTour()" title="Ver el tour de esta pantalla otra vez">❓ Ver tour</button>
+    </div>
+    <h2>{{ lesson.title }}</h2>
+    <p class="summary">{{ lesson.summary }}</p>
+
+    @if (banner) {
+      <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok">{{ banner.text }}</div>
+    }
+
+    <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+
+    <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
+
+    @for (step of steps; track $index) {
+      <div class="step">
+        <h3>{{ step.title }}</h3>
+        <p class="explanation">{{ step.explanation }}</p>
+        <app-code-cell
+          [code]="step.code"
+          [result]="step.result"
+          [running]="step.running"
+          [removable]="false"
+          (run)="runStep($index, $event)"
+        ></app-code-cell>
+      </div>
+    }
+
+    @if (lesson.challenge) {
+      <div class="challenge">
+        <h3>🎯 Reto: pon en práctica lo que aprendiste</h3>
+        <p class="prompt">{{ lesson.challenge.prompt }}</p>
+        <app-code-cell
+          [code]="challengeCode"
+          [result]="challengeResult"
+          [running]="challengeRunning"
+          [removable]="false"
+          runLabel="✅ Comprobar reto"
+          (run)="runChallenge($event)"
+        ></app-code-cell>
+        @if (challengeVerdict) {
+          <div class="verdict" [class.passed]="challengeVerdict.passed" [class.failed]="!challengeVerdict.passed">
+            {{ challengeVerdict.passed ? '✅' : '🤔' }} {{ challengeVerdict.message }}
+          </div>
+        }
+      </div>
+    }
+
+    <div class="finish">
+      @if (isComplete) {
+        <p class="done">✓ Lección completada{{ userName ? ', ' + userName : '' }}.</p>
+      }
+      @if (lesson.next_lesson_id) {
+        <p>¿Listo para seguir?</p>
+        <a class="free-btn" [routerLink]="['/guiado', lesson.next_lesson_id]">Siguiente: {{ lesson.next_lesson_title }} →</a>
+      } @else {
+        <p>Terminaste el curso. ¿Listo para aplicarlo con tus propios datos?</p>
+      }
+      <a class="free-btn secondary" routerLink="/notebook">Continuar en el notebook libre →</a>
+    </div>
+  </section>
+}

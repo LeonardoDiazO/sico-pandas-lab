@@ -3136,6 +3136,11 @@ mkdirp@^0.5.5:
   dependencies:
     minimist "^1.2.6"
 
+monaco-editor@^0.52.2:
+  version "0.52.2"
+  resolved "https://registry.yarnpkg.com/monaco-editor/-/monaco-editor-0.52.2.tgz#53c75a6fcc6802684e99fd1b2700299857002205"
+  integrity sha512-GEQWEZmfkOGLdd3XK8ryrfWz3AIP8YymVXiPHEdewrUq7mh0qrKrfHLNCXcbB6sTnMLnOZ3ztSiKcciFUkIJwQ==
+
 mrmime@2.0.1:
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/mrmime/-/mrmime-2.0.1.tgz#bc3e87f7987853a54c9850eeb1f1078cd44adddc"
@@ -3191,6 +3196,13 @@ negotiator@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/negotiator/-/negotiator-1.0.0.tgz#b6c91bb47172d69f93cfd7c357bbb529019b5f6a"
   integrity sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==
+
+ngx-monaco-editor-v2@^20.0.0:
+  version "20.3.0"
+  resolved "https://registry.yarnpkg.com/ngx-monaco-editor-v2/-/ngx-monaco-editor-v2-20.3.0.tgz#706899505d1111ec6602e4d8668b0bdce14f89cb"
+  integrity sha512-j6zZIOYdSSUnbo58RWox2ZMEzIlA3lN/QchJREb1j734kUeJM1aW9RMz6FpkKt/UW1okdCTGZCnAavtKGou/2Q==
+  dependencies:
+    tslib "^2.1.0"
 
 node-addon-api@^6.1.0:
   version "6.1.0"

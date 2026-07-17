@@ -1,3 +1,12 @@
 flask==3.1.3
+flask-cors
+python-dotenv
 gunicorn
+pandas
+openpyxl
+matplotlib
+seaborn
+scipy
+pymysql
+sqlalchemy
 pytest
