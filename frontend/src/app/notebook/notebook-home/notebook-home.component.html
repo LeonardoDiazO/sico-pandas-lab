@@ -22,6 +22,8 @@
 
   <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
 
+  <app-no-code-chart [profile]="excelProfile"></app-no-code-chart>
+
   <app-saved-queries [snippets]="snippets" (insert)="insertCode($event)" (remove)="onRemoveSnippet($event)"></app-saved-queries>
 
   <app-chart-helper [variables]="knownVariables" (insert)="insertCode($event)"></app-chart-helper>

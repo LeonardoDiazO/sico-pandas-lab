@@ -4,8 +4,36 @@
   </div>
 
   <p class="note">Sube tu Excel (.xlsx o .xls) para practicar con él.</p>
-  <input type="file" accept=".xlsx,.xls" (change)="onExcel($event)" [disabled]="excelBusy" />
+  <input type="file" accept=".xlsx,.xls" (change)="onExcel($event)" [disabled]="excelBusy || !!pendingCleanup" />
   <p class="note">Se cargará como la variable <code>df</code>.</p>
+
+  @if (pendingCleanup) {
+    <div class="cleanup-preview">
+      <p class="note">
+        Tu archivo necesita una limpieza antes de usarse. Encabezado detectado en la fila
+        {{ pendingCleanup.profile.headerRowIndex! + 1 }}, con estas columnas:
+      </p>
+      <ul class="cleanup-columns">
+        @for (col of pendingCleanup.profile.columns; track col.name) {
+          <li><strong>{{ col.name }}</strong> — {{ col.type }}</li>
+        }
+      </ul>
+      <div class="cleanup-actions">
+        <button class="load-btn" (click)="confirmCleanup()" [disabled]="cleanupBusy">
+          {{ cleanupBusy ? 'aplicando…' : 'Confirmar y continuar' }}
+        </button>
+        <button class="link" (click)="cancelCleanup()" [disabled]="cleanupBusy">Cancelar</button>
+      </div>
+    </div>
+  }
+
+  @if (unusableInfo) {
+    <div class="unusable-warning">
+      <h4>Este archivo no se puede usar</h4>
+      <p>{{ unusableInfo.detail }}</p>
+      <p class="note">Puedes subir otro archivo cuando quieras.</p>
+    </div>
+  }
 
   <details class="excel-toggle">
     <summary>Conectar a la base de datos de sico (deshabilitado por el momento)</summary>

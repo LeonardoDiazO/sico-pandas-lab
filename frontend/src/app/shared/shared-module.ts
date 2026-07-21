@@ -8,6 +8,7 @@ import { ChartHelperComponent } from './chart-helper/chart-helper.component';
 import { CodeCellComponent } from './code-cell/code-cell.component';
 import { DataSourcePanelComponent } from './data-source-panel/data-source-panel.component';
 import { LoadedVariablesComponent } from './loaded-variables/loaded-variables.component';
+import { NoCodeChartComponent } from './no-code-chart/no-code-chart.component';
 import { SavedQueriesComponent } from './saved-queries/saved-queries.component';
 
 @NgModule({
@@ -17,6 +18,7 @@ import { SavedQueriesComponent } from './saved-queries/saved-queries.component';
     DataSourcePanelComponent,
     ChartHelperComponent,
     LoadedVariablesComponent,
+    NoCodeChartComponent,
     SavedQueriesComponent,
   ],
   imports: [CommonModule, FormsModule, MonacoEditorModule],
@@ -26,6 +28,7 @@ import { SavedQueriesComponent } from './saved-queries/saved-queries.component';
     DataSourcePanelComponent,
     ChartHelperComponent,
     LoadedVariablesComponent,
+    NoCodeChartComponent,
     SavedQueriesComponent,
     CommonModule,
     FormsModule,

@@ -3,7 +3,7 @@ import io
 import pandas as pd
 import pytest
 
-from app.data_access.excel_loader import load_excel_dataframe
+from app.data_access.excel_loader import load_excel_dataframe, read_excel_raw
 
 
 class _Upload:
@@ -42,3 +42,31 @@ def test_rejects_non_excel_extension():
 def test_rejects_corrupt_excel():
     with pytest.raises(ValueError):
         load_excel_dataframe(_Upload("roto.xlsx", io.BytesIO(b"no soy un excel")))
+
+
+def test_read_excel_raw_has_no_header_row():
+    df = read_excel_raw(_Upload("datos.xlsx", _xlsx_bytes()))
+    # header=None: the original header ("a", "b") is row 0 of the data, not consumed as column names
+    assert list(df.columns) == [0, 1]
+    assert df.shape == (3, 2)
+    assert list(df.iloc[0]) == ["a", "b"]
+
+
+def test_read_excel_raw_rejects_non_excel_extension():
+    with pytest.raises(ValueError):
+        read_excel_raw(_Upload("datos.csv", io.BytesIO(b"a,b\n1,2")))
+
+
+def test_read_excel_raw_rejects_corrupt_excel():
+    with pytest.raises(ValueError):
+        read_excel_raw(_Upload("roto.xlsx", io.BytesIO(b"no soy un excel")))
+
+
+def test_load_excel_dataframe_and_read_excel_raw_can_both_read_same_upload():
+    """Both functions must seek(0) internally so the same FileStorage can be
+    profiled and then loaded without the caller managing stream position."""
+    upload = _Upload("datos.xlsx", _xlsx_bytes())
+    raw = read_excel_raw(upload)
+    df = load_excel_dataframe(upload)
+    assert raw.shape == (3, 2)
+    assert list(df.columns) == ["a", "b"]

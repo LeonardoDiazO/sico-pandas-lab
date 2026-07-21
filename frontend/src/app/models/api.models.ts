@@ -32,11 +32,25 @@ export interface TablesPayload {
   configured: boolean;
 }
 
+export interface ExcelProfileColumn {
+  name: string;
+  type: 'categorica' | 'numerica' | 'fecha' | 'descartable';
+}
+
+export interface ExcelProfile {
+  verdict: 'usable' | 'usable_con_limpieza' | 'no_usable';
+  headerRowIndex: number | null;
+  columns: ExcelProfileColumn[];
+  detail: string;
+}
+
 export interface LoadResult {
   variable: string;
   rows: number;
   columns: string[];
   note?: string | null;
+  profile?: ExcelProfile;
+  bound?: boolean;
 }
 
 export interface LessonSummary {
@@ -69,4 +83,16 @@ export interface Lesson {
 
 export interface ChallengeResult extends CellResult {
   challenge: { passed: boolean; message: string } | null;
+}
+
+export interface CardinalityWarning {
+  column: string;
+  uniqueCount: number;
+  threshold: number;
+  suggestion: string;
+}
+
+export interface ChartResult extends CellResult {
+  needsConfirmation: boolean;
+  cardinalityWarning: CardinalityWarning | null;
 }

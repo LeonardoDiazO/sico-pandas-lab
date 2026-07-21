@@ -114,6 +114,50 @@ code {
   border-radius: 3px;
 }
 
+.cleanup-preview {
+  background: #fff;
+  border: 1px solid #e4e5fa;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.cleanup-columns {
+  margin: 0.4rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  color: #2a2f5b;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.cleanup-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.unusable-warning {
+  background: #fff4ec;
+  border: 1px solid #e8b98a;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.6rem;
+
+  h4 {
+    margin: 0 0 0.3rem;
+    font-size: 0.85rem;
+    color: #8a4a1f;
+  }
+
+  p {
+    margin: 0.2rem 0;
+    font-size: 0.8rem;
+    color: #6b4327;
+  }
+}
+
 .excel-toggle {
   margin-top: 0.6rem;
   font-size: 0.8rem;

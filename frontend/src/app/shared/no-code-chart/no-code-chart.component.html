@@ -1,0 +1,74 @@
+<div class="no-code-chart">
+  <div class="panel-header">
+    <h3>Gráfica sin código</h3>
+  </div>
+
+  @if (!profile) {
+    <p class="note">Sube y confirma un Excel arriba para elegir una columna y graficar sin escribir código.</p>
+  } @else {
+    @if (groupableColumns.length > 0) {
+      <label class="field">
+        <span class="field-label">Agrupar por columna:</span>
+        <select [(ngModel)]="selectedColumn" (ngModelChange)="onColumnChange()">
+          <option [ngValue]="null">Elige una columna...</option>
+          @for (col of groupableColumns; track col.name) {
+            <option [ngValue]="col.name">{{ col.name }}</option>
+          }
+        </select>
+      </label>
+    } @else {
+      <p class="note">Este archivo no tiene columnas de categoría o fecha para agrupar.</p>
+    }
+
+    @if (numericColumns.length > 0) {
+      <label class="field">
+        <span class="field-label">Columna de valor (opcional, solo para histograma):</span>
+        <select [(ngModel)]="selectedValueColumn" (ngModelChange)="onValueColumnChange()">
+          <option [ngValue]="null">Ninguna</option>
+          @for (col of numericColumns; track col.name) {
+            <option [ngValue]="col.name">{{ col.name }}</option>
+          }
+        </select>
+      </label>
+    }
+
+    @if (chartTypeOptions.length > 0) {
+      <label class="field">
+        <span class="field-label">Tipo de gráfica:</span>
+        <select [(ngModel)]="selectedChartType" (ngModelChange)="onChartTypeChange()">
+          <option [ngValue]="null">Elige un tipo...</option>
+          @for (opt of chartTypeOptions; track opt.value) {
+            <option [ngValue]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </label>
+
+      <button class="generate-btn" (click)="generateChart()" [disabled]="!canGenerate">
+        {{ generating ? 'Generando…' : 'Generar gráfica' }}
+      </button>
+    } @else {
+      <p class="note">Elige una columna para agrupar o una columna de valor primero.</p>
+    }
+
+    @if (cardinalityWarning) {
+      <div class="cardinality-warning">
+        <p>
+          <strong>{{ cardinalityWarning.column }}</strong> tiene {{ cardinalityWarning.uniqueCount }} valores distintos
+          — con más de {{ cardinalityWarning.threshold }}, la gráfica puede salir ilegible.
+        </p>
+        <p class="note">{{ cardinalityWarning.suggestion }}</p>
+        <button class="generate-btn" (click)="generateAnyway()" [disabled]="generating">
+          {{ generating ? 'Generando…' : 'Generar de todos modos' }}
+        </button>
+      </div>
+    }
+
+    @if (chartResult) {
+      @if (chartResult.error) {
+        <p class="chart-error">No se pudo generar la gráfica: {{ chartResult.error.message }}</p>
+      } @else if (chartResult.image_base64) {
+        <img class="chart-image" [src]="'data:image/png;base64,' + chartResult.image_base64" alt="Gráfica generada" />
+      }
+    }
+  }
+</div>

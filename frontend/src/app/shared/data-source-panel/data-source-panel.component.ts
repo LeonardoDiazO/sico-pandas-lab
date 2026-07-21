@@ -1,7 +1,7 @@
 import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { retry, timer } from 'rxjs';
 
-import { LoadResult, TableInfo } from '../../models/api.models';
+import { ExcelProfile, LoadResult, TableInfo } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 /**
@@ -29,6 +29,9 @@ export class DataSourcePanelComponent implements OnInit {
   loadingTable: string | null = null;
   excelBusy = false;
   showExcel = false;
+  pendingCleanup: { variable: string; profile: ExcelProfile } | null = null;
+  cleanupBusy = false;
+  unusableInfo: { detail: string } | null = null;
 
   constructor(private notebook: NotebookService) {}
 
@@ -93,12 +96,26 @@ export class DataSourcePanelComponent implements OnInit {
       return;
     }
     this.excelBusy = true;
+    this.pendingCleanup = null;
+    this.unusableInfo = null;
     this.notebook.uploadExcel(file, 'df').subscribe({
       next: (res) => {
         this.excelBusy = false;
-        this.emitMessage(res.message, res.success);
-        if (res.success && res.data) {
+        if (!res.success || !res.data) {
+          this.emitMessage(res.message, false);
+          return;
+        }
+        const profile = res.data.profile;
+        if (!profile || profile.verdict === 'usable') {
+          // Ya limpio (o una respuesta sin profile, ej. carga de tabla): comportamiento de siempre.
+          this.emitMessage(res.message, true);
           this.loaded.emit(res.data);
+        } else if (profile.verdict === 'usable_con_limpieza') {
+          // No se emite `loaded` todavía -- el DataFrame no está bindeado hasta confirmar (Story 4.2).
+          this.pendingCleanup = { variable: res.data.variable, profile };
+        } else {
+          // no_usable: bloque dedicado (UX-DR1), no el banner genérico de error.
+          this.unusableInfo = { detail: profile.detail };
         }
       },
       error: () => {
@@ -107,6 +124,58 @@ export class DataSourcePanelComponent implements OnInit {
       },
       complete: () => (input.value = ''),
     });
+  }
+
+  confirmCleanup(): void {
+    if (!this.pendingCleanup) {
+      return;
+    }
+    this.cleanupBusy = true;
+    this.notebook.confirmExcelCleanup().subscribe({
+      next: (res) => {
+        this.cleanupBusy = false;
+        this.pendingCleanup = null;
+        this.emitMessage(res.message, res.success);
+        if (res.success && res.data) {
+          this.loaded.emit(res.data);
+        }
+      },
+      error: () => {
+        this.cleanupBusy = false;
+        this.emitMessage('Ocurrió un error al confirmar la limpieza.', false);
+      },
+    });
+  }
+
+  cancelCleanup(): void {
+    if (!this.pendingCleanup) {
+      return;
+    }
+    this.cleanupBusy = true;
+    this.notebook.cancelExcelCleanup().subscribe({
+      next: () => {
+        this.cleanupBusy = false;
+        this.pendingCleanup = null;
+      },
+      error: () => {
+        // Keep pendingCleanup as-is: the request may not have reached the
+        // backend, so pretending cancellation succeeded here would let the
+        // frontend and backend state silently diverge (see confirmCleanup's
+        // error handling for the same reasoning).
+        this.cleanupBusy = false;
+        this.emitMessage('No se pudo cancelar la carga. Intenta de nuevo.', false);
+      },
+    });
+  }
+
+  /** Called by the parent on session restart, which discards any pending
+   * upload server-side -- this clears the matching local UI state so a
+   * stale "Confirmar y continuar" button can't linger after a restart. */
+  resetUploadState(): void {
+    this.pendingCleanup = null;
+    this.unusableInfo = null;
+    this.cleanupBusy = false;
+    this.excelBusy = false;
   }
 
   private emitMessage(text: string, ok: boolean): void {

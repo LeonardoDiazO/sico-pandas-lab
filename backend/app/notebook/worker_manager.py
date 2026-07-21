@@ -73,6 +73,7 @@ class WorkerManager:
         # with matplotlib / threads inside the Flask process.
         self._ctx = mp.get_context("spawn")
         self._workers = {}
+        self._pending_uploads = {}
         self._lock = threading.Lock()
         self.exec_timeout = exec_timeout
         self.mem_bytes = mem_bytes
@@ -80,6 +81,10 @@ class WorkerManager:
         self.idle_ttl = idle_ttl
 
     def _reap_idle(self):
+        """Caller must hold self._lock. Sweeps both workers and pending
+        uploads -- a session that only ever stages an upload (never calls
+        execute/bind) would otherwise never pass through this reap at all.
+        """
         now = time.time()
         stale = [
             sid
@@ -88,6 +93,14 @@ class WorkerManager:
         ]
         for sid in stale:
             self._workers.pop(sid).terminate()
+
+        stale_uploads = [
+            sid
+            for sid, (_variable, _df, _profile, staged_at) in self._pending_uploads.items()
+            if now - staged_at > self.idle_ttl
+        ]
+        for sid in stale_uploads:
+            self._pending_uploads.pop(sid, None)
 
     def _get_or_create(self, session_id):
         with self._lock:
@@ -160,9 +173,39 @@ class WorkerManager:
         with worker.lock:
             return worker.send({"type": "bind", "name": name, "value": value}, self.exec_timeout)
 
+    def stage_pending_upload(self, session_id, variable, df, profile):
+        """Hold an uploaded DataFrame until the user confirms the proposed
+        cleanup (Story 4.2) instead of binding it right away. Uploading again
+        before confirming simply replaces whatever was pending.
+
+        `profile` is the raw dict from excel_profiler.profile_excel() (minus
+        the "dataframe" entry is fine either way, callers don't rely on it
+        being stripped) - kept alongside the DataFrame so confirm_excel_cleanup
+        can hand the column-type profile back to the frontend too. Without
+        this, Epic 5's "Gráfica sin código" panel has no column list to show
+        for any Excel that went through the cleanup-confirmation flow.
+        """
+        with self._lock:
+            self._reap_idle()
+            self._pending_uploads[session_id] = (variable, df, profile, time.time())
+
+    def pop_pending_upload(self, session_id):
+        """Return and clear the pending (variable, df, profile) for this session, or None."""
+        with self._lock:
+            entry = self._pending_uploads.pop(session_id, None)
+        if entry is None:
+            return None
+        variable, df, profile, _staged_at = entry
+        return variable, df, profile
+
+    def discard_pending_upload(self, session_id):
+        with self._lock:
+            self._pending_uploads.pop(session_id, None)
+
     def restart(self, session_id):
         with self._lock:
             worker = self._workers.pop(session_id, None)
+            self._pending_uploads.pop(session_id, None)
         if worker is not None:
             worker.terminate()
         return True
