@@ -96,3 +96,16 @@ export interface ChartResult extends CellResult {
   needsConfirmation: boolean;
   cardinalityWarning: CardinalityWarning | null;
 }
+
+// Story 6.1: 'torta' | 'barras' | 'linea' | 'histograma' - mirrors ChartKind
+// in shared/no-code-chart/no-code-chart.component.ts (Story 5.2), where the
+// canonical type still lives (do not treat this as a second source of truth,
+// it's the same closed set expressed as a string literal union here so this
+// model file doesn't need to import from a component).
+export interface ChartInterpretation {
+  resolved: boolean;
+  column: string | null;
+  valueColumn: string | null;
+  chartType: 'torta' | 'barras' | 'linea' | 'histograma' | null;
+  reason: string | null;
+}

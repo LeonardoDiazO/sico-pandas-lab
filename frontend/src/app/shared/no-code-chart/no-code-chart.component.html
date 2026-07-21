@@ -6,10 +6,32 @@
   @if (!profile) {
     <p class="note">Sube y confirma un Excel arriba para elegir una columna y graficar sin escribir código.</p>
   } @else {
+    <label class="field assistant-field">
+      <span class="field-label">O pregúntale al asistente (ej. "hazme una torta por vendedor"):</span>
+      <div class="assistant-row">
+        <input
+          type="text"
+          [(ngModel)]="naturalLanguageQuestion"
+          [disabled]="interpreting"
+          placeholder="Escribe tu pregunta..."
+        />
+        <button
+          class="generate-btn"
+          (click)="askAssistant()"
+          [disabled]="interpreting || !naturalLanguageQuestion.trim()"
+        >
+          {{ interpreting ? 'Pensando…' : 'Preguntar' }}
+        </button>
+      </div>
+    </label>
+    @if (interpretationReason) {
+      <p class="note assistant-reason">{{ interpretationReason }}</p>
+    }
+
     @if (groupableColumns.length > 0) {
       <label class="field">
         <span class="field-label">Agrupar por columna:</span>
-        <select [(ngModel)]="selectedColumn" (ngModelChange)="onColumnChange()">
+        <select [(ngModel)]="selectedColumn" (ngModelChange)="onColumnChange()" [disabled]="interpreting">
           <option [ngValue]="null">Elige una columna...</option>
           @for (col of groupableColumns; track col.name) {
             <option [ngValue]="col.name">{{ col.name }}</option>
@@ -23,7 +45,7 @@
     @if (numericColumns.length > 0) {
       <label class="field">
         <span class="field-label">Columna de valor (opcional, solo para histograma):</span>
-        <select [(ngModel)]="selectedValueColumn" (ngModelChange)="onValueColumnChange()">
+        <select [(ngModel)]="selectedValueColumn" (ngModelChange)="onValueColumnChange()" [disabled]="interpreting">
           <option [ngValue]="null">Ninguna</option>
           @for (col of numericColumns; track col.name) {
             <option [ngValue]="col.name">{{ col.name }}</option>
@@ -35,7 +57,7 @@
     @if (chartTypeOptions.length > 0) {
       <label class="field">
         <span class="field-label">Tipo de gráfica:</span>
-        <select [(ngModel)]="selectedChartType" (ngModelChange)="onChartTypeChange()">
+        <select [(ngModel)]="selectedChartType" (ngModelChange)="onChartTypeChange()" [disabled]="interpreting">
           <option [ngValue]="null">Elige un tipo...</option>
           @for (opt of chartTypeOptions; track opt.value) {
             <option [ngValue]="opt.value">{{ opt.label }}</option>
@@ -57,7 +79,7 @@
           — con más de {{ cardinalityWarning.threshold }}, la gráfica puede salir ilegible.
         </p>
         <p class="note">{{ cardinalityWarning.suggestion }}</p>
-        <button class="generate-btn" (click)="generateAnyway()" [disabled]="generating">
+        <button class="generate-btn" (click)="generateAnyway()" [disabled]="generating || interpreting">
           {{ generating ? 'Generando…' : 'Generar de todos modos' }}
         </button>
       </div>

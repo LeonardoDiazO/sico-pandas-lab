@@ -9,4 +9,5 @@ seaborn
 scipy
 pymysql
 sqlalchemy
+anthropic
 pytest

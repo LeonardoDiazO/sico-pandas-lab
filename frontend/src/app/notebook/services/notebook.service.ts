@@ -3,7 +3,15 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
-import { ApiResponse, CellResult, ChartResult, LoadResult, TablesPayload } from '../../models/api.models';
+import {
+  ApiResponse,
+  CellResult,
+  ChartInterpretation,
+  ChartResult,
+  ExcelProfileColumn,
+  LoadResult,
+  TablesPayload,
+} from '../../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class NotebookService {
@@ -48,6 +56,16 @@ export class NotebookService {
       chartType,
       force,
     });
+  }
+
+  interpretChartRequest(
+    question: string,
+    columns: ExcelProfileColumn[],
+  ): Observable<ApiResponse<ChartInterpretation>> {
+    return this.http.post<ApiResponse<ChartInterpretation>>(
+      `${this.base}/api/notebook/interpret-chart-request`,
+      { question, columns },
+    );
   }
 
   listTables(): Observable<ApiResponse<TablesPayload>> {

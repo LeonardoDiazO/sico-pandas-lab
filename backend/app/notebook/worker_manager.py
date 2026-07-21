@@ -1,8 +1,12 @@
-"""Lifecycle owner for the per-session execution workers.
+"""Lifecycle owner for all per-session, in-memory state: execution workers,
+pending Excel uploads awaiting cleanup confirmation, and NL-assistant usage
+counts (Story 6.2).
 
-This is the ONLY place that creates, reuses, times-out and kills workers.
-Routes never touch worker processes directly. Keeping the lifecycle in one
-class keeps the concurrency reasoning in a single, testable spot.
+This is the ONLY place that creates, reuses, times-out and kills workers, and
+the only place that tracks the other two. Routes never touch worker
+processes directly. Keeping every session-keyed concern behind one lock and
+one TTL-reap sweep (`_reap_idle`) keeps the concurrency reasoning in a
+single, testable spot, rather than one lock per concern.
 
 Concurrency note: the manager lives in-process, so a session is bound to the
 process that created it. Under Gunicorn the service must therefore run with a
@@ -21,6 +25,7 @@ DEFAULT_EXEC_TIMEOUT_SECONDS = 15
 DEFAULT_MEM_BYTES = 512 * 1024 * 1024  # 512 MB
 DEFAULT_CPU_SECONDS = 20
 IDLE_TTL_SECONDS = 30 * 60  # reap sessions idle for 30 minutes
+DEFAULT_ASSISTANT_MAX_REQUESTS = 20  # NL assistant requests per session (Story 6.2, NFR11)
 
 
 class WorkerHandle:
@@ -68,22 +73,26 @@ class WorkerManager:
         mem_bytes=DEFAULT_MEM_BYTES,
         cpu_seconds=DEFAULT_CPU_SECONDS,
         idle_ttl=IDLE_TTL_SECONDS,
+        assistant_max_requests=DEFAULT_ASSISTANT_MAX_REQUESTS,
     ):
         # "spawn" behaves the same on Windows and Linux, avoiding fork pitfalls
         # with matplotlib / threads inside the Flask process.
         self._ctx = mp.get_context("spawn")
         self._workers = {}
         self._pending_uploads = {}
+        self._assistant_usage = {}  # session_id -> (count, last_used) - Story 6.2
         self._lock = threading.Lock()
         self.exec_timeout = exec_timeout
         self.mem_bytes = mem_bytes
         self.cpu_seconds = cpu_seconds
         self.idle_ttl = idle_ttl
+        self.assistant_max_requests = assistant_max_requests
 
     def _reap_idle(self):
-        """Caller must hold self._lock. Sweeps both workers and pending
-        uploads -- a session that only ever stages an upload (never calls
-        execute/bind) would otherwise never pass through this reap at all.
+        """Caller must hold self._lock. Sweeps workers, pending uploads, and
+        assistant-usage counts -- a session that only ever stages an upload
+        (never calls execute/bind) or only ever asks the assistant would
+        otherwise never pass through this reap at all.
         """
         now = time.time()
         stale = [
@@ -94,13 +103,49 @@ class WorkerManager:
         for sid in stale:
             self._workers.pop(sid).terminate()
 
-        stale_uploads = [
-            sid
-            for sid, (_variable, _df, _profile, staged_at) in self._pending_uploads.items()
-            if now - staged_at > self.idle_ttl
-        ]
-        for sid in stale_uploads:
-            self._pending_uploads.pop(sid, None)
+        # Unlike _workers above, these two are plain (session_id -> tuple)
+        # dicts with no extra teardown beyond a pop -- share the sweep.
+        self._pop_stale(self._pending_uploads, now, last_active_at=lambda entry: entry[3])
+        self._pop_stale(self._assistant_usage, now, last_active_at=lambda entry: entry[1])
+
+    def _pop_stale(self, mapping, now, last_active_at):
+        """Drop entries from `mapping` whose `last_active_at(entry)` predates
+        `self.idle_ttl`. `mapping` is mutated in place."""
+        stale_ids = [sid for sid, entry in mapping.items() if now - last_active_at(entry) > self.idle_ttl]
+        for sid in stale_ids:
+            mapping.pop(sid, None)
+
+    def check_and_increment_assistant_usage(self, session_id):
+        """Returns True and counts this request if the session is still
+        under `assistant_max_requests`, False otherwise (Story 6.2, NFR11).
+
+        Deliberately NOT reset by restart() -- resetting it there would let
+        a user bypass the limit for free via the existing "Reiniciar sesión"
+        button (Story 1.6), defeating the whole point of this limit. Only
+        idle-TTL reaping clears it, matching genuine session abandonment.
+        """
+        with self._lock:
+            self._reap_idle()
+            count, _ = self._assistant_usage.get(session_id, (0, time.time()))
+            if count >= self.assistant_max_requests:
+                return False
+            self._assistant_usage[session_id] = (count + 1, time.time())
+            return True
+
+    def release_assistant_usage(self, session_id):
+        """Refund one unit of assistant quota for `session_id` - call this
+        when a reserved request never actually reached the LLM (an
+        InterpreterUnavailableError, not the user's fault: missing API key,
+        provider outage, etc.), so our own unavailability doesn't
+        permanently eat into a user's budget. A no-op if the session has no
+        recorded usage yet.
+        """
+        with self._lock:
+            entry = self._assistant_usage.get(session_id)
+            if entry is None:
+                return
+            count, last_used = entry
+            self._assistant_usage[session_id] = (max(0, count - 1), last_used)
 
     def _get_or_create(self, session_id):
         with self._lock:

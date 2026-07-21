@@ -19,7 +19,10 @@ def create_app():
     # Single in-process manager owns every session's execution worker.
     from app.notebook.worker_manager import WorkerManager
 
-    manager = WorkerManager(exec_timeout=int(os.environ.get("CELL_TIMEOUT_SECONDS", "15")))
+    manager = WorkerManager(
+        exec_timeout=int(os.environ.get("CELL_TIMEOUT_SECONDS", "15")),
+        assistant_max_requests=int(os.environ.get("ASSISTANT_MAX_REQUESTS_PER_SESSION", "20")),
+    )
     app.config["WORKER_MANAGER"] = manager
     # Reap every session's execution process on a clean shutdown so we don't
     # leave orphaned worker processes behind.

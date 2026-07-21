@@ -32,6 +32,37 @@
   }
 }
 
+.assistant-field {
+  max-width: none;
+}
+
+.assistant-row {
+  display: flex;
+  gap: 0.5rem;
+
+  input[type='text'] {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #c9caee;
+    border-radius: 5px;
+    font-size: 0.82rem;
+
+    &:focus {
+      outline: none;
+      border-color: #51599b;
+    }
+  }
+
+  .generate-btn {
+    margin-top: 0;
+    white-space: nowrap;
+  }
+}
+
+.assistant-reason {
+  color: #a13a3a;
+}
+
 .field-label {
   font-size: 0.8rem;
   color: #2a2f5b;

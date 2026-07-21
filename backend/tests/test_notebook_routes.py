@@ -334,3 +334,216 @@ def test_no_usable_excel_is_not_bound_and_does_not_crash(client):
     assert result["profile"]["verdict"] == "no_usable"
     assert result["rows"] == 0
     assert result["columns"] == []
+
+
+# --- POST /api/notebook/interpret-chart-request (Story 6.1) -----------------------
+
+_COLUMNS_PAYLOAD = [
+    {"name": "vendedor", "type": "categorica"},
+    {"name": "neto", "type": "numerica"},
+]
+
+
+def test_interpret_chart_request_resolved_returns_200_with_selection(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.notebook.routes.interpret_chart_request",
+        lambda question, columns: {
+            "resolved": True,
+            "column": "vendedor",
+            "valueColumn": None,
+            "chartType": "torta",
+            "reason": None,
+        },
+    )
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": _COLUMNS_PAYLOAD},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["success"] is True
+    assert body["data"] == {
+        "resolved": True,
+        "column": "vendedor",
+        "valueColumn": None,
+        "chartType": "torta",
+        "reason": None,
+    }
+
+
+def test_interpret_chart_request_unresolved_is_still_a_200_not_an_error(client, monkeypatch):
+    """Same discriminant pattern as cardinalityWarning (Story 5.4) - "couldn't
+    resolve this" is a valid feature outcome, not an HTTP error."""
+    monkeypatch.setattr(
+        "app.notebook.routes.interpret_chart_request",
+        lambda question, columns: {
+            "resolved": False,
+            "column": None,
+            "valueColumn": None,
+            "chartType": None,
+            "reason": "No puedo comparar dos periodos con una sola gráfica.",
+        },
+    )
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "compárame julio contra junio", "columns": _COLUMNS_PAYLOAD},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["success"] is True
+    assert body["data"]["resolved"] is False
+    assert "comparar" in body["data"]["reason"]
+
+
+def test_interpret_chart_request_missing_question_is_400(client):
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"columns": _COLUMNS_PAYLOAD},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_interpret_chart_request_blank_question_is_400(client):
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "   ", "columns": _COLUMNS_PAYLOAD},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_interpret_chart_request_missing_columns_is_400(client):
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_interpret_chart_request_empty_columns_is_400(client):
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": []},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_interpret_chart_request_malformed_columns_is_400(client):
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": ["vendedor"]},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_interpret_chart_request_unavailable_interpreter_is_503_not_500(client, monkeypatch):
+    from app.notebook.nl_chart_interpreter import InterpreterUnavailableError
+
+    def _raise(question, columns):
+        raise InterpreterUnavailableError("El asistente no está disponible en este momento.")
+
+    monkeypatch.setattr("app.notebook.routes.interpret_chart_request", _raise)
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": _COLUMNS_PAYLOAD},
+    )
+    assert response.status_code == 503
+    body = response.get_json()
+    assert body["success"] is False
+    assert "no está disponible" in body["message"]
+
+
+# --- Story 6.2: per-session rate limit on the assistant -----------------------------
+
+
+def _stub_resolved_interpretation(question, columns):
+    return {
+        "resolved": True,
+        "column": "vendedor",
+        "valueColumn": None,
+        "chartType": "torta",
+        "reason": None,
+    }
+
+
+def test_interpret_chart_request_limit_reached_returns_429_and_never_calls_interpreter(client, monkeypatch):
+    manager = client.application.config["WORKER_MANAGER"]
+    manager.assistant_max_requests = 0
+
+    def _fail_if_called(question, columns):
+        raise AssertionError("interpret_chart_request must not be called once the session limit is reached")
+
+    monkeypatch.setattr("app.notebook.routes.interpret_chart_request", _fail_if_called)
+
+    response = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": _COLUMNS_PAYLOAD},
+    )
+    assert response.status_code == 429
+    body = response.get_json()
+    assert body["success"] is False
+    assert "límite" in body["message"].lower()
+
+
+def test_interpret_chart_request_sessions_have_independent_limits(client, monkeypatch):
+    manager = client.application.config["WORKER_MANAGER"]
+    manager.assistant_max_requests = 1
+    monkeypatch.setattr("app.notebook.routes.interpret_chart_request", _stub_resolved_interpretation)
+
+    first = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": _COLUMNS_PAYLOAD},
+        headers={"X-Session-Id": "session-a"},
+    )
+    assert first.status_code == 200
+
+    exhausted = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "otra pregunta", "columns": _COLUMNS_PAYLOAD},
+        headers={"X-Session-Id": "session-a"},
+    )
+    assert exhausted.status_code == 429
+
+    other_session = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": _COLUMNS_PAYLOAD},
+        headers={"X-Session-Id": "session-b"},
+    )
+    assert other_session.status_code == 200
+
+
+def test_interpret_chart_request_unavailable_does_not_permanently_consume_quota(client, monkeypatch):
+    """Regression test (Epic 6 code review): a provider outage / missing API
+    key must not burn through the session's limited assistant budget with
+    zero successful answers - the reserved slot is refunded on
+    InterpreterUnavailableError."""
+    from app.notebook.nl_chart_interpreter import InterpreterUnavailableError
+
+    manager = client.application.config["WORKER_MANAGER"]
+    manager.assistant_max_requests = 1
+
+    def _raise(question, columns):
+        raise InterpreterUnavailableError("El asistente no está disponible en este momento.")
+
+    monkeypatch.setattr("app.notebook.routes.interpret_chart_request", _raise)
+
+    headers = {"X-Session-Id": "refund-test-session"}
+    first = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "hazme una torta por vendedor", "columns": _COLUMNS_PAYLOAD},
+        headers=headers,
+    )
+    assert first.status_code == 503
+
+    second = client.post(
+        "/api/notebook/interpret-chart-request",
+        json={"question": "otra pregunta", "columns": _COLUMNS_PAYLOAD},
+        headers=headers,
+    )
+    # still 503 (interpreter still unavailable), NOT 429 - the failed first
+    # attempt must not have consumed the session's only allowed slot
+    assert second.status_code == 503

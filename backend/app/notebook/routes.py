@@ -14,6 +14,7 @@ from app.notebook.chart_builder import (
     build_chart_code,
     needs_cardinality_check,
 )
+from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
 from app.utils.api_response import api_response
 
 notebook_bp = Blueprint("notebook", __name__, url_prefix="/api/notebook")
@@ -219,3 +220,58 @@ def generate_chart():
         data=_chart_response_data(result),
         message="Gráfica generada." if not result.get("error") else "No se pudo generar la gráfica.",
     )
+
+
+def _valid_columns_payload(columns):
+    """`columns` must be a non-empty list of {"name": str, "type": str} dicts -
+    the same shape excel_profiler.profile_excel() produces and the frontend
+    already holds in ExcelProfile.columns (Story 4.1). No DataFrame ever
+    passes through here (NFR11) - only this metadata list travels."""
+    if not isinstance(columns, list) or not columns:
+        return False
+    return all(
+        isinstance(c, dict) and isinstance(c.get("name"), str) and isinstance(c.get("type"), str)
+        for c in columns
+    )
+
+
+@notebook_bp.post("/interpret-chart-request")
+def interpret_chart_request_route():
+    """Story 6.1 - translation only, never executes anything (NFR10). The
+    LLM's answer is constrained by a per-request JSON Schema (column/chart-type
+    enums built from `columns`) and re-validated in application code before
+    this route ever sees it - see nl_chart_interpreter.py."""
+    payload = request.get_json(silent=True) or {}
+    question = payload.get("question")
+    columns = payload.get("columns")
+
+    if not isinstance(question, str) or not question.strip():
+        return api_response(message="Falta la pregunta para el asistente.", success=False, status=400)
+    if not _valid_columns_payload(columns):
+        return api_response(
+            message="Falta la lista de columnas disponibles.", success=False, status=400
+        )
+
+    manager = _manager()
+    if not manager.check_and_increment_assistant_usage(_session_id()):
+        return api_response(
+            message=(
+                f"Alcanzaste el límite de {manager.assistant_max_requests} preguntas al "
+                "asistente en esta sesión. Usa los selectores manuales de la sección de "
+                "arriba para seguir graficando."
+            ),
+            success=False,
+            status=429,
+        )
+
+    try:
+        interpretation = interpret_chart_request(question, columns)
+    except InterpreterUnavailableError as exc:
+        # This request never reached the LLM (our own unavailability, not
+        # the user's fault) - refund the slot it reserved above so a
+        # misconfiguration or provider outage doesn't burn through the
+        # session's whole assistant budget with zero successful answers.
+        manager.release_assistant_usage(_session_id())
+        return api_response(message=str(exc), success=False, status=503)
+
+    return api_response(data=interpretation, message="Interpretado.")
