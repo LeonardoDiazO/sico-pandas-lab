@@ -1,0 +1,25 @@
+services:
+  - name: sico-pandas-lab-backend
+    type: web
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: CELL_TIMEOUT_SECONDS
+        value: 15
+      - key: FLASK_ENV
+        value: production
+      # SICO_DB_* deliberadamente NO se define: el módulo de conexión a la RDS
+      # de sico queda deshabilitado por ahora, se trabaja solo con Excel subido.
+      # El backend arranca igual sin estas variables (ver app/startup_checks.py).
+
+  - name: sico-pandas-lab-frontend
+    type: web
+    runtime: docker
+    plan: free
+    rootDir: frontend
+    dockerfilePath: frontend/Dockerfile
+    dockerContext: frontend
