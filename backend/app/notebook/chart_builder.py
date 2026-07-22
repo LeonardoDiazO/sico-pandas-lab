@@ -114,8 +114,16 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 # Category names move to a side legend instead of on-slice
                 # labels - with up to 16 long composite labels (Story 7.2),
                 # on-slice labels stack and overlap into an unreadable mess.
-                "_ax.legend(_wedges, _chart_data.index, loc='center left', "
-                "bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
+                # Every legend entry also carries its own percentage: the
+                # on-slice autopct above only labels slices >=3% (to avoid
+                # clutter), so a small slice's percentage would otherwise be
+                # invisible everywhere - the legend is the one place it's
+                # guaranteed legible no matter how small the slice or how
+                # many categories there are (user feedback).
+                "_total = _chart_data.sum()",
+                "_ax.legend(_wedges, "
+                "[f'{name} - {val / _total * 100:.1f}%' for name, val in _chart_data.items()], "
+                "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
             ]
         else:
             lines += [

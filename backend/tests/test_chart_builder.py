@@ -192,10 +192,12 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     (see test_top_n_before_otros_matches_cardinality_warning_threshold); and
     the "professional look" pass (user feedback) replaced the bare
     `.plot.pie(...)` one-liner with an explicit `_ax.pie(...)` + side legend
-    + `plt.subplots(figsize=(11, 8))` + bold title - this now pins that
-    final string (using the live constant, not a bare literal, so this test
-    doesn't silently go stale if the threshold moves again), still guarding
-    that the underlying grouping expression
+    + `plt.subplots(figsize=(11, 8))` + bold title; a follow-up feedback
+    round then added a per-slice percentage to every legend entry (see
+    test_torta_legend_includes_percentage_for_every_slice) - this now pins
+    that final string (using the live constant, not a bare literal, so this
+    test doesn't silently go stale if the threshold moves again), still
+    guarding that the underlying grouping expression
     (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
     n = TOP_N_CATEGORIES_BEFORE_OTROS
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
@@ -208,8 +210,10 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         "_wedges, _texts, _autotexts = _ax.pie(_chart_data.values, labels=None, "
         "autopct=lambda p: f'{p:.1f}%' if p >= 3 else '', "
         "colors=plt.get_cmap('tab20').colors[:len(_chart_data)], pctdistance=0.8)\n"
-        "_ax.legend(_wedges, _chart_data.index, loc='center left', "
-        "bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
+        "_total = _chart_data.sum()\n"
+        "_ax.legend(_wedges, "
+        "[f'{name} - {val / _total * 100:.1f}%' for name, val in _chart_data.items()], "
+        "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
         "plt.title('neto por vendedor', fontsize=13, fontweight='bold')\n"
         "plt.tight_layout()"
     )
@@ -290,6 +294,39 @@ def test_torta_uses_side_legend_instead_of_on_slice_labels():
     _assert_valid_python(code)
     assert "labels=None" in code
     assert "_ax.legend(" in code
+
+
+def test_torta_legend_includes_percentage_for_every_slice():
+    """User feedback: on-slice autopct only shows a percentage for slices
+    >=3% (to avoid clutter) - small slices' percentages were invisible
+    anywhere. Every legend entry must carry its own percentage instead
+    (guaranteed legible regardless of slice count, unlike leader-line
+    labels around the pie which can still collide with enough categories)."""
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "_total = _chart_data.sum()" in code
+    assert "for name, val in _chart_data.items()" in code
+    assert "val / _total * 100" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    # A long tail of small slices past the top categories - exactly the
+    # shape where the old on-slice-only percentages went invisible.
+    namespace["df"] = pd.DataFrame(
+        {
+            "vendedor": [f"V{i}" for i in range(30)],
+            "neto": [1000] + [1] * 29,  # one dominant slice, 29 tiny ones
+        }
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]
 
 
 def test_torta_and_barras_use_a_qualitative_color_palette():
