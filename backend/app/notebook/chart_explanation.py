@@ -7,19 +7,22 @@ closed-set inputs {chart_type, columns, valueColumn} that
 chart_builder.build_chart_code() already turns into code, so it describes
 exactly what the generated code does - nothing it doesn't know.
 """
-from app.notebook.chart_builder import TOP_N_SLICES_FOR_TORTA
+from app.notebook.chart_builder import TOP_N_CATEGORIES_BEFORE_OTROS
 
-# Epic 7 code review: chart_builder.py's torta code (Story 7.4) always folds
-# everything past the top TOP_N_SLICES_FOR_TORTA categories into a single
-# "Otros" slice - this module has no access to real data (same constraint
-# chart_builder.py itself documents), so it can't say whether that actually
-# happened for a given chart, but it CAN state the static, always-true fact
-# about how torta behaves - better than silently describing a chart that
-# doesn't match what got drawn.
-_TORTA_OTROS_CAVEAT = (
-    f" Si hay más de {TOP_N_SLICES_FOR_TORTA} valores distintos, los más "
-    'pequeños se agrupan en una porción "Otros".'
-)
+# chart_builder.py's torta AND barras code always fold everything past the
+# top TOP_N_CATEGORIES_BEFORE_OTROS categories into a single "Otros" slice/bar
+# (Story 7.4, extended to barras once multi-column combinations - Story 7.2 -
+# made 80+ unique combinations common) - this module has no access to real
+# data (same constraint chart_builder.py itself documents), so it can't say
+# whether that actually happened for a given chart, but it CAN state the
+# static, always-true fact about how these two chart types behave - better
+# than silently describing a chart that doesn't match what got drawn.
+def _otros_caveat(chart_type):
+    noun = "porción" if chart_type == "torta" else "barra"
+    return (
+        f" Si hay más de {TOP_N_CATEGORIES_BEFORE_OTROS} valores distintos, los más "
+        f'pequeños se agrupan en una {noun} "Otros".'
+    )
 
 
 def build_chart_explanation(chart_type, columns, value_column):
@@ -31,8 +34,7 @@ def build_chart_explanation(chart_type, columns, value_column):
             text = f"Esta gráfica {kind} compara el total de {value_column} para cada valor de {label}."
         else:
             text = f"Esta gráfica {kind} muestra cuántas filas hay para cada valor de {label}."
-        if chart_type == "torta":
-            text += _TORTA_OTROS_CAVEAT
+        text += _otros_caveat(chart_type)
         return text
 
     if chart_type == "linea":

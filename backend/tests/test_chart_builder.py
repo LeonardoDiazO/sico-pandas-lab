@@ -3,6 +3,8 @@ import ast
 import pytest
 
 from app.notebook.chart_builder import (
+    HIGH_CARDINALITY_THRESHOLD,
+    TOP_N_CATEGORIES_BEFORE_OTROS,
     build_cardinality_check_code,
     build_chart_code,
     needs_cardinality_check,
@@ -154,20 +156,34 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     code (figsize + top-N-plus-Otros wrapper); the Epic 7 code review then
     added `.groupby(level=0, sort=False).sum().clip(lower=0)` (see
     test_torta_merges_duplicate_otros_label and
-    test_torta_clips_negative_values_before_plotting below) - this now pins
-    that final string, still guarding that the underlying grouping
-    expression (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is
-    unchanged."""
+    test_torta_clips_negative_values_before_plotting below); post-Epic-7,
+    TOP_N_CATEGORIES_BEFORE_OTROS was aligned with HIGH_CARDINALITY_THRESHOLD
+    (see test_top_n_before_otros_matches_cardinality_warning_threshold) -
+    this now pins that final string (using the live constant, not a bare
+    literal, so this test doesn't silently go stale if the threshold moves
+    again), still guarding that the underlying grouping expression
+    (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
+    n = TOP_N_CATEGORIES_BEFORE_OTROS
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
     assert code == (
-        "(lambda _s: _s if len(_s) <= 8 else "
-        "pd.concat([_s.iloc[:8], pd.Series({'Otros': _s.iloc[8:].sum()})]))"
+        f"(lambda _s: _s if len(_s) <= {n} else "
+        f"pd.concat([_s.iloc[:{n}], pd.Series({{'Otros': _s.iloc[{n}:].sum()}})]))"
         "(df.groupby('vendedor')['neto'].sum().sort_values(ascending=False))"
         ".groupby(level=0, sort=False).sum().clip(lower=0)"
         ".plot.pie(autopct='%1.1f%%', ylabel='', figsize=(8, 8))\n"
         "plt.title('neto por vendedor')\n"
         "plt.tight_layout()"
     )
+
+
+def test_top_n_before_otros_matches_cardinality_warning_threshold():
+    """Design decision (post-Epic-7, user feedback): "Otros" bucketing must
+    only kick in once the user has already seen and dismissed the
+    cardinality warning (Story 5.4) by clicking "Generar de todos modos" -
+    below HIGH_CARDINALITY_THRESHOLD, every category should render
+    individually, closing what used to be a silent 9-{old value} zone where
+    the chart bucketed categories the user was never warned about."""
+    assert TOP_N_CATEGORIES_BEFORE_OTROS == HIGH_CARDINALITY_THRESHOLD
 
 
 # --- Story 7.4: torta legibility (figsize + top-N-plus-Otros) ------------------
@@ -183,7 +199,7 @@ def test_torta_generated_code_includes_otros_bucketing_logic():
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
     assert "'Otros'" in code
-    assert "len(_s) <= 8" in code
+    assert f"len(_s) <= {TOP_N_CATEGORIES_BEFORE_OTROS}" in code
 
 
 def test_torta_with_multiple_columns_still_wraps_the_composite_expression():
@@ -208,7 +224,7 @@ def test_barras_gets_otros_bucketing_too():
     code = build_chart_code("barras", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
     assert "'Otros'" in code
-    assert "len(_s) <= 8" in code
+    assert f"len(_s) <= {TOP_N_CATEGORIES_BEFORE_OTROS}" in code
 
 
 def test_barras_never_gets_figsize_or_negative_value_clip():

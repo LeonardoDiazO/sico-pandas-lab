@@ -26,12 +26,22 @@ CHART_TYPES = {"torta", "barras", "linea", "histograma"}
 HIGH_CARDINALITY_THRESHOLD = 15
 _CARDINALITY_CHECK_TYPES = {"torta", "barras"}
 
-# Distinct from HIGH_CARDINALITY_THRESHOLD above: that one decides when to
-# WARN before generating at all (Story 5.4). This one decides how many
-# individual slices a torta actually draws once generation proceeds (Story
-# 7.4) - a pie chart is unreadable well before 15 slices, so the rest get
-# folded into a single "Otros" slice instead of rendering dozens of slivers.
-TOP_N_SLICES_FOR_TORTA = 8
+# This decides how many individual categories torta/barras actually draw
+# once generation proceeds (Story 7.4, extended to barras post-Epic-7 once
+# multi-column combinations - Story 7.2 - made it easy to blow past the
+# threshold with 80+ unique combinations) - the rest get folded into a
+# single "Otros" slice/bar instead of rendering dozens of illegible slivers
+# or bars.
+#
+# Deliberately equal to HIGH_CARDINALITY_THRESHOLD (post-Epic-7, user
+# feedback): "Otros" should only ever kick in once the user has already seen
+# the cardinality warning (Story 5.4) and clicked "Generar de todos modos"
+# anyway - below the threshold, every category renders individually, since
+# the user was never warned it might be a lot. Two independently-tuned
+# numbers here used to leave a silent 9-15 zone where a chart bucketed
+# categories the user had no idea were coming; tying them together closes
+# that gap instead of just re-picking another arbitrary constant.
+TOP_N_CATEGORIES_BEFORE_OTROS = HIGH_CARDINALITY_THRESHOLD
 
 
 def needs_cardinality_check(chart_type):
@@ -71,20 +81,22 @@ def build_chart_code(chart_type, variable, columns, value_column):
     if chart_type in ("torta", "barras"):
         series_expr = _grouped_series_expr(variable, columns, value_column)
         title = _title_for(columns, value_column)
+        series_expr = _limit_to_top_n_plus_others(series_expr, TOP_N_CATEGORIES_BEFORE_OTROS)
+        # Epic 7 code review: groupby(level=0).sum() folds a real category
+        # that happens to be named "Otros" together with the synthetic
+        # bucket (pd.concat() alone would otherwise leave two same-labeled
+        # entries) - applies to both chart types, since chart_builder.py
+        # never sees real data and this must live in the generated
+        # expression, same reasoning as _limit_to_top_n_plus_others itself.
+        series_expr = f"{series_expr}.groupby(level=0, sort=False).sum()"
         if chart_type == "torta":
-            series_expr = _limit_to_top_n_plus_others(series_expr, TOP_N_SLICES_FOR_TORTA)
-            # Epic 7 code review: two runtime-only failure modes pd.concat()
-            # alone doesn't cover (chart_builder.py never sees real data, so
-            # these must live in the generated expression, same reasoning as
-            # _limit_to_top_n_plus_others itself). groupby(level=0).sum()
-            # folds a real category that happens to be named "Otros" together
-            # with the synthetic bucket (pd.concat would otherwise leave two
-            # same-labeled wedges); clip(lower=0) prevents a negative tail sum
-            # (e.g. a signed "neto" column with more refunds than sales in the
-            # tail) from raising matplotlib's "pie plot doesn't allow negative
-            # values" - a pie chart has no meaningful way to show a negative
-            # slice, so it's floored to zero instead of crashing.
-            series_expr = f"{series_expr}.groupby(level=0, sort=False).sum().clip(lower=0)"
+            # clip(lower=0) prevents a negative tail sum (e.g. a signed
+            # "neto" column with more refunds than sales in the tail) from
+            # raising matplotlib's "pie plot doesn't allow negative values" -
+            # a pie chart has no meaningful way to show a negative slice, so
+            # it's floored to zero instead of crashing. A bar CAN meaningfully
+            # show a negative group total, so barras skips this.
+            series_expr = f"{series_expr}.clip(lower=0)"
             plot_call = ".plot.pie(autopct='%1.1f%%', ylabel='', figsize=(8, 8))"
         else:
             plot_call = ".plot.bar()"
