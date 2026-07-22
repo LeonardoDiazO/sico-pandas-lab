@@ -86,7 +86,7 @@ export interface ChallengeResult extends CellResult {
 }
 
 export interface CardinalityWarning {
-  column: string;
+  columns: string[];
   uniqueCount: number;
   threshold: number;
   suggestion: string;
@@ -95,6 +95,7 @@ export interface CardinalityWarning {
 export interface ChartResult extends CellResult {
   needsConfirmation: boolean;
   cardinalityWarning: CardinalityWarning | null;
+  explanation: string | null;
 }
 
 // Story 6.1: 'torta' | 'barras' | 'linea' | 'histograma' - mirrors ChartKind

@@ -113,6 +113,57 @@ def test_messy_excel_is_not_bound_until_confirmed(client):
     assert exec_body_2["data"]["result_text"] == "12"
 
 
+def test_confirm_excel_cleanup_excludes_selected_columns(client):
+    """New: the user can deselect columns they don't need on the cleanup
+    preview screen before confirming - those columns must not end up in the
+    bound DataFrame nor in the returned profile."""
+    messy_data = {"file": (_messy_xlsx_bytes(), "sucio.xlsx")}
+    client.post("/api/notebook/upload-excel", data=messy_data, content_type="multipart/form-data")
+
+    confirm_response = client.post(
+        "/api/notebook/confirm-excel-cleanup", json={"excludeColumns": ["cantidad"]}
+    )
+    confirm_body = confirm_response.get_json()
+    assert confirm_response.status_code == 200
+    assert confirm_body["success"] is True
+    confirmed = confirm_body["data"]
+    assert set(confirmed["columns"]) == {"vendedor", "neto"}
+    assert {c["name"] for c in confirmed["profile"]["columns"]} == {"vendedor", "neto"}
+
+    exec_response = client.post("/api/notebook/execute", json={"code": "list(df.columns)"})
+    exec_body = exec_response.get_json()
+    assert exec_body["data"]["error"] is None
+    assert "cantidad" not in exec_body["data"]["result_text"]
+
+
+def test_confirm_excel_cleanup_ignores_unknown_exclude_column_names(client):
+    messy_data = {"file": (_messy_xlsx_bytes(), "sucio.xlsx")}
+    client.post("/api/notebook/upload-excel", data=messy_data, content_type="multipart/form-data")
+
+    confirm_response = client.post(
+        "/api/notebook/confirm-excel-cleanup", json={"excludeColumns": ["no_existe"]}
+    )
+    confirm_body = confirm_response.get_json()
+    assert confirm_response.status_code == 200
+    assert set(confirm_body["data"]["columns"]) == {"vendedor", "neto", "cantidad"}
+
+
+def test_confirm_excel_cleanup_rejects_excluding_all_columns(client):
+    messy_data = {"file": (_messy_xlsx_bytes(), "sucio.xlsx")}
+    client.post("/api/notebook/upload-excel", data=messy_data, content_type="multipart/form-data")
+
+    confirm_response = client.post(
+        "/api/notebook/confirm-excel-cleanup",
+        json={"excludeColumns": ["vendedor", "neto", "cantidad"]},
+    )
+    assert confirm_response.status_code == 400
+    assert confirm_response.get_json()["success"] is False
+
+    # the pending upload must still be there to retry with a valid selection
+    retry_response = client.post("/api/notebook/confirm-excel-cleanup", json={"excludeColumns": []})
+    assert retry_response.get_json()["success"] is True
+
+
 def test_confirm_excel_cleanup_without_pending_upload_is_rejected(client):
     response = client.post("/api/notebook/confirm-excel-cleanup")
     body = response.get_json()
@@ -181,7 +232,7 @@ def test_generate_chart_returns_an_image_for_a_bound_dataframe(client):
 
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": "vendedor", "valueColumn": "neto", "chartType": "torta"},
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "chartType": "torta"},
     )
     body = response.get_json()
     assert response.status_code == 200
@@ -193,7 +244,7 @@ def test_generate_chart_returns_an_image_for_a_bound_dataframe(client):
 def test_generate_chart_histograma_without_value_column_is_rejected(client):
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": None, "valueColumn": None, "chartType": "histograma"},
+        json={"variable": "df", "columns": [], "valueColumn": None, "chartType": "histograma"},
     )
     assert response.status_code == 400
     assert response.get_json()["success"] is False
@@ -202,7 +253,7 @@ def test_generate_chart_histograma_without_value_column_is_rejected(client):
 def test_generate_chart_rejects_unknown_chart_type(client):
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": "vendedor", "valueColumn": None, "chartType": "scatter"},
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": None, "chartType": "scatter"},
     )
     assert response.status_code == 400
     assert response.get_json()["success"] is False
@@ -211,7 +262,7 @@ def test_generate_chart_rejects_unknown_chart_type(client):
 def test_generate_chart_for_missing_variable_surfaces_a_clean_error_not_500(client):
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df_no_existe", "column": "vendedor", "valueColumn": None, "chartType": "barras"},
+        json={"variable": "df_no_existe", "columns": ["vendedor"], "valueColumn": None, "chartType": "barras"},
     )
     body = response.get_json()
     assert response.status_code == 200
@@ -242,7 +293,7 @@ def test_generate_chart_cardinality_check_non_integer_result_is_a_clean_error(cl
 
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": "vendedor", "valueColumn": "neto", "chartType": "torta"},
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "chartType": "torta"},
     )
     assert response.status_code == 502
     assert response.get_json()["success"] is False
@@ -254,7 +305,7 @@ def test_generate_chart_warns_on_high_cardinality_before_generating(client):
 
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": "factura", "valueColumn": "neto", "chartType": "torta"},
+        json={"variable": "df", "columns": ["factura"], "valueColumn": "neto", "chartType": "torta"},
     )
     body = response.get_json()
     assert response.status_code == 200
@@ -262,7 +313,7 @@ def test_generate_chart_warns_on_high_cardinality_before_generating(client):
     data = body["data"]
     assert data["needsConfirmation"] is True
     assert data["image_base64"] is None
-    assert data["cardinalityWarning"]["column"] == "factura"
+    assert data["cardinalityWarning"]["columns"] == ["factura"]
     assert data["cardinalityWarning"]["uniqueCount"] == 20
     assert data["cardinalityWarning"]["threshold"] == 15
     assert data["cardinalityWarning"]["suggestion"]
@@ -276,7 +327,7 @@ def test_generate_chart_with_force_generates_despite_high_cardinality(client):
         "/api/notebook/generate-chart",
         json={
             "variable": "df",
-            "column": "factura",
+            "columns": ["factura"],
             "valueColumn": "neto",
             "chartType": "torta",
             "force": True,
@@ -295,7 +346,7 @@ def test_generate_chart_low_cardinality_never_warns(client):
 
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": "vendedor", "valueColumn": "neto", "chartType": "torta"},
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "chartType": "torta"},
     )
     data = response.get_json()["data"]
     assert data["needsConfirmation"] is False
@@ -313,11 +364,108 @@ def test_generate_chart_histograma_never_triggers_cardinality_warning(client):
 
     response = client.post(
         "/api/notebook/generate-chart",
-        json={"variable": "df", "column": None, "valueColumn": "neto", "chartType": "histograma"},
+        json={"variable": "df", "columns": [], "valueColumn": "neto", "chartType": "histograma"},
     )
     data = response.get_json()["data"]
     assert data["needsConfirmation"] is False
     assert data["image_base64"]
+
+
+def test_generate_chart_histograma_without_columns_key_succeeds(client):
+    """Regression test (Epic 7 code review) - histograma never uses grouping
+    columns (Story 5.2/5.3), so a caller that omits the `columns` field
+    entirely (the pre-Story-7.2 shape for this chart type) must still
+    succeed, not get a blanket 400 from the new list-shape validation."""
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={"variable": "df", "valueColumn": "neto", "chartType": "histograma"},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["data"]["error"] is None
+    assert body["data"]["image_base64"]
+
+
+# --- Story 7.2: multiple columns -----------------------------------------------
+
+
+def _two_categorical_columns_xlsx_bytes():
+    """Unlike _clean_xlsx_bytes() (only "vendedor"/"neto" - kept minimal so
+    other tests asserting its exact column list don't break), this fixture
+    has two categorical columns to group by together. Includes a second
+    numeric column ("cantidad") so at least half the row is numeric -
+    mostly-categorical rows can otherwise fool _detect_header_row()'s
+    data-vs-header walk (a pre-existing excel_profiler.py characteristic,
+    unrelated to this story - not something to fix here, just avoid tripping
+    it with an unnecessarily text-heavy fixture)."""
+    buf = io.BytesIO()
+    rows = [
+        {"vendedor": f"V{i % 3}", "sede": f"S{i % 2}", "cantidad": i + 1, "neto": 100.0 + i}
+        for i in range(10)
+    ]
+    pd.DataFrame(rows).to_excel(buf, index=False)
+    buf.seek(0)
+    return buf
+
+
+def test_generate_chart_with_multiple_categorical_columns_succeeds(client):
+    upload_data = {"file": (_two_categorical_columns_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={
+            "variable": "df",
+            "columns": ["vendedor", "sede"],
+            "valueColumn": "neto",
+            "chartType": "barras",
+        },
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["data"]["error"] is None
+    assert body["data"]["image_base64"]
+
+
+def test_generate_chart_linea_rejects_multiple_columns(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={
+            "variable": "df",
+            "columns": ["vendedor", "sede"],
+            "valueColumn": "neto",
+            "chartType": "linea",
+        },
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_generate_chart_cardinality_check_uses_combined_columns(client):
+    """Variant of test_generate_chart_warns_on_high_cardinality_before_generating
+    (Story 5.4) - with 2+ columns, the cardinality check must run over the
+    combination, not just the first column, so it can warn even when no
+    single selected column alone is high-cardinality."""
+    upload_data = {"file": (_high_cardinality_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={"variable": "df", "columns": ["factura", "neto"], "valueColumn": None, "chartType": "barras"},
+    )
+    body = response.get_json()
+    data = body["data"]
+    assert data["needsConfirmation"] is True
+    assert data["cardinalityWarning"]["columns"] == ["factura", "neto"]
+    assert data["cardinalityWarning"]["uniqueCount"] >= 20
 
 
 def test_no_usable_excel_is_not_bound_and_does_not_crash(client):
@@ -514,6 +662,46 @@ def test_interpret_chart_request_sessions_have_independent_limits(client, monkey
         headers={"X-Session-Id": "session-b"},
     )
     assert other_session.status_code == 200
+
+
+# --- Story 7.3: plain-language chart explanation ----------------------------------
+
+
+def test_generate_chart_response_includes_explanation_on_success(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "chartType": "torta"},
+    )
+    data = response.get_json()["data"]
+    assert data["explanation"]
+    assert "vendedor" in data["explanation"]
+    assert "neto" in data["explanation"]
+
+
+def test_generate_chart_explanation_is_null_when_cardinality_warning_blocks_generation(client):
+    upload_data = {"file": (_high_cardinality_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={"variable": "df", "columns": ["factura"], "valueColumn": "neto", "chartType": "torta"},
+    )
+    data = response.get_json()["data"]
+    assert data["needsConfirmation"] is True
+    assert data["explanation"] is None
+
+
+def test_generate_chart_explanation_is_null_on_execution_error(client):
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={"variable": "df_no_existe", "columns": ["vendedor"], "valueColumn": None, "chartType": "barras"},
+    )
+    data = response.get_json()["data"]
+    assert data["error"] is not None
+    assert data["explanation"] is None
 
 
 def test_interpret_chart_request_unavailable_does_not_permanently_consume_quota(client, monkeypatch):

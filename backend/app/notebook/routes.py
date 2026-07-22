@@ -14,6 +14,7 @@ from app.notebook.chart_builder import (
     build_chart_code,
     needs_cardinality_check,
 )
+from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
 from app.utils.api_response import api_response
 
@@ -107,14 +108,46 @@ def upload_excel():
     )
 
 
+def _valid_exclude_columns(exclude_columns):
+    """Optional list of column names the user deselected on the cleanup
+    preview screen - never required, `None`/absent means "keep everything"
+    (pre-existing behavior, unchanged)."""
+    if exclude_columns is None:
+        return True
+    return isinstance(exclude_columns, list) and all(isinstance(c, str) for c in exclude_columns)
+
+
 @notebook_bp.post("/confirm-excel-cleanup")
 def confirm_excel_cleanup():
+    payload = request.get_json(silent=True) or {}
+    exclude_columns = payload.get("excludeColumns")
+    if not _valid_exclude_columns(exclude_columns):
+        return api_response(
+            message="La lista de columnas a excluir no es válida.", success=False, status=400
+        )
+
     pending = _manager().pop_pending_upload(_session_id())
     if pending is None:
         return api_response(
             message="No hay ninguna limpieza pendiente por confirmar.", success=False, status=400
         )
     variable, df, profile = pending
+
+    valid_exclude = [c for c in (exclude_columns or []) if c in df.columns]
+    if valid_exclude:
+        if len(valid_exclude) >= len(df.columns):
+            # Restage so a bad selection doesn't lose the pending upload -
+            # same reasoning as the TimeoutError branch just below: the user
+            # must be able to retry without re-uploading from scratch.
+            _manager().stage_pending_upload(_session_id(), variable, df, profile)
+            return api_response(
+                message="No puedes excluir todas las columnas — debe quedar al menos una.",
+                success=False,
+                status=400,
+            )
+        df = df.drop(columns=valid_exclude)
+        profile = {**profile, "columns": [c for c in profile["columns"] if c["name"] not in valid_exclude]}
+
     try:
         _manager().bind(_session_id(), variable, df)
     except TimeoutError:
@@ -154,19 +187,42 @@ def _empty_cell_result():
     return {"stdout": "", "result_html": None, "result_text": None, "image_base64": None, "error": None}
 
 
-def _chart_response_data(result, needs_confirmation=False, cardinality_warning=None):
+def _chart_response_data(result, needs_confirmation=False, cardinality_warning=None, explanation=None):
     """Every /generate-chart response carries the same shape (CellResult plus
-    these two fields), whether or not a cardinality warning fired -- one
+    these fields), whether or not a cardinality warning fired -- one
     stable shape, a boolean discriminant, same pattern as `bound` on the
-    upload-excel response (Story 4.2)."""
-    return {**result, "needsConfirmation": needs_confirmation, "cardinalityWarning": cardinality_warning}
+    upload-excel response (Story 4.2). `explanation` (Story 7.3) is only
+    ever set by the success path below - null on cardinality-warning and
+    error responses, since there's no real chart to explain yet."""
+    return {
+        **result,
+        "needsConfirmation": needs_confirmation,
+        "cardinalityWarning": cardinality_warning,
+        "explanation": explanation,
+    }
+
+
+def _valid_columns_list(columns):
+    """`columns` must be a list of non-empty strings (possibly empty overall
+    for chart types that ignore it, e.g. histograma) - never a bare string
+    (that was the pre-7.2 shape; a caller sending the old `column: "x"`
+    payload should get a clear 400, not silently iterate its characters)."""
+    if not isinstance(columns, list):
+        return False
+    return all(isinstance(c, str) and c for c in columns)
 
 
 @notebook_bp.post("/generate-chart")
 def generate_chart():
     payload = request.get_json(silent=True) or {}
     variable = payload.get("variable")
-    column = payload.get("column")
+    # histograma ignores grouping columns entirely (Story 5.2/5.3), so a
+    # caller may omit `columns` altogether for it (pre-Story-7.2 shape) -
+    # treat a missing/None value the same as an explicit empty list rather
+    # than failing the isinstance(list) check below for every chart type.
+    columns = payload.get("columns")
+    if columns is None:
+        columns = []
     value_column = payload.get("valueColumn")
     chart_type = payload.get("chartType")
     force = payload.get("force") is True
@@ -175,15 +231,21 @@ def generate_chart():
         return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
     if chart_type not in CHART_TYPES:
         return api_response(message="Tipo de gráfica no reconocido.", success=False, status=400)
-    if chart_type != "histograma" and not column:
-        return api_response(message="Falta elegir una columna para agrupar.", success=False, status=400)
+    if not _valid_columns_list(columns):
+        return api_response(message="La lista de columnas para agrupar no es válida.", success=False, status=400)
+    if chart_type != "histograma" and not columns:
+        return api_response(message="Falta elegir al menos una columna para agrupar.", success=False, status=400)
+    if chart_type == "linea" and len(columns) > 1:
+        return api_response(
+            message="La gráfica de línea solo admite una columna de fecha.", success=False, status=400
+        )
     if chart_type == "histograma" and not value_column:
         return api_response(
             message="Falta elegir una columna de valor para el histograma.", success=False, status=400
         )
 
     if needs_cardinality_check(chart_type) and not force:
-        check_result = _manager().execute(_session_id(), build_cardinality_check_code(variable, column))
+        check_result = _manager().execute(_session_id(), build_cardinality_check_code(variable, columns))
         if check_result.get("error"):
             return api_response(
                 data=_chart_response_data(check_result), message="No se pudo generar la gráfica."
@@ -191,17 +253,18 @@ def generate_chart():
         try:
             unique_count = int(check_result["result_text"])
         except (TypeError, ValueError):
-            # nunique() on a Series always returns a plain int, so this should
-            # be unreachable - but result_text is a display-string channel
-            # (execution.py's repr()), not a typed contract, so guard it
-            # rather than let a surprise shape 500 the request.
+            # nunique()/drop_duplicates().shape[0] always return a plain int,
+            # so this should be unreachable - but result_text is a
+            # display-string channel (execution.py's repr()), not a typed
+            # contract, so guard it rather than let a surprise shape 500 the
+            # request.
             return api_response(
                 message="No se pudo calcular la cardinalidad de la columna.", success=False, status=502
             )
         if unique_count > HIGH_CARDINALITY_THRESHOLD:
             empty_result = _empty_cell_result()
             warning = {
-                "column": column,
+                "columns": columns,
                 "uniqueCount": unique_count,
                 "threshold": HIGH_CARDINALITY_THRESHOLD,
                 "suggestion": (
@@ -209,15 +272,17 @@ def generate_chart():
                     "o elige otra columna con menos valores distintos."
                 ),
             }
+            columns_label = " + ".join(columns)
             return api_response(
                 data=_chart_response_data(empty_result, needs_confirmation=True, cardinality_warning=warning),
-                message=f"'{column}' tiene {unique_count} valores distintos — la gráfica podría no verse bien.",
+                message=f"'{columns_label}' tiene {unique_count} valores distintos — la gráfica podría no verse bien.",
             )
 
-    code = build_chart_code(chart_type, variable, column, value_column)
+    code = build_chart_code(chart_type, variable, columns, value_column)
     result = _manager().execute(_session_id(), code)
+    explanation = None if result.get("error") else build_chart_explanation(chart_type, columns, value_column)
     return api_response(
-        data=_chart_response_data(result),
+        data=_chart_response_data(result, explanation=explanation),
         message="Gráfica generada." if not result.get("error") else "No se pudo generar la gráfica.",
     )
 

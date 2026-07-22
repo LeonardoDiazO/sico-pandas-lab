@@ -45,7 +45,9 @@ const CHART_TYPE_LABELS: Record<ChartKind, string> = {
 export class NoCodeChartComponent implements OnChanges {
   @Input() profile: ExcelProfileState | null = null;
 
-  selectedColumn: string | null = null;
+  // Story 7.2: multiple columns can be marked at once (checkboxes) to group
+  // by their combination - see chartTypeOptions for the compatibility rule.
+  selectedColumns: string[] = [];
   selectedValueColumn: string | null = null;
   selectedChartType: ChartKind | null = null;
   generating = false;
@@ -70,25 +72,26 @@ export class NoCodeChartComponent implements OnChanges {
     return this.profile?.columns.filter((c) => c.type === 'numerica') ?? [];
   }
 
+  private static readonly ALL_CHART_KINDS: ChartKind[] = ['torta', 'barras', 'linea', 'histograma'];
+
   get chartTypeOptions(): ChartTypeOption[] {
-    const kinds: ChartKind[] = [];
-    const column = this.profile?.columns.find((c) => c.name === this.selectedColumn);
-    if (column?.type === 'categorica') {
-      kinds.push('torta', 'barras');
-    } else if (column?.type === 'fecha') {
-      kinds.push('linea');
+    // By user request: the user picks whichever chart type they want, no
+    // pre-filtering by column-type compatibility (e.g. línea with a
+    // non-fecha column) - the backend already validates and returns a clear
+    // error message for combinations that don't make sense (routes.py's
+    // generate_chart), so hiding options here was a stricter, redundant
+    // rule the backend itself doesn't enforce. Only gate on "the user has
+    // selected *something*" so the initial empty state still nudges them.
+    if (this.selectedColumns.length === 0 && !this.selectedValueColumn) {
+      return [];
     }
-    if (this.selectedValueColumn) {
-      kinds.push('histograma');
-    }
-    return kinds.map((value) => ({ value, label: CHART_TYPE_LABELS[value] }));
+    return NoCodeChartComponent.ALL_CHART_KINDS.map((value) => ({ value, label: CHART_TYPE_LABELS[value] }));
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['profile']) {
-      if (!this.groupableColumns.some((c) => c.name === this.selectedColumn)) {
-        this.selectedColumn = null;
-      }
+      const groupable = new Set(this.groupableColumns.map((c) => c.name));
+      this.selectedColumns = this.selectedColumns.filter((name) => groupable.has(name));
       if (!this.numericColumns.some((c) => c.name === this.selectedValueColumn)) {
         this.selectedValueColumn = null;
       }
@@ -96,7 +99,13 @@ export class NoCodeChartComponent implements OnChanges {
     this.revalidateChartType();
   }
 
-  onColumnChange(): void {
+  toggleColumn(name: string): void {
+    const index = this.selectedColumns.indexOf(name);
+    if (index === -1) {
+      this.selectedColumns = [...this.selectedColumns, name];
+    } else {
+      this.selectedColumns = this.selectedColumns.filter((c) => c !== name);
+    }
     this.revalidateChartType();
   }
 
@@ -110,7 +119,7 @@ export class NoCodeChartComponent implements OnChanges {
 
   get canGenerate(): boolean {
     // Also blocked while the assistant is thinking: it may overwrite
-    // selectedColumn/selectedValueColumn/selectedChartType any moment via
+    // selectedColumns/selectedValueColumn/selectedChartType any moment via
     // applyInterpretation(), so generating from a selection that could be
     // replaced out from under the user is unsafe - see askAssistant().
     if (!this.profile || !this.selectedChartType || this.generating || this.interpreting) {
@@ -119,7 +128,7 @@ export class NoCodeChartComponent implements OnChanges {
     if (this.selectedChartType === 'histograma') {
       return !!this.selectedValueColumn;
     }
-    return !!this.selectedColumn;
+    return this.selectedColumns.length > 0;
   }
 
   generateChart(force = false): void {
@@ -131,7 +140,7 @@ export class NoCodeChartComponent implements OnChanges {
     this.notebook
       .generateChart(
         this.profile.variable,
-        this.selectedColumn,
+        this.selectedColumns,
         this.selectedValueColumn,
         this.selectedChartType,
         force,
@@ -164,6 +173,7 @@ export class NoCodeChartComponent implements OnChanges {
             },
             needsConfirmation: false,
             cardinalityWarning: null,
+            explanation: null,
           };
         },
       });
@@ -201,10 +211,13 @@ export class NoCodeChartComponent implements OnChanges {
     }
     // Never trust the backend answer blindly here either (third layer of
     // defense - see the story's Dev Notes) - only apply values that are
-    // still valid against the current selector options.
-    this.selectedColumn = this.groupableColumns.some((c) => c.name === interpretation.column)
-      ? interpretation.column
-      : null;
+    // still valid against the current selector options. The assistant
+    // (Story 6.1) still resolves to a single column - wrap it as a
+    // one-element list for the checkbox-based selection (Story 7.2 AC7).
+    this.selectedColumns =
+      interpretation.column && this.groupableColumns.some((c) => c.name === interpretation.column)
+        ? [interpretation.column]
+        : [];
     this.selectedValueColumn = this.numericColumns.some((c) => c.name === interpretation.valueColumn)
       ? interpretation.valueColumn
       : null;

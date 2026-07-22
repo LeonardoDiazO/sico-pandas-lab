@@ -29,15 +29,19 @@
     }
 
     @if (groupableColumns.length > 0) {
-      <label class="field">
-        <span class="field-label">Agrupar por columna:</span>
-        <select [(ngModel)]="selectedColumn" (ngModelChange)="onColumnChange()" [disabled]="interpreting">
-          <option [ngValue]="null">Elige una columna...</option>
-          @for (col of groupableColumns; track col.name) {
-            <option [ngValue]="col.name">{{ col.name }}</option>
-          }
-        </select>
-      </label>
+      <fieldset class="field checkbox-field" [disabled]="interpreting">
+        <legend class="field-label">Agrupar por columna(s):</legend>
+        @for (col of groupableColumns; track col.name) {
+          <label class="checkbox-option">
+            <input
+              type="checkbox"
+              [checked]="selectedColumns.includes(col.name)"
+              (change)="toggleColumn(col.name)"
+            />
+            {{ col.name }}
+          </label>
+        }
+      </fieldset>
     } @else {
       <p class="note">Este archivo no tiene columnas de categoría o fecha para agrupar.</p>
     }
@@ -75,7 +79,7 @@
     @if (cardinalityWarning) {
       <div class="cardinality-warning">
         <p>
-          <strong>{{ cardinalityWarning.column }}</strong> tiene {{ cardinalityWarning.uniqueCount }} valores distintos
+          <strong>{{ cardinalityWarning.columns.join(' + ') }}</strong> tiene {{ cardinalityWarning.uniqueCount }} valores/combinaciones distintas
           — con más de {{ cardinalityWarning.threshold }}, la gráfica puede salir ilegible.
         </p>
         <p class="note">{{ cardinalityWarning.suggestion }}</p>
@@ -90,6 +94,9 @@
         <p class="chart-error">No se pudo generar la gráfica: {{ chartResult.error.message }}</p>
       } @else if (chartResult.image_base64) {
         <img class="chart-image" [src]="'data:image/png;base64,' + chartResult.image_base64" alt="Gráfica generada" />
+        @if (chartResult.explanation) {
+          <p class="chart-explanation">{{ chartResult.explanation }}</p>
+        }
       }
     }
   }

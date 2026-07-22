@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { retry, timer } from 'rxjs';
 
@@ -32,6 +33,11 @@ export class DataSourcePanelComponent implements OnInit {
   pendingCleanup: { variable: string; profile: ExcelProfile } | null = null;
   cleanupBusy = false;
   unusableInfo: { detail: string } | null = null;
+
+  // Columns the user unchecked on the cleanup preview screen (kept by
+  // default - deselecting is opt-out, not opt-in) - sent to
+  // confirm-excel-cleanup so they never end up in the bound DataFrame.
+  excludedColumns = new Set<string>();
 
   constructor(private notebook: NotebookService) {}
 
@@ -98,6 +104,7 @@ export class DataSourcePanelComponent implements OnInit {
     this.excelBusy = true;
     this.pendingCleanup = null;
     this.unusableInfo = null;
+    this.excludedColumns = new Set<string>();
     this.notebook.uploadExcel(file, 'df').subscribe({
       next: (res) => {
         this.excelBusy = false;
@@ -113,6 +120,7 @@ export class DataSourcePanelComponent implements OnInit {
         } else if (profile.verdict === 'usable_con_limpieza') {
           // No se emite `loaded` todavía -- el DataFrame no está bindeado hasta confirmar (Story 4.2).
           this.pendingCleanup = { variable: res.data.variable, profile };
+          this.excludedColumns = new Set<string>();
         } else {
           // no_usable: bloque dedicado (UX-DR1), no el banner genérico de error.
           this.unusableInfo = { detail: profile.detail };
@@ -126,23 +134,41 @@ export class DataSourcePanelComponent implements OnInit {
     });
   }
 
+  toggleExcludeColumn(name: string): void {
+    if (this.excludedColumns.has(name)) {
+      this.excludedColumns.delete(name);
+    } else {
+      this.excludedColumns.add(name);
+    }
+  }
+
+  get keptColumnCount(): number {
+    return (this.pendingCleanup?.profile.columns.length ?? 0) - this.excludedColumns.size;
+  }
+
   confirmCleanup(): void {
-    if (!this.pendingCleanup) {
+    if (!this.pendingCleanup || this.keptColumnCount < 1) {
       return;
     }
     this.cleanupBusy = true;
-    this.notebook.confirmExcelCleanup().subscribe({
+    this.notebook.confirmExcelCleanup(Array.from(this.excludedColumns)).subscribe({
       next: (res) => {
         this.cleanupBusy = false;
         this.pendingCleanup = null;
+        this.excludedColumns = new Set<string>();
         this.emitMessage(res.message, res.success);
         if (res.success && res.data) {
           this.loaded.emit(res.data);
         }
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
+        // The pending upload survives a rejected confirm (e.g. "excluiste
+        // todas las columnas") on the backend - surface its specific
+        // message so the user knows what to fix, same pattern as
+        // no-code-chart's generateChart() error handling.
         this.cleanupBusy = false;
-        this.emitMessage('Ocurrió un error al confirmar la limpieza.', false);
+        const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
+        this.emitMessage(backendMessage ?? 'Ocurrió un error al confirmar la limpieza.', false);
       },
     });
   }
@@ -156,6 +182,7 @@ export class DataSourcePanelComponent implements OnInit {
       next: () => {
         this.cleanupBusy = false;
         this.pendingCleanup = null;
+        this.excludedColumns = new Set<string>();
       },
       error: () => {
         // Keep pendingCleanup as-is: the request may not have reached the
@@ -176,6 +203,7 @@ export class DataSourcePanelComponent implements OnInit {
     this.unusableInfo = null;
     this.cleanupBusy = false;
     this.excelBusy = false;
+    this.excludedColumns = new Set<string>();
   }
 
   private emitMessage(text: string, ok: boolean): void {

@@ -84,6 +84,76 @@ def _matecol_like_xlsx_bytes(n_invoices=15):
     return _to_xlsx_bytes(rows), n_invoices
 
 
+def _sparse_then_dense_xlsx_bytes():
+    """Synthetic reproduction of a real report's structure (Story 7.1) —
+    invented data only, no real client names/NIT/amounts. Shape: sparse
+    metadata rows, a blank row, a 10-column header, then a long run of data
+    rows where 4 of the 10 columns are empty (only 6 filled), followed by a
+    few rows where all 10 columns are filled. The sparse run is long enough
+    to dominate the header-detection scan window (MAX_HEADER_SCAN_ROWS +
+    HEADER_LOOKAHEAD_ROWS = 40), while the trailing dense rows keep the
+    file's overall column-count mode at 10 - reproducing the exact mismatch
+    between "local" and "global" typical width that caused the real bug.
+    """
+    rows = []
+    rows.append(["Hora .....:", "10:00:35"] + [None] * 8)
+    rows.append(["Fecha ...:", "2026-06-02", None, "REPORTE DETALLADO"] + [None] * 6)
+    rows.append(["Usuario :", "sist03"] + [None] * 8)
+    rows.append([None] * 10)
+    rows.append([
+        "Fecha", "Documento", "Consec", "Concepto", "Tipo Costo",
+        "Cant", "Valor/Unit", "Codigo", "Descripcion", "Valor Total",
+    ])
+
+    sparse_rows = []
+    for i in range(45):
+        # Documento, Concepto, Tipo Costo, Codigo left empty - matches the
+        # real file's data-entry pattern for this region of the report.
+        sparse_rows.append([
+            20260602, None, i + 1, None, None,
+            1, 1000.0 + i, None, f"CLIENTE INVENTADO {i}", 1000.0 + i,
+        ])
+    rows.extend(sparse_rows)
+
+    # Outnumber the sparse rows so the GLOBAL mode of non-null-cell-counts
+    # across the whole file is 10 (dense), even though the scan window right
+    # after the header (MAX_HEADER_SCAN_ROWS + HEADER_LOOKAHEAD_ROWS = 40
+    # rows) is entirely sparse (width 6) - this mismatch between the local
+    # and global typical width is exactly what caused the real bug.
+    dense_rows = []
+    for i in range(200):
+        dense_rows.append([
+            20260603, f"DOC{i:04d}", 46 + i, "CONCEPTO X", "TIPO Y",
+            1, 2000.0 + i, f"COD{i:03d}", f"CLIENTE INVENTADO {i}", 2000.0 + i,
+        ])
+    rows.extend(dense_rows)
+
+    return _to_xlsx_bytes(rows), len(sparse_rows) + len(dense_rows)
+
+
+def _tied_local_width_xlsx_bytes():
+    """Epic 7 code review regression fixture: the LOCAL sample window
+    (MAX_HEADER_SCAN_ROWS + HEADER_LOOKAHEAD_ROWS = 40 rows) can itself be
+    evenly split between a sparse metadata preamble and the real
+    header+data - a tie between two candidate "typical widths". Story 7.1's
+    fix took `width_counts.mode().iloc[0]`, which on a tie picks the
+    *smallest* mode value first (pandas sorts ascending) - i.e. the sparse
+    metadata width, not the real data width. Shape: 20 metadata rows (width
+    2 out of 10), then a width-10 header + 19 width-10 data rows (exactly
+    filling the rest of the 40-row window: 20 + 1 + 19 = 40), then more
+    width-10 data rows beyond the window.
+    """
+    rows = []
+    for i in range(20):
+        rows.append([f"Etiqueta{i}:", f"valor{i}"] + [None] * 8)
+    rows.append([f"col{i}" for i in range(10)])
+    for i in range(19):
+        rows.append([i] * 10)
+    for i in range(200):
+        rows.append([i] * 10)
+    return _to_xlsx_bytes(rows)
+
+
 def test_clean_excel_is_usable_with_header_at_row_zero():
     result = profile_excel(_Upload("limpio.xlsx", _clean_xlsx_bytes()))
     assert result["verdict"] == "usable"
@@ -107,6 +177,31 @@ def test_matecol_like_file_is_usable_con_limpieza():
     assert result["detail"]
     assert result["dataframe"] is not None
     assert len(result["dataframe"]) == n_invoices
+
+
+def test_sparse_data_region_after_header_is_still_detected():
+    """Regression test (Story 7.1) - a header + valid data must not be
+    rejected just because the data body starts out with fewer non-empty
+    columns per row than the file's overall (later) steady state."""
+    xlsx, n_rows = _sparse_then_dense_xlsx_bytes()
+    result = profile_excel(_Upload("reporte.xlsx", xlsx))
+    assert result["verdict"] in ("usable", "usable_con_limpieza")
+    assert result["header_row_index"] == 4
+    assert result["columns"]
+    assert result["dataframe"] is not None
+    assert len(result["dataframe"]) == n_rows
+
+
+def test_tied_local_width_prefers_the_wider_candidate():
+    """Regression test (Epic 7 code review) - when the local sample window
+    is evenly split between a sparse metadata preamble and the real header
+    + data, typical_width must resolve to the wider (data) candidate, not
+    whichever mode value sorts first."""
+    xlsx = _tied_local_width_xlsx_bytes()
+    result = profile_excel(_Upload("empatado.xlsx", xlsx))
+    assert result["header_row_index"] == 20
+    assert result["dataframe"] is not None
+    assert len(result["dataframe"]) == 219
 
 
 def test_empty_file_is_no_usable():

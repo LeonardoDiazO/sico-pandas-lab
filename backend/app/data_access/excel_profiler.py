@@ -137,10 +137,27 @@ def _detect_header_row(raw):
         return None
 
     non_null_counts = raw.notna().sum(axis=1)
-    width_counts = non_null_counts.mode()
-    if width_counts.empty or width_counts.iloc[0] == 0:
+
+    # "typical width" is estimated from a LOCAL sample - the same bounded
+    # range (MAX_HEADER_SCAN_ROWS + HEADER_LOOKAHEAD_ROWS) the rest of this
+    # function already scans - rather than the GLOBAL mode across the whole
+    # file. A real report's data body can start out sparser than its
+    # steady-state further down (optional fields only populated later);
+    # using the global mode as "typical width" required a density the
+    # file's own early rows might never reach, wrongly rejecting files with
+    # a perfectly valid header and data.
+    sample_end = min(MAX_HEADER_SCAN_ROWS + HEADER_LOOKAHEAD_ROWS, n_rows)
+    local_counts = non_null_counts.iloc[:sample_end]
+    width_counts = local_counts.mode()
+    if width_counts.empty or width_counts.max() == 0:
         return None
-    typical_width = width_counts.iloc[0]
+    # On a tie (e.g. a sparse metadata preamble and the real header+data
+    # rows evenly splitting the local window), prefer the WIDER candidate:
+    # real data rows fill more columns than metadata/label rows, so the
+    # wider mode is the more reliable proxy for "typical data width" -
+    # mode() sorts ascending, so the narrower (wrong) candidate would win if
+    # this just took the first entry.
+    typical_width = width_counts.max()
     dense_threshold = typical_width * DATA_WIDTH_RATIO
 
     scan_limit = min(MAX_HEADER_SCAN_ROWS, n_rows)

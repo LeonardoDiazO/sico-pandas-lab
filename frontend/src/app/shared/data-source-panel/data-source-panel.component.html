@@ -11,15 +11,27 @@
     <div class="cleanup-preview">
       <p class="note">
         Tu archivo necesita una limpieza antes de usarse. Encabezado detectado en la fila
-        {{ pendingCleanup.profile.headerRowIndex! + 1 }}, con estas columnas:
+        {{ pendingCleanup.profile.headerRowIndex! + 1 }}, con estas columnas — desmarca las que no necesites:
       </p>
       <ul class="cleanup-columns">
         @for (col of pendingCleanup.profile.columns; track col.name) {
-          <li><strong>{{ col.name }}</strong> — {{ col.type }}</li>
+          <li>
+            <label class="checkbox-option">
+              <input
+                type="checkbox"
+                [checked]="!excludedColumns.has(col.name)"
+                (change)="toggleExcludeColumn(col.name)"
+              />
+              <strong>{{ col.name }}</strong> — {{ col.type }}
+            </label>
+          </li>
         }
       </ul>
+      @if (keptColumnCount < 1) {
+        <p class="note cleanup-warning">Debe quedar al menos una columna marcada.</p>
+      }
       <div class="cleanup-actions">
-        <button class="load-btn" (click)="confirmCleanup()" [disabled]="cleanupBusy">
+        <button class="load-btn" (click)="confirmCleanup()" [disabled]="cleanupBusy || keptColumnCount < 1">
           {{ cleanupBusy ? 'aplicando…' : 'Confirmar y continuar' }}
         </button>
         <button class="link" (click)="cancelCleanup()" [disabled]="cleanupBusy">Cancelar</button>

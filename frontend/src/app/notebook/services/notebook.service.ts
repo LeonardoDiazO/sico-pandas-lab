@@ -34,8 +34,10 @@ export class NotebookService {
     return this.http.post<ApiResponse<LoadResult>>(`${this.base}/api/notebook/upload-excel`, form);
   }
 
-  confirmExcelCleanup(): Observable<ApiResponse<LoadResult>> {
-    return this.http.post<ApiResponse<LoadResult>>(`${this.base}/api/notebook/confirm-excel-cleanup`, {});
+  confirmExcelCleanup(excludeColumns: string[] = []): Observable<ApiResponse<LoadResult>> {
+    return this.http.post<ApiResponse<LoadResult>>(`${this.base}/api/notebook/confirm-excel-cleanup`, {
+      excludeColumns,
+    });
   }
 
   cancelExcelCleanup(): Observable<ApiResponse<unknown>> {
@@ -44,14 +46,14 @@ export class NotebookService {
 
   generateChart(
     variable: string,
-    column: string | null,
+    columns: string[],
     valueColumn: string | null,
     chartType: string,
     force = false,
   ): Observable<ApiResponse<ChartResult>> {
     return this.http.post<ApiResponse<ChartResult>>(`${this.base}/api/notebook/generate-chart`, {
       variable,
-      column,
+      columns,
       valueColumn,
       chartType,
       force,

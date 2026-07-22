@@ -36,6 +36,30 @@
   max-width: none;
 }
 
+.checkbox-field {
+  border: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: #2a2f5b;
+  padding: 0.15rem 0;
+  cursor: pointer;
+
+  input[type='checkbox'] {
+    cursor: pointer;
+  }
+}
+
 .assistant-row {
   display: flex;
   gap: 0.5rem;
@@ -127,4 +151,11 @@ select {
   max-width: 100%;
   border: 1px solid #dfe0ff;
   border-radius: 6px;
+}
+
+.chart-explanation {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  color: #2a2f5b;
+  font-style: italic;
 }
