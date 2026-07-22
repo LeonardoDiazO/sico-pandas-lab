@@ -97,25 +97,66 @@ def build_chart_code(chart_type, variable, columns, value_column):
             # it's floored to zero instead of crashing. A bar CAN meaningfully
             # show a negative group total, so barras skips this.
             series_expr = f"{series_expr}.clip(lower=0)"
-            plot_call = ".plot.pie(autopct='%1.1f%%', ylabel='', figsize=(8, 8))"
+        # `_chart_data` names the final series once (instead of chaining
+        # .plot.* directly onto the expression above) so the styling lines
+        # below can reference it - both for its length (color count) and,
+        # for torta, its index (legend labels) (user feedback: charts with
+        # up to TOP_N_CATEGORIES_BEFORE_OTROS+1 long composite labels were
+        # unreadable with matplotlib's flat single-color defaults).
+        lines = [f"_chart_data = {series_expr}"]
+        if chart_type == "torta":
+            lines += [
+                "_fig, _ax = plt.subplots(figsize=(11, 8))",
+                "_wedges, _texts, _autotexts = _ax.pie("
+                "_chart_data.values, labels=None, "
+                "autopct=lambda p: f'{p:.1f}%' if p >= 3 else '', "
+                "colors=plt.get_cmap('tab20').colors[:len(_chart_data)], pctdistance=0.8)",
+                # Category names move to a side legend instead of on-slice
+                # labels - with up to 16 long composite labels (Story 7.2),
+                # on-slice labels stack and overlap into an unreadable mess.
+                "_ax.legend(_wedges, _chart_data.index, loc='center left', "
+                "bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
+            ]
         else:
-            plot_call = ".plot.bar()"
-        return f"{series_expr}{plot_call}\nplt.title({title!r})\nplt.tight_layout()"
+            lines += [
+                "_ax = _chart_data.plot.bar(figsize=(10, 7), "
+                "color=plt.get_cmap('tab20').colors[:len(_chart_data)])",
+                # Plain thousands-separated numbers instead of matplotlib's
+                # default "1e8"-style scientific notation on the y-axis.
+                "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _pos: f'{x:,.0f}'))",
+                # Long composite labels (Story 7.2) get truncated for the
+                # x-axis specifically - this only changes the tick text, not
+                # the underlying data/legend/exported values.
+                "_ax.set_xticklabels(["
+                "_t.get_text()[:28] + ('…' if len(_t.get_text()) > 28 else '') "
+                "for _t in _ax.get_xticklabels()], rotation=45, ha='right')",
+            ]
+        lines.append(_bold_title_line(title))
+        lines.append("plt.tight_layout()")
+        return "\n".join(lines)
 
     if chart_type == "linea":
         column = columns[0]
-        dates_expr = f"pd.to_datetime({variable}[{column!r}], errors='coerce')"
+        # astype(str) before parsing - a "fecha" column stored as a bare
+        # integer YYYYMMDD (e.g. 20260602, the exact shape
+        # excel_profiler.py's own DATE_YYYYMMDD_PATTERN already recognizes)
+        # gets misparsed by pd.to_datetime() as nanoseconds-since-epoch when
+        # passed the raw int, producing a garbage ~1970 date instead of the
+        # real one - casting to str first (same pattern excel_profiler.py
+        # itself uses to detect these columns) fixes it without changing
+        # behavior for already-string or already-Timestamp columns.
+        dates_expr = f"pd.to_datetime({variable}[{column!r}].astype(str), errors='coerce')"
         if value_column:
             series_expr = f"{variable}.groupby({dates_expr}.dt.date)[{value_column!r}].sum()"
             title = f"{value_column} por {column}"
         else:
             series_expr = f"{dates_expr}.value_counts().sort_index()"
             title = f"Cantidad de filas por {column}"
-        return f"{series_expr}.plot.line()\nplt.title({title!r})\nplt.tight_layout()"
+        return f"{series_expr}.plot.line()\n{_bold_title_line(title)}\nplt.tight_layout()"
 
     # histograma: distribution of a single numeric column, grouping columns ignored
     title = f"Distribución de {value_column}"
-    return f"{variable}[{value_column!r}].plot.hist()\nplt.title({title!r})\nplt.tight_layout()"
+    return f"{variable}[{value_column!r}].plot.hist()\n{_bold_title_line(title)}\nplt.tight_layout()"
 
 
 def _grouping_expr(variable, columns):
@@ -157,6 +198,14 @@ def _limit_to_top_n_plus_others(series_expr, top_n):
         f"pd.concat([_s.iloc[:{top_n}], pd.Series({{'Otros': _s.iloc[{top_n}:].sum()}})]))"
         f"({series_expr})"
     )
+
+
+def _bold_title_line(title):
+    """Shared styling for every chart type's title - bold, slightly larger
+    than matplotlib's default, so the four chart types read as one
+    consistent, professional-looking product instead of each carrying
+    matplotlib's plain default title."""
+    return f"plt.title({title!r}, fontsize=13, fontweight='bold')"
 
 
 def _title_for(columns, value_column):

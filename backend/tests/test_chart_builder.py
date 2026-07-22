@@ -21,27 +21,27 @@ def test_torta_with_value_column_groups_and_sums():
     assert "groupby('vendedor')" in code
     assert "['neto']" in code
     assert ".sum()" in code
-    assert ".plot.pie(" in code
+    assert "_ax.pie(" in code
 
 
 def test_torta_without_value_column_counts_rows():
     code = build_chart_code("torta", "df", ["vendedor"], None)
     _assert_valid_python(code)
     assert "value_counts()" in code
-    assert ".plot.pie(" in code
+    assert "_ax.pie(" in code
 
 
 def test_barras_with_value_column():
     code = build_chart_code("barras", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
-    assert ".plot.bar()" in code
+    assert ".plot.bar(" in code
 
 
 def test_barras_without_value_column():
     code = build_chart_code("barras", "df", ["vendedor"], None)
     _assert_valid_python(code)
     assert "value_counts()" in code
-    assert ".plot.bar()" in code
+    assert ".plot.bar(" in code
 
 
 def test_linea_converts_date_column_without_fixed_format():
@@ -51,6 +51,39 @@ def test_linea_converts_date_column_without_fixed_format():
     assert "errors='coerce'" in code
     assert "format=" not in code
     assert ".plot.line()" in code
+
+
+def test_linea_casts_to_string_before_parsing_so_yyyymmdd_integers_work():
+    """Bug found while visually reviewing generated charts: a 'fecha' column
+    stored as a bare integer YYYYMMDD (e.g. 20260602 - the exact shape
+    excel_profiler.py's own DATE_YYYYMMDD_PATTERN already recognizes and
+    classifies as "fecha") gets misparsed by pd.to_datetime() when passed
+    the raw int - pandas treats a bare number as nanoseconds-since-epoch,
+    producing a garbage date near 1970 instead of 2026. Casting to str
+    first (same pattern excel_profiler.py itself uses to detect these
+    columns - astype(str) then parse) fixes it, and still coerces real
+    garbage values to NaT same as before."""
+    code = build_chart_code("linea", "df", ["dia"], "neto")
+    _assert_valid_python(code)
+    assert "pd.to_datetime(df['dia'].astype(str), errors='coerce')" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"dia": [20260601, 20260602, 20260603], "neto": [100.0, 200.0, 150.0]}
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]
+
+    parsed = pd.to_datetime(namespace["df"]["dia"].astype(str), errors="coerce")
+    assert parsed.dt.year.eq(2026).all()  # not ~1970, the pre-fix garbage result
 
 
 def test_histograma_ignores_grouping_column_uses_only_value_column():
@@ -126,7 +159,7 @@ def test_torta_with_two_categorical_columns_builds_composite_grouping_key():
     assert "['vendedor', 'mes']" in code
     assert ".astype(str).agg(' - '.join, axis=1)" in code
     assert "value_counts()" in code
-    assert ".plot.pie(" in code
+    assert "_ax.pie(" in code
 
 
 def test_multi_column_grouping_key_fills_missing_values_instead_of_literal_nan():
@@ -147,31 +180,37 @@ def test_barras_with_multiple_columns_and_value_column_groups_by_combination():
     assert "groupby(" in code
     assert "['neto']" in code
     assert ".sum()" in code
-    assert ".plot.bar()" in code
+    assert ".plot.bar(" in code
 
 
 def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     """Was pinned exactly for AC3 (Story 7.2) to guard the multi-column
     refactor's one-column path. Story 7.4 intentionally changed the torta
     code (figsize + top-N-plus-Otros wrapper); the Epic 7 code review then
-    added `.groupby(level=0, sort=False).sum().clip(lower=0)` (see
-    test_torta_merges_duplicate_otros_label and
-    test_torta_clips_negative_values_before_plotting below); post-Epic-7,
+    added `.groupby(level=0, sort=False).sum().clip(lower=0)`; post-Epic-7,
     TOP_N_CATEGORIES_BEFORE_OTROS was aligned with HIGH_CARDINALITY_THRESHOLD
-    (see test_top_n_before_otros_matches_cardinality_warning_threshold) -
-    this now pins that final string (using the live constant, not a bare
-    literal, so this test doesn't silently go stale if the threshold moves
-    again), still guarding that the underlying grouping expression
+    (see test_top_n_before_otros_matches_cardinality_warning_threshold); and
+    the "professional look" pass (user feedback) replaced the bare
+    `.plot.pie(...)` one-liner with an explicit `_ax.pie(...)` + side legend
+    + `plt.subplots(figsize=(11, 8))` + bold title - this now pins that
+    final string (using the live constant, not a bare literal, so this test
+    doesn't silently go stale if the threshold moves again), still guarding
+    that the underlying grouping expression
     (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
     n = TOP_N_CATEGORIES_BEFORE_OTROS
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
     assert code == (
-        f"(lambda _s: _s if len(_s) <= {n} else "
+        f"_chart_data = (lambda _s: _s if len(_s) <= {n} else "
         f"pd.concat([_s.iloc[:{n}], pd.Series({{'Otros': _s.iloc[{n}:].sum()}})]))"
         "(df.groupby('vendedor')['neto'].sum().sort_values(ascending=False))"
-        ".groupby(level=0, sort=False).sum().clip(lower=0)"
-        ".plot.pie(autopct='%1.1f%%', ylabel='', figsize=(8, 8))\n"
-        "plt.title('neto por vendedor')\n"
+        ".groupby(level=0, sort=False).sum().clip(lower=0)\n"
+        "_fig, _ax = plt.subplots(figsize=(11, 8))\n"
+        "_wedges, _texts, _autotexts = _ax.pie(_chart_data.values, labels=None, "
+        "autopct=lambda p: f'{p:.1f}%' if p >= 3 else '', "
+        "colors=plt.get_cmap('tab20').colors[:len(_chart_data)], pctdistance=0.8)\n"
+        "_ax.legend(_wedges, _chart_data.index, loc='center left', "
+        "bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
+        "plt.title('neto por vendedor', fontsize=13, fontweight='bold')\n"
         "plt.tight_layout()"
     )
 
@@ -192,7 +231,7 @@ def test_top_n_before_otros_matches_cardinality_warning_threshold():
 def test_torta_always_has_a_larger_figsize():
     code = build_chart_code("torta", "df", ["vendedor"], None)
     _assert_valid_python(code)
-    assert "figsize=(8, 8)" in code
+    assert "figsize=(11, 8)" in code
 
 
 def test_torta_generated_code_includes_otros_bucketing_logic():
@@ -227,15 +266,90 @@ def test_barras_gets_otros_bucketing_too():
     assert f"len(_s) <= {TOP_N_CATEGORIES_BEFORE_OTROS}" in code
 
 
-def test_barras_never_gets_figsize_or_negative_value_clip():
-    """figsize is torta's "amontonada" fix specifically (AC1, Story 7.4) -
-    barras never needed it. clip(lower=0) exists only because a pie slice
-    can't be negative (Epic 7 code review); a bar chart can meaningfully
-    show a negative group total, so barras must never floor it."""
+def test_barras_gets_its_own_figsize_but_never_negative_value_clip():
+    """barras now gets its own figsize too (professional-look pass, user
+    feedback) - distinct from torta's (11, 8), which needs the extra width
+    for the side legend; barras doesn't have a legend, so (10, 7) is enough
+    room for rotated x-axis labels. clip(lower=0) still stays torta-only:
+    it exists only because a pie slice can't be negative (Epic 7 code
+    review); a bar chart can meaningfully show a negative group total."""
     code = build_chart_code("barras", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
-    assert "figsize" not in code
+    assert "figsize=(10, 7)" in code
     assert "clip(lower=0)" not in code
+
+
+# --- Professional-look pass (user feedback): palette, legends, axis format ----
+
+
+def test_torta_uses_side_legend_instead_of_on_slice_labels():
+    """Up to TOP_N_CATEGORIES_BEFORE_OTROS+1 long composite labels (Story
+    7.2) directly on pie slices overlap into an unreadable stack - they move
+    to a side legend instead."""
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "labels=None" in code
+    assert "_ax.legend(" in code
+
+
+def test_torta_and_barras_use_a_qualitative_color_palette():
+    for chart_type in ("torta", "barras"):
+        code = build_chart_code(chart_type, "df", ["vendedor"], "neto")
+        _assert_valid_python(code)
+        assert "plt.get_cmap('tab20')" in code
+
+
+def test_barras_formats_y_axis_without_scientific_notation():
+    code = build_chart_code("barras", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "FuncFormatter" in code
+
+
+def test_barras_truncates_long_x_axis_labels():
+    code = build_chart_code("barras", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "set_xticklabels(" in code
+    assert "[:28]" in code
+
+
+def test_every_generated_code_has_a_bold_title():
+    for chart_type, columns, value_column in [
+        ("torta", ["vendedor"], "neto"),
+        ("barras", ["vendedor"], None),
+        ("linea", ["dia"], "neto"),
+        ("histograma", [], "neto"),
+    ]:
+        code = build_chart_code(chart_type, "df", columns, value_column)
+        _assert_valid_python(code)
+        assert "fontweight='bold'" in code
+
+
+def test_professional_look_torta_and_barras_run_end_to_end_without_error():
+    """String assertions above check the generated code contains the right
+    calls - this executes it for real against a synthetic DataFrame (same
+    empirical-verification standard as the Epic 7 review's runtime-safety
+    tests) to catch anything only a real matplotlib/pandas call would
+    surface (a typo in a kwarg name, an incompatible argument combination)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    df = pd.DataFrame(
+        {
+            "vendedor": [f"V{i}" for i in range(20)] * 3,
+            "neto": [100 - i for i in range(20)] * 3,
+        }
+    )
+    for chart_type in ("torta", "barras"):
+        namespace = build_namespace()
+        namespace["df"] = df
+        code = build_chart_code(chart_type, "df", ["vendedor"], "neto")
+        result = execute_code(code, namespace)
+        assert result["error"] is None
+        assert result["image_base64"]
 
 
 def test_barras_merges_duplicate_otros_label_too():
