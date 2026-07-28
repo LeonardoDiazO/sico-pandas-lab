@@ -92,12 +92,14 @@ export class NoCodeChartComponent implements OnChanges {
     if (changes['profile']) {
       const groupable = new Set(this.groupableColumns.map((c) => c.name));
       this.selectedColumns = this.selectedColumns.filter((name) => groupable.has(name));
-      // Smart default: only fills in when nothing survived the filter above
-      // (a genuinely fresh/empty selection) - never overrides a selection
-      // the user already made.
-      if (this.selectedColumns.length === 0 && this.groupableColumns.length > 0) {
-        this.selectedColumns = [this.groupableColumns[0].name];
-      }
+      // Reverted: auto-picking groupableColumns[0] regardless of type broke
+      // línea whenever the first groupable column in the file wasn't a
+      // "fecha" column (e.g. a junk placeholder column appearing before the
+      // real date column) - the user would get línea silently trying to
+      // parse a non-date column. The value-column default below is what
+      // actually fixed the reported bug (forgetting to pick a value column)
+      // without this type-mismatch risk, so grouping-column selection stays
+      // manual.
       if (!this.numericColumns.some((c) => c.name === this.selectedValueColumn)) {
         // Smart default (user feedback, real bug: a "línea"/"torta"/"barras"
         // chart generated with no value column silently switches to

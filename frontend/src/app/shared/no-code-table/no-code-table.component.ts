@@ -79,10 +79,12 @@ export class NoCodeTableComponent implements OnChanges {
       }
       const groupable = new Set(this.groupableColumns.map((c) => c.name));
       this.selectedGroupColumns = this.selectedGroupColumns.filter((name) => groupable.has(name));
-      // Smart default: only fills in when nothing survived the filter above.
-      if (this.selectedGroupColumns.length === 0 && this.groupableColumns.length > 0) {
-        this.selectedGroupColumns = [this.groupableColumns[0].name];
-      }
+      // Reverted: auto-picking groupableColumns[0] regardless of type/
+      // meaning (e.g. a junk placeholder column that happens to sort first)
+      // produced a confusing first summary nobody asked for - same reasoning
+      // that reverted this default in no-code-chart.component.ts (real bug:
+      // it broke línea there by picking a non-"fecha" column). Grouping
+      // selection stays manual; only the value-column default below is kept.
       this.sortResult = null;
       this.summaryResult = null;
     }

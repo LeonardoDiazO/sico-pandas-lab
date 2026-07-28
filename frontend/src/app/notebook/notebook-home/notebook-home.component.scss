@@ -1,7 +1,12 @@
 .notebook {
-  max-width: 900px;
+  // Widened from 900px (user feedback: charts/tables were squeezed into a
+  // narrow centered column instead of using the available screen width) -
+  // 1600px gives real room for a wide bar chart or a summary table with
+  // several columns, while still capping on very wide/ultrawide monitors so
+  // lines of code/text don't stretch to unreadable widths.
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 1.5rem 1rem;
+  padding: 1.5rem 2rem;
 }
 
 .toolbar {
