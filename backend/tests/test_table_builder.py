@@ -218,7 +218,7 @@ def test_summary_pareto_runs_end_to_end_marks_the_right_row_and_prints_insight()
     assert result["error"] is None
     html = result["result_html"]
     assert html is not None
-    assert html.count("← aquí se cruza el 80%") == 1
+    assert html.count("✓ ← 80% aquí") == 1
 
     stdout = result["stdout"]
     assert "3 de 4" in stdout
@@ -293,3 +293,43 @@ def test_summary_zero_total_does_not_produce_inf_or_nan():
     assert "inf" not in result["result_html"]
     assert "nan" not in result["result_html"]
     assert "inf" not in result["stdout"]
+
+
+def test_summary_pareto_matches_the_canonical_abcde_example():
+    """Reference example the user gave directly (A/B/C/D/E clients,
+    $50k/$20k/$15k/$10k/$5k) - A+B+C = 85% of the $100k total, so exactly 3
+    of 5 clients are needed to cross 80%. Locks in this exact worked example
+    as a permanent regression case, same role the Matecol fixture plays for
+    excel_profiler.py."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["A", "B", "C", "D", "E"],
+            "facturacion": [50000, 20000, 15000, 10000, 5000],
+        }
+    )
+    code = build_summary_code("df", ["cliente"], "facturacion")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["stdout"] == "3 de 5 categorías concentran el 85% del total.\n"
+    html = result["result_html"]
+    assert html.count("✓ ← 80% aquí") == 1
+    # User feedback: a single arrow buried in a long table (80+ real rows)
+    # was easy to miss/misread - every row from the top through the
+    # crossing row now gets a plain checkmark too, so the "top 80%" reads
+    # as one visually obvious block instead of one lonely marker.
+    row_a = html[html.index(">A<") : html.index("</tr>", html.index(">A<"))]
+    row_b = html[html.index(">B<") : html.index("</tr>", html.index(">B<"))]
+    row_d = html[html.index(">D<") : html.index("</tr>", html.index(">D<"))]
+    row_e = html[html.index(">E<") : html.index("</tr>", html.index(">E<"))]
+    assert "✓" in row_a and "80%" not in row_a
+    assert "✓" in row_b and "80%" not in row_b
+    assert "✓" not in row_d
+    assert "✓" not in row_e

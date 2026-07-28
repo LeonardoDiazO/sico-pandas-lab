@@ -55,7 +55,6 @@ def build_summary_code(variable, columns, value_column):
         "_marca = pd.Series([''] * len(_acum), index=_acum.index)",
         "_cruce = _acum[_acum >= 80]",
         "if len(_cruce) > 0:",
-        "    _marca[_cruce.index[0]] = '← aquí se cruza el 80%'",
         # Code review fix: _cruce is every row FROM the crossing point
         # onward (the tail, since _acum keeps climbing to 100% after
         # crossing 80%) - len(_cruce) is NOT "how many top categories are
@@ -64,6 +63,14 @@ def build_summary_code(variable, columns, value_column):
         # count of rows that HADN'T yet reached 80%, plus the crossing row
         # itself.
         "    _n_cruce = int((_acum < 80).sum()) + 1",
+        # User feedback: a single arrow on one row, buried dozens of rows
+        # deep in a real table with 80+ categories, was easy to miss or
+        # misread out of context. Every row from the top through the
+        # crossing row now gets a checkmark too, so "these together are the
+        # 80%" reads as one visually obvious block - the crossing row itself
+        # keeps a distinct label so the exact threshold is still called out.
+        "    _marca.iloc[:_n_cruce] = '✓'",
+        "    _marca.iloc[_n_cruce - 1] = '✓ ← 80% aquí'",
         "    _pct_cruce = _cruce.iloc[0]",
         "    _n_total = len(_acum)",
         "    _palabra = 'categoría concentra' if _n_cruce == 1 else 'categorías concentran'",
