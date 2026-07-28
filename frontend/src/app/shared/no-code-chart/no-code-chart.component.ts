@@ -92,8 +92,22 @@ export class NoCodeChartComponent implements OnChanges {
     if (changes['profile']) {
       const groupable = new Set(this.groupableColumns.map((c) => c.name));
       this.selectedColumns = this.selectedColumns.filter((name) => groupable.has(name));
+      // Smart default: only fills in when nothing survived the filter above
+      // (a genuinely fresh/empty selection) - never overrides a selection
+      // the user already made.
+      if (this.selectedColumns.length === 0 && this.groupableColumns.length > 0) {
+        this.selectedColumns = [this.groupableColumns[0].name];
+      }
       if (!this.numericColumns.some((c) => c.name === this.selectedValueColumn)) {
-        this.selectedValueColumn = null;
+        // Smart default (user feedback, real bug: a "línea"/"torta"/"barras"
+        // chart generated with no value column silently switches to
+        // "count rows" mode, which reads as a completely different,
+        // confusing result - e.g. a small y-axis of row counts instead of
+        // the expected sum of amounts). Auto-picking the first numeric
+        // column when a fresh profile loads means the user has to actively
+        // clear it (select "Ninguna") to get count-mode, instead of having
+        // to remember to opt IN to a sum every time.
+        this.selectedValueColumn = this.numericColumns[0]?.name ?? null;
       }
     }
     this.revalidateChartType();

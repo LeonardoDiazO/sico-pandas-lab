@@ -66,14 +66,23 @@ export class NoCodeTableComponent implements OnChanges {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['profile']) {
+      // Smart default (user feedback): auto-pick the first numeric column
+      // for both the sort and summary value selectors on a fresh profile,
+      // instead of leaving them empty - one less click, and avoids the
+      // reported confusion where forgetting to pick a value column
+      // silently changes what's being shown.
       if (!this.numericColumns.some((c) => c.name === this.selectedValueColumn)) {
-        this.selectedValueColumn = null;
+        this.selectedValueColumn = this.numericColumns[0]?.name ?? null;
       }
       if (!this.numericColumns.some((c) => c.name === this.selectedSummaryValueColumn)) {
-        this.selectedSummaryValueColumn = null;
+        this.selectedSummaryValueColumn = this.numericColumns[0]?.name ?? null;
       }
       const groupable = new Set(this.groupableColumns.map((c) => c.name));
       this.selectedGroupColumns = this.selectedGroupColumns.filter((name) => groupable.has(name));
+      // Smart default: only fills in when nothing survived the filter above.
+      if (this.selectedGroupColumns.length === 0 && this.groupableColumns.length > 0) {
+        this.selectedGroupColumns = [this.groupableColumns[0].name];
+      }
       this.sortResult = null;
       this.summaryResult = null;
     }
