@@ -155,12 +155,26 @@ def build_chart_code(chart_type, variable, columns, value_column):
         # behavior for already-string or already-Timestamp columns.
         dates_expr = f"pd.to_datetime({variable}[{column!r}].astype(str), errors='coerce')"
         if value_column:
-            series_expr = f"{variable}.groupby({dates_expr}.dt.date)[{value_column!r}].sum()"
+            # dt.floor('D') (not dt.date) - keeps a real pandas
+            # Timestamp/DatetimeIndex, so matplotlib's date-aware tick
+            # locator auto-spaces and formats the x-axis (user feedback:
+            # dt.date produced plain Python date objects, treated as
+            # generic categorical ticks - every single date drawn,
+            # unrotated, overlapping into unreadable text with a few dozen
+            # days of data).
+            series_expr = f"{variable}.groupby({dates_expr}.dt.floor('D'))[{value_column!r}].sum()"
             title = f"{value_column} por {column}"
+            ylabel = value_column
         else:
             series_expr = f"{dates_expr}.value_counts().sort_index()"
             title = f"Cantidad de filas por {column}"
-        return f"{series_expr}.plot.line()\n{_bold_title_line(title)}\nplt.tight_layout()"
+            ylabel = "Cantidad de filas"
+        return (
+            f"_ax = {series_expr}.plot.line(figsize=(10, 6))\n"
+            f"_ax.set_ylabel({ylabel!r})\n"
+            f"{_bold_title_line(title)}\n"
+            "plt.tight_layout()"
+        )
 
     # histograma: distribution of a single numeric column, grouping columns ignored
     title = f"Distribución de {value_column}"
@@ -168,14 +182,26 @@ def build_chart_code(chart_type, variable, columns, value_column):
 
 
 def _grouping_expr(variable, columns):
-    """What to group by: the column name directly when there's one
-    (identical to the pre-7.2 code - never touch this branch), or a
+    """What to group by: the column name directly when there's one, or a
     "composite key" joined as a string when there's more than one - avoids
     matplotlib rendering raw Python-tuple labels (e.g. "('V0', 'Enero')")
     on the chart's axis/legend.
+
+    Note: chart_builder.py's own _grouped_series_expr() bypasses this
+    single-column branch entirely (it hardcodes `{variable}.groupby({col!r})`
+    directly, guarding Story 7.2 AC3's byte-identical-to-pre-7.2 guarantee) -
+    this branch is only reachable via table_builder.py (Epic 8), which calls
+    _grouping_expr() unconditionally for every column count. Confirmed via
+    the test suite: no chart_builder.py test exercises this branch.
     """
     if len(columns) == 1:
-        return f"{variable}[{columns[0]!r}]"
+        # fillna() before use - otherwise pandas groupby(dropna=True, the
+        # default) silently drops every row whose grouping column is null,
+        # understating totals/percentages with no indication to the user a
+        # row was excluded (Epic 8 code review) - same reasoning as the
+        # multi-column branch below, just newly reachable here since chart
+        # generation itself never exercises this single-column branch.
+        return f"{variable}[{columns[0]!r}].fillna('(vacío)')"
     # fillna() before astype(str) - otherwise a null cell in one of several
     # grouping columns renders as the literal substring "nan" in the
     # composite label (e.g. "V0 - nan"), which reads as a data-quality bug

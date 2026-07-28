@@ -60,6 +60,22 @@ export class NotebookService {
     });
   }
 
+  sortTable(variable: string, valueColumn: string, ascending: boolean): Observable<ApiResponse<CellResult>> {
+    return this.http.post<ApiResponse<CellResult>>(`${this.base}/api/notebook/sort-table`, {
+      variable,
+      valueColumn,
+      ascending,
+    });
+  }
+
+  summaryTable(variable: string, columns: string[], valueColumn: string): Observable<ApiResponse<CellResult>> {
+    return this.http.post<ApiResponse<CellResult>>(`${this.base}/api/notebook/summary-table`, {
+      variable,
+      columns,
+      valueColumn,
+    });
+  }
+
   interpretChartRequest(
     question: string,
     columns: ExcelProfileColumn[],

@@ -735,3 +735,120 @@ def test_interpret_chart_request_unavailable_does_not_permanently_consume_quota(
     # still 503 (interpreter still unavailable), NOT 429 - the failed first
     # attempt must not have consumed the session's only allowed slot
     assert second.status_code == 503
+
+
+# --- Story 8.1: sort raw rows by a value column ---------------------------
+
+
+def test_sort_table_returns_rows_ordered_descending_by_default(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/sort-table",
+        json={"variable": "df", "valueColumn": "neto", "ascending": False},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    data = body["data"]
+    assert data["error"] is None
+    assert data["result_html"] is not None
+    # descending: the highest neto (109, vendedor V0 since i=9) comes first
+    assert data["result_html"].index(">109<") < data["result_html"].index(">100<")
+
+
+def test_sort_table_ascending(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/sort-table",
+        json={"variable": "df", "valueColumn": "neto", "ascending": True},
+    )
+    data = response.get_json()["data"]
+    assert data["error"] is None
+    assert data["result_html"].index(">100<") < data["result_html"].index(">109<")
+
+
+def test_sort_table_missing_value_column_is_rejected(client):
+    response = client.post("/api/notebook/sort-table", json={"variable": "df"})
+    body = response.get_json()
+    assert response.status_code == 400
+    assert body["success"] is False
+
+
+def test_sort_table_missing_variable_is_rejected(client):
+    response = client.post("/api/notebook/sort-table", json={"valueColumn": "neto"})
+    body = response.get_json()
+    assert response.status_code == 400
+    assert body["success"] is False
+
+
+def test_sort_table_unbound_variable_surfaces_a_clean_error_not_500(client):
+    response = client.post(
+        "/api/notebook/sort-table",
+        json={"variable": "df_no_existe", "valueColumn": "neto"},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["data"]["error"] is not None
+    assert body["data"]["error"]["type"] == "NameError"
+
+
+# --- Story 8.2: grouped summary with % of total and cumulative % ----------
+
+
+def test_summary_table_returns_group_totals_and_percentages(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/summary-table",
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto"},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    data = body["data"]
+    assert data["error"] is None
+    assert "% del total" in data["result_html"]
+    assert "% acumulado" in data["result_html"]
+
+
+def test_summary_table_missing_columns_is_rejected(client):
+    response = client.post(
+        "/api/notebook/summary-table", json={"variable": "df", "valueColumn": "neto"}
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_summary_table_missing_value_column_is_rejected(client):
+    response = client.post(
+        "/api/notebook/summary-table", json={"variable": "df", "columns": ["vendedor"]}
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_summary_table_empty_columns_list_is_rejected(client):
+    response = client.post(
+        "/api/notebook/summary-table",
+        json={"variable": "df", "columns": [], "valueColumn": "neto"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_summary_table_unbound_variable_surfaces_a_clean_error_not_500(client):
+    response = client.post(
+        "/api/notebook/summary-table",
+        json={"variable": "df_no_existe", "columns": ["vendedor"], "valueColumn": "neto"},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["data"]["error"] is not None
+    assert body["data"]["error"]["type"] == "NameError"

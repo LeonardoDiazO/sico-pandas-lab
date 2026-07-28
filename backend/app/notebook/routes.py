@@ -16,6 +16,7 @@ from app.notebook.chart_builder import (
 )
 from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
+from app.notebook.table_builder import build_sort_code, build_summary_code
 from app.utils.api_response import api_response
 
 notebook_bp = Blueprint("notebook", __name__, url_prefix="/api/notebook")
@@ -284,6 +285,62 @@ def generate_chart():
     return api_response(
         data=_chart_response_data(result, explanation=explanation),
         message="Gráfica generada." if not result.get("error") else "No se pudo generar la gráfica.",
+    )
+
+
+@notebook_bp.post("/sort-table")
+def sort_table():
+    """Story 8.1 - the simplest of the "no-code table" flows: sort every raw
+    row (all columns, not a projection) by a single value column. No
+    cardinality check needed here (unlike /generate-chart) - a sorted table
+    is legible at any row count, since execution.py's existing DataFrame
+    capture already caps and notes truncation (MAX_RESULT_ROWS), same as
+    df.head() in the free notebook."""
+    payload = request.get_json(silent=True) or {}
+    variable = payload.get("variable")
+    value_column = payload.get("valueColumn")
+    ascending = payload.get("ascending") is True
+
+    if not isinstance(variable, str) or not variable.strip():
+        return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
+    if not isinstance(value_column, str) or not value_column.strip():
+        return api_response(message="Falta elegir una columna para ordenar.", success=False, status=400)
+
+    code = build_sort_code(variable, value_column, ascending)
+    result = _manager().execute(_session_id(), code)
+    return api_response(
+        data=result,
+        message="Tabla ordenada." if not result.get("error") else "No se pudo ordenar la tabla.",
+    )
+
+
+@notebook_bp.post("/summary-table")
+def summary_table():
+    """Story 8.2 - group by column(s), sum a value column, and show each
+    group's share of the total plus a running cumulative share. Unlike
+    /generate-chart, no cardinality-warning gate here: a table with 200
+    groups is legible with scroll (the existing MAX_RESULT_ROWS cap on
+    execution.py's DataFrame capture already applies), unlike a chart with
+    200 slices/bars - so no "top N + Otros" analog is needed for tables
+    (decision recorded in the Sprint Change Proposal, not re-derived here).
+    """
+    payload = request.get_json(silent=True) or {}
+    variable = payload.get("variable")
+    columns = payload.get("columns")
+    value_column = payload.get("valueColumn")
+
+    if not isinstance(variable, str) or not variable.strip():
+        return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
+    if not _valid_columns_list(columns) or not columns:
+        return api_response(message="Falta elegir al menos una columna para agrupar.", success=False, status=400)
+    if not isinstance(value_column, str) or not value_column.strip():
+        return api_response(message="Falta elegir una columna de valor para resumir.", success=False, status=400)
+
+    code = build_summary_code(variable, columns, value_column)
+    result = _manager().execute(_session_id(), code)
+    return api_response(
+        data=result,
+        message="Resumen generado." if not result.get("error") else "No se pudo generar el resumen.",
     )
 
 

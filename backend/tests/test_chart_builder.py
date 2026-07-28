@@ -50,7 +50,65 @@ def test_linea_converts_date_column_without_fixed_format():
     assert "pd.to_datetime(" in code
     assert "errors='coerce'" in code
     assert "format=" not in code
-    assert ".plot.line()" in code
+    assert ".plot.line(" in code
+
+
+# --- Legibility pass (user feedback): linea was too small, unlabeled y-axis,
+# and crowded/overlapping x-axis date ticks ---------------------------------
+
+
+def test_linea_has_a_larger_figsize():
+    code = build_chart_code("linea", "df", ["dia"], "neto")
+    _assert_valid_python(code)
+    assert "figsize=(10, 6)" in code
+
+
+def test_linea_with_value_column_labels_the_y_axis_with_the_value_column_name():
+    code = build_chart_code("linea", "df", ["dia"], "neto")
+    _assert_valid_python(code)
+    assert "_ax.set_ylabel('neto')" in code
+
+
+def test_linea_without_value_column_labels_the_y_axis_as_row_count():
+    code = build_chart_code("linea", "df", ["dia"], None)
+    _assert_valid_python(code)
+    assert "_ax.set_ylabel('Cantidad de filas')" in code
+
+
+def test_linea_groups_by_full_day_not_bare_date_object():
+    """dt.floor('D') keeps a real pandas Timestamp/DatetimeIndex, so
+    matplotlib's date-aware tick locator auto-spaces and formats the x-axis
+    labels - dt.date converts to plain Python date objects, which lose that
+    and get treated as generic categorical ticks (every single date drawn,
+    unrotated, overlapping into unreadable text)."""
+    code = build_chart_code("linea", "df", ["dia"], "neto")
+    _assert_valid_python(code)
+    assert ".dt.floor('D')" in code
+    assert ".dt.date" not in code
+
+
+def test_linea_runs_end_to_end_with_many_days_and_produces_an_image():
+    """Empirical verification (same standard as Epic 7's review) - executes
+    the generated code against 60 days of synthetic data (the exact shape
+    that motivated this fix - many x-axis ticks) and confirms it renders
+    without error."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import numpy as np
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    dates = pd.date_range("2026-05-01", periods=60, freq="D")
+    namespace["df"] = pd.DataFrame(
+        {"dia": dates.strftime("%Y%m%d").astype(int), "neto": np.random.randint(1000, 50000, 60)}
+    )
+    code = build_chart_code("linea", "df", ["dia"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]
 
 
 def test_linea_casts_to_string_before_parsing_so_yyyymmdd_integers_work():

@@ -1,0 +1,79 @@
+<div class="no-code-table">
+  <div class="panel-header">
+    <h3>Ordenar tabla</h3>
+  </div>
+
+  @if (!profile) {
+    <p class="note">Sube y confirma un Excel arriba para ordenar tus datos sin escribir código.</p>
+  } @else if (numericColumns.length === 0) {
+    <p class="note">Este archivo no tiene columnas numéricas para ordenar.</p>
+  } @else {
+    <label class="field">
+      <span class="field-label">Ordenar por columna:</span>
+      <select [(ngModel)]="selectedValueColumn">
+        <option [ngValue]="null">Elige una columna...</option>
+        @for (col of numericColumns; track col.name) {
+          <option [ngValue]="col.name">{{ col.name }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Orden:</span>
+      <select [(ngModel)]="ascending">
+        <option [ngValue]="false">Mayor a menor</option>
+        <option [ngValue]="true">Menor a mayor</option>
+      </select>
+    </label>
+
+    <button class="generate-btn" (click)="sortTable()" [disabled]="!canSort">
+      {{ sorting ? 'Ordenando…' : 'Ordenar' }}
+    </button>
+
+    @if (sortResult) {
+      <app-cell-result [result]="sortResult"></app-cell-result>
+    }
+
+    <hr class="divider" />
+
+    <div class="panel-header">
+      <h3>Resumen y porcentaje por columna</h3>
+    </div>
+
+    @if (groupableColumns.length > 0) {
+      <fieldset class="field checkbox-field">
+        <legend class="field-label">Agrupar por columna(s):</legend>
+        @for (col of groupableColumns; track col.name) {
+          <label class="checkbox-option">
+            <input
+              type="checkbox"
+              [checked]="selectedGroupColumns.includes(col.name)"
+              (change)="toggleGroupColumn(col.name)"
+            />
+            {{ col.name }}
+          </label>
+        }
+      </fieldset>
+    } @else {
+      <p class="note">Este archivo no tiene columnas de categoría o fecha para agrupar.</p>
+    }
+
+    <label class="field">
+      <span class="field-label">Columna de valor a sumar:</span>
+      <select [(ngModel)]="selectedSummaryValueColumn">
+        <option [ngValue]="null">Elige una columna...</option>
+        @for (col of numericColumns; track col.name) {
+          <option [ngValue]="col.name">{{ col.name }}</option>
+        }
+      </select>
+    </label>
+
+    <button class="generate-btn" (click)="summarizeTable()" [disabled]="!canSummarize">
+      {{ summarizing ? 'Generando…' : 'Generar resumen' }}
+    </button>
+
+    @if (summaryResult) {
+      <app-cell-result [result]="summaryResult"></app-cell-result>
+    }
+  }
+</div>

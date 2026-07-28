@@ -1,0 +1,93 @@
+.no-code-table {
+  background: #f0f1ff;
+  border: 1px solid #dfe0ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel-header {
+  h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.95rem;
+    color: #2a2f5b;
+  }
+}
+
+.note {
+  font-size: 0.75rem;
+  color: #66668a;
+  margin: 0.3rem 0 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 280px;
+  margin-top: 0.6rem;
+
+  &:first-of-type {
+    margin-top: 0.3rem;
+  }
+}
+
+.field-label {
+  font-size: 0.8rem;
+  color: #2a2f5b;
+}
+
+select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #c9caee;
+  border-radius: 5px;
+  font-size: 0.82rem;
+
+  &:focus {
+    outline: none;
+    border-color: #51599b;
+  }
+}
+
+.generate-btn {
+  display: block;
+  margin-top: 0.7rem;
+  background: #51599b;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #dfe0ff;
+  margin: 1rem 0;
+}
+
+.checkbox-field {
+  border: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+}
+
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: #2a2f5b;
+  padding: 0.15rem 0;
+  cursor: pointer;
+
+  input[type='checkbox'] {
+    cursor: pointer;
+  }
+}
