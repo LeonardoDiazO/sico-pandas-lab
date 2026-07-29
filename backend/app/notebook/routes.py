@@ -17,6 +17,7 @@ from app.notebook.chart_builder import (
 from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
 from app.notebook.table_builder import build_sort_code, build_summary_code
+from app.notebook.table_explanation import build_sort_explanation, build_summary_explanation
 from app.utils.api_response import api_response
 
 notebook_bp = Blueprint("notebook", __name__, url_prefix="/api/notebook")
@@ -288,6 +289,14 @@ def generate_chart():
     )
 
 
+def _table_response_data(result, explanation=None):
+    """Every table-flow response carries a CellResult plus `explanation` -
+    same pattern as `_chart_response_data`. `explanation` is only ever set
+    on the success path (never on an execution error - there's nothing real
+    to explain yet)."""
+    return {**result, "explanation": explanation}
+
+
 @notebook_bp.post("/sort-table")
 def sort_table():
     """Story 8.1 - the simplest of the "no-code table" flows: sort every raw
@@ -308,8 +317,9 @@ def sort_table():
 
     code = build_sort_code(variable, value_column, ascending)
     result = _manager().execute(_session_id(), code)
+    explanation = None if result.get("error") else build_sort_explanation(value_column)
     return api_response(
-        data=result,
+        data=_table_response_data(result, explanation=explanation),
         message="Tabla ordenada." if not result.get("error") else "No se pudo ordenar la tabla.",
     )
 
@@ -338,8 +348,9 @@ def summary_table():
 
     code = build_summary_code(variable, columns, value_column)
     result = _manager().execute(_session_id(), code)
+    explanation = None if result.get("error") else build_summary_explanation(columns, value_column)
     return api_response(
-        data=result,
+        data=_table_response_data(result, explanation=explanation),
         message="Resumen generado." if not result.get("error") else "No se pudo generar el resumen.",
     )
 

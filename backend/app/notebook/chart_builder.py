@@ -121,8 +121,16 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 # guaranteed legible no matter how small the slice or how
                 # many categories there are (user feedback).
                 "_total = _chart_data.sum()",
+                # User feedback: "el 100% de qué?" - a bare "32.2%" doesn't
+                # say what it's a share of. _pct_de is embedded via repr()
+                # (value_column comes from user-uploaded Excel content) as
+                # its own generated-code line, then referenced by name in
+                # the f-string below - not interpolated as literal text -
+                # so a stray quote in the column name can't break the
+                # generated code's syntax.
+                f"_pct_de = {(value_column or 'la cantidad de filas')!r}",
                 "_ax.legend(_wedges, "
-                "[f'{name} - {val / _total * 100:.1f}%' for name, val in _chart_data.items()], "
+                "[f'{name} - {val / _total * 100:.1f}% de {_pct_de}' for name, val in _chart_data.items()], "
                 "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
             ]
         else:

@@ -756,6 +756,10 @@ def test_sort_table_returns_rows_ordered_descending_by_default(client):
     assert data["result_html"] is not None
     # descending: the highest neto (109, vendedor V0 since i=9) comes first
     assert data["result_html"].index(">109<") < data["result_html"].index(">100<")
+    assert "% del total" in data["result_html"]
+    assert "% acumulado" in data["result_html"]
+    assert data["explanation"] is not None
+    assert "neto" in data["explanation"]
 
 
 def test_sort_table_ascending(client):
@@ -815,6 +819,9 @@ def test_summary_table_returns_group_totals_and_percentages(client):
     assert data["error"] is None
     assert "% del total" in data["result_html"]
     assert "% acumulado" in data["result_html"]
+    assert data["explanation"] is not None
+    assert "vendedor" in data["explanation"]
+    assert "neto" in data["explanation"]
 
 
 def test_summary_table_missing_columns_is_rejected(client):

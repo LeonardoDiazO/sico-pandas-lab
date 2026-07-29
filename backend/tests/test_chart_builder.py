@@ -252,9 +252,11 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     `.plot.pie(...)` one-liner with an explicit `_ax.pie(...)` + side legend
     + `plt.subplots(figsize=(11, 8))` + bold title; a follow-up feedback
     round then added a per-slice percentage to every legend entry (see
-    test_torta_legend_includes_percentage_for_every_slice) - this now pins
-    that final string (using the live constant, not a bare literal, so this
-    test doesn't silently go stale if the threshold moves again), still
+    test_torta_legend_includes_percentage_for_every_slice); a further round
+    added what the percentage is a share OF (see
+    test_torta_legend_percentage_says_what_it_is_a_percentage_of) - this now
+    pins that final string (using the live constant, not a bare literal, so
+    this test doesn't silently go stale if the threshold moves again), still
     guarding that the underlying grouping expression
     (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
     n = TOP_N_CATEGORIES_BEFORE_OTROS
@@ -269,8 +271,9 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         "autopct=lambda p: f'{p:.1f}%' if p >= 3 else '', "
         "colors=plt.get_cmap('tab20').colors[:len(_chart_data)], pctdistance=0.8)\n"
         "_total = _chart_data.sum()\n"
+        "_pct_de = 'neto'\n"
         "_ax.legend(_wedges, "
-        "[f'{name} - {val / _total * 100:.1f}%' for name, val in _chart_data.items()], "
+        "[f'{name} - {val / _total * 100:.1f}% de {_pct_de}' for name, val in _chart_data.items()], "
         "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
         "plt.title('neto por vendedor', fontsize=13, fontweight='bold')\n"
         "plt.tight_layout()"
@@ -385,6 +388,29 @@ def test_torta_legend_includes_percentage_for_every_slice():
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert result["image_base64"]
+
+
+def test_torta_legend_percentage_says_what_it_is_a_percentage_of():
+    """User feedback: "dice el 100% de qué?" - a bare "32.2%" in the legend
+    doesn't say what it's a share of. With a value column, it's a share of
+    that column's sum; without one (count mode), it's a share of the row
+    count."""
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "_pct_de = 'neto'" in code
+    assert "% de {_pct_de}" in code
+
+    code_no_value = build_chart_code("torta", "df", ["vendedor"], None)
+    _assert_valid_python(code_no_value)
+    assert "_pct_de = 'la cantidad de filas'" in code_no_value
+
+
+def test_torta_legend_percentage_label_column_name_with_quote_is_safe():
+    """value_column comes from user-uploaded Excel content - repr() must be
+    used to embed it (same pattern as everywhere else in this module), not
+    manual string concatenation."""
+    code = build_chart_code("torta", "df", ["vendedor"], "vendor's net")
+    _assert_valid_python(code)
 
 
 def test_torta_and_barras_use_a_qualitative_color_palette():

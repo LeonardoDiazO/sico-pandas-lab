@@ -14,10 +14,27 @@ from app.notebook.chart_builder import _grouping_expr
 def build_sort_code(variable, value_column, ascending):
     """Sort every row (all columns kept, not a projection down to just
     value_column - the user asked to see the whole record ordered by a
-    column, not a narrowed view) by a single value column. The row-count
-    cap already applied by execution.py's DataFrame capture (the same one
-    df.head() already respects) covers truncation - nothing extra here."""
-    return f"{variable}.sort_values({value_column!r}, ascending={bool(ascending)!r})"
+    column, not a narrowed view) by a single value column, and add the same
+    '% del total'/'% acumulado' columns the grouped summary (build_summary_code)
+    already has - computed per row instead of per group (user feedback: a
+    "detailed" view where grouping isn't required, with the same percentage
+    columns explained the same way). The row-count cap already applied by
+    execution.py's DataFrame capture (the same one df.head() already
+    respects) covers truncation - nothing extra here."""
+    lines = [
+        f"_ordenado = {variable}.sort_values({value_column!r}, ascending={bool(ascending)!r})",
+        f"_total = {variable}[{value_column!r}].sum()",
+        # Same zero-total guard as build_summary_code (Epic 8 code review) -
+        # a signed value_column whose rows cancel out to exactly zero would
+        # otherwise leak "inf"/"nan" text into the table.
+        f"_pct = (_ordenado[{value_column!r}] / _total * 100)"
+        ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
+        "_acum = _pct.cumsum().round(1)",
+        # Bare expression, not assigned to a variable - execution.py only
+        # captures the LAST expression statement of a cell as the result.
+        "_ordenado.assign(**{'% del total': _pct, '% acumulado': _acum})",
+    ]
+    return "\n".join(lines)
 
 
 def build_summary_code(variable, columns, value_column):

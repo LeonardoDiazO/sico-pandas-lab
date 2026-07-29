@@ -98,6 +98,13 @@ export interface ChartResult extends CellResult {
   explanation: string | null;
 }
 
+// Story 8.1/8.2 follow-up: same "explanation" pattern as ChartResult - a
+// short plain-language description of what "% del total"/"% acumulado"
+// refer to, generated server-side by table_explanation.py.
+export interface TableResult extends CellResult {
+  explanation: string | null;
+}
+
 // Story 6.1: 'torta' | 'barras' | 'linea' | 'histograma' - mirrors ChartKind
 // in shared/no-code-chart/no-code-chart.component.ts (Story 5.2), where the
 // canonical type still lives (do not treat this as a second source of truth,

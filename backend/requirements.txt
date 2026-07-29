@@ -9,5 +9,5 @@ seaborn
 scipy
 pymysql
 sqlalchemy
-anthropic
+google-genai
 pytest

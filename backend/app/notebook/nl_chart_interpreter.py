@@ -1,5 +1,7 @@
 """Translates a natural-language chart request into a selection from the
-closed set Epic 5 already validates (Story 6.1).
+closed set Epic 5 already validates (Story 6.1; provider swapped from
+Anthropic to Gemini post-Epic-8 - user request, free tier - the public
+interface, validation logic, and NFR10/NFR11 guarantees below are unchanged).
 
 Security note (NFR10, non-negotiable): this module never builds or executes
 pandas code - its only output is a selection of {column, valueColumn,
@@ -19,11 +21,12 @@ question text are ever sent to the LLM - never DataFrame content.
 import json
 import os
 
-import anthropic
+from google import genai
+from google.genai import errors, types
 
 from app.notebook.chart_builder import CHART_TYPES
 
-MODEL = "claude-opus-4-8"
+MODEL = "gemini-flash-latest"
 
 _GROUPABLE_TYPES = {"categorica", "fecha"}
 _NUMERIC_TYPE = "numerica"
@@ -38,6 +41,19 @@ _CHART_TYPE_REQUIREMENTS = {
     "barras": ("column", "categorica"),
     "linea": ("column", "fecha"),
     "histograma": ("valueColumn", "numerica"),
+}
+
+# Gemini's equivalent of Anthropic's stop_reason == "refusal" - the model
+# declined to answer rather than producing a schema-conforming selection.
+# Treated the same way: a normal "couldn't resolve this" outcome, not a
+# service-unavailability error (so it never refunds/burns an assistant-usage
+# slot differently than a real "not resolved" answer would).
+_BLOCKED_FINISH_REASONS = {
+    types.FinishReason.SAFETY,
+    types.FinishReason.PROHIBITED_CONTENT,
+    types.FinishReason.BLOCKLIST,
+    types.FinishReason.SPII,
+    types.FinishReason.RECITATION,
 }
 
 _client_singleton = None
@@ -94,11 +110,11 @@ def build_interpretation_schema(columns):
 
 def _default_client():
     """A single shared SDK client, constructed lazily on first use (not one
-    new client - and its own httpx connection pool - per assistant question).
+    new client - and its own HTTP connection pool - per assistant question).
     """
     global _client_singleton
     if _client_singleton is None:
-        _client_singleton = anthropic.Anthropic()
+        _client_singleton = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     return _client_singleton
 
 
@@ -111,13 +127,13 @@ def interpret_chart_request(question, columns, client=None):
         raise ValueError("question no puede estar vacío")
 
     if client is None:
-        # The SDK does NOT raise anthropic.AnthropicError for a missing key -
-        # anthropic.Anthropic() constructs successfully either way, and the
-        # first request instead fails deep inside client.messages.create()
-        # with a bare TypeError that `except anthropic.AnthropicError` below
-        # does not catch. Check explicitly so this degrades to the documented
-        # "asistente no disponible" message instead of an uncaught 500.
-        if not os.environ.get("ANTHROPIC_API_KEY"):
+        # genai.Client() DOES raise (a plain ValueError) when no key is
+        # available - stricter than Anthropic's SDK, which used to construct
+        # successfully and fail later inside messages.create() (Epic 6 code
+        # review gap). Checking explicitly here keeps the same guard in
+        # place regardless of the underlying SDK's own behavior, so this
+        # never depends on which provider is behind it.
+        if not os.environ.get("GEMINI_API_KEY"):
             raise InterpreterUnavailableError(
                 "El asistente no está disponible en este momento."
             )
@@ -130,31 +146,42 @@ def interpret_chart_request(question, columns, client=None):
     )
 
     try:
-        response = client.messages.create(
+        response = client.models.generate_content(
             model=MODEL,
-            max_tokens=1024,
-            system=_SYSTEM_PROMPT,
-            output_config={"format": {"type": "json_schema", "schema": schema}},
-            messages=[{"role": "user", "content": user_content}],
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                response_json_schema=schema,
+                # This is closed-set classification (pick from a handful of
+                # enum values already computed from the columns), not open
+                # reasoning - MINIMAL skips most of Gemini 3's default
+                # "thinking" pass, which otherwise burns tokens/latency on a
+                # task that doesn't benefit from it. thinking_budget=0 (fully
+                # disabled) is rejected by this model with INVALID_ARGUMENT -
+                # confirmed empirically, MINIMAL is the lowest level accepted.
+                thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
+            ),
         )
-    except anthropic.AnthropicError as exc:
+    except errors.APIError as exc:
         raise InterpreterUnavailableError(
             "El asistente no está disponible en este momento."
         ) from exc
 
-    if getattr(response, "stop_reason", None) == "refusal":
+    finish_reason = None
+    if response.candidates:
+        finish_reason = getattr(response.candidates[0], "finish_reason", None)
+    if finish_reason in _BLOCKED_FINISH_REASONS:
         return dict(_NOT_RESOLVED)
 
-    text_block = next(
-        (b for b in response.content if getattr(b, "type", None) == "text"), None
-    )
-    if text_block is None:
+    text = response.text
+    if not text:
         raise InterpreterUnavailableError(
             "El asistente no devolvió una respuesta interpretable."
         )
 
     try:
-        parsed = json.loads(text_block.text)
+        parsed = json.loads(text)
     except (TypeError, ValueError) as exc:
         raise InterpreterUnavailableError(
             "El asistente no devolvió una respuesta interpretable."

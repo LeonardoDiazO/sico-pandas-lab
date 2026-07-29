@@ -10,13 +10,53 @@ def _assert_valid_python(code):
 def test_sort_descending_by_default_shape():
     code = build_sort_code("df", "neto", False)
     _assert_valid_python(code)
-    assert code == "df.sort_values('neto', ascending=False)"
+    assert "sort_values('neto', ascending=False)" in code
 
 
 def test_sort_ascending():
     code = build_sort_code("df", "neto", True)
     _assert_valid_python(code)
-    assert code == "df.sort_values('neto', ascending=True)"
+    assert "sort_values('neto', ascending=True)" in code
+
+
+def test_sort_includes_percentage_of_total_and_cumulative_percentage():
+    """User feedback: "detallado en la que la agrupación ya no sea
+    necesaria" + "explicar mejor el porcentaje" - the raw (ungrouped) sort
+    view now carries the same '% del total'/'% acumulado' columns the
+    grouped summary (Story 8.2) already has, computed over every row
+    individually instead of per group."""
+    code = build_sort_code("df", "neto", False)
+    _assert_valid_python(code)
+    assert "% del total" in code
+    assert "% acumulado" in code
+    assert "cumsum()" in code
+
+
+def test_sort_last_line_is_a_bare_expression_not_an_assignment():
+    code = build_sort_code("df", "neto", False)
+    last_line = code.strip().splitlines()[-1]
+    assert not last_line.startswith("_ordenado =")
+    assert "assign(" in last_line
+
+
+def test_sort_zero_total_does_not_produce_inf_or_nan():
+    """Same degenerate case already fixed for the grouped summary (Story
+    8.2/8.3 code review): a signed value column whose rows cancel out to
+    exactly zero must not leak 'inf'/'nan' into the table."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"cliente": ["A", "B"], "saldo": [1000.0, -1000.0]})
+    code = build_sort_code("df", "saldo", False)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "inf" not in result["result_html"]
+    assert "nan" not in result["result_html"]
 
 
 def test_column_name_with_a_single_quote_does_not_break_generated_syntax():
@@ -52,6 +92,11 @@ def test_sort_runs_end_to_end_against_a_real_dataframe():
     idx_c = result["result_html"].index(">C<")
     idx_a = result["result_html"].index(">A<")
     assert idx_b < idx_c < idx_a
+    # total = 350 -> B=57.1%(cum 57.1), C=28.6%(cum 85.7), A=14.3%(cum 100.0)
+    row_b = result["result_html"][idx_b : result["result_html"].index("</tr>", idx_b)]
+    cells_b = [c for c in row_b.split("<td>")[1:]]
+    assert "57.1</td>" in cells_b[1]
+    assert "100.0" not in row_b  # sanity: B is not the last cumulative row
 
 
 # --- Story 8.2: grouped summary with % of total and cumulative % ----------

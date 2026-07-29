@@ -11,6 +11,7 @@ import {
   ExcelProfileColumn,
   LoadResult,
   TablesPayload,
+  TableResult,
 } from '../../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -60,16 +61,16 @@ export class NotebookService {
     });
   }
 
-  sortTable(variable: string, valueColumn: string, ascending: boolean): Observable<ApiResponse<CellResult>> {
-    return this.http.post<ApiResponse<CellResult>>(`${this.base}/api/notebook/sort-table`, {
+  sortTable(variable: string, valueColumn: string, ascending: boolean): Observable<ApiResponse<TableResult>> {
+    return this.http.post<ApiResponse<TableResult>>(`${this.base}/api/notebook/sort-table`, {
       variable,
       valueColumn,
       ascending,
     });
   }
 
-  summaryTable(variable: string, columns: string[], valueColumn: string): Observable<ApiResponse<CellResult>> {
-    return this.http.post<ApiResponse<CellResult>>(`${this.base}/api/notebook/summary-table`, {
+  summaryTable(variable: string, columns: string[], valueColumn: string): Observable<ApiResponse<TableResult>> {
+    return this.http.post<ApiResponse<TableResult>>(`${this.base}/api/notebook/summary-table`, {
       variable,
       columns,
       valueColumn,

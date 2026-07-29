@@ -1,7 +1,7 @@
 import json
 
-import anthropic
 import pytest
+from google.genai import errors, types
 
 from app.notebook.nl_chart_interpreter import (
     InterpreterUnavailableError,
@@ -18,25 +18,24 @@ COLUMNS = [
 ]
 
 
-class _FakeTextBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
+class _FakeCandidate:
+    def __init__(self, finish_reason):
+        self.finish_reason = finish_reason
 
 
 class _FakeResponse:
-    def __init__(self, payload, stop_reason="end_turn"):
-        self.content = [_FakeTextBlock(json.dumps(payload))]
-        self.stop_reason = stop_reason
+    def __init__(self, payload, finish_reason=types.FinishReason.STOP):
+        self.text = json.dumps(payload)
+        self.candidates = [_FakeCandidate(finish_reason)]
 
 
-class _FakeMessages:
+class _FakeModels:
     def __init__(self, response=None, exc=None):
         self._response = response
         self._exc = exc
         self.last_call_kwargs = None
 
-    def create(self, **kwargs):
+    def generate_content(self, **kwargs):
         self.last_call_kwargs = kwargs
         if self._exc is not None:
             raise self._exc
@@ -45,7 +44,7 @@ class _FakeMessages:
 
 class _FakeClient:
     def __init__(self, response=None, exc=None):
-        self.messages = _FakeMessages(response=response, exc=exc)
+        self.models = _FakeModels(response=response, exc=exc)
 
 
 # --- build_interpretation_schema -------------------------------------------------
@@ -201,22 +200,31 @@ def test_only_column_metadata_and_question_are_sent_no_dataframe_content():
     payload = {"resolved": False, "column": None, "valueColumn": None, "chartType": None, "reason": "x"}
     client = _FakeClient(response=_FakeResponse(payload))
     interpret_chart_request("hazme una torta por vendedor", COLUMNS, client=client)
-    sent = client.messages.last_call_kwargs
+    sent = client.models.last_call_kwargs
     serialized = json.dumps(sent, default=str)
     assert "hazme una torta por vendedor" in serialized
     for column in COLUMNS:
         assert column["name"] in serialized
-    # No row/cell values anywhere in what got sent - only names+types+question text.
-    assert "value_column" not in serialized or True  # sanity: no accidental raw dataframe keys
+
+
+def test_schema_is_sent_as_response_json_schema_not_response_schema():
+    """The schema this module builds is a raw JSON Schema dict (enum/anyOf/
+    additionalProperties), not a Pydantic model - must go through
+    response_json_schema, not response_schema (which expects a different
+    shape and would silently misbehave or reject this dict)."""
+    payload = {"resolved": False, "column": None, "valueColumn": None, "chartType": None, "reason": "x"}
+    client = _FakeClient(response=_FakeResponse(payload))
+    interpret_chart_request("hazme una torta por vendedor", COLUMNS, client=client)
+    config = client.models.last_call_kwargs["config"]
+    assert config.response_json_schema is not None
+    assert config.response_mime_type == "application/json"
 
 
 # --- interpret_chart_request: unavailable / error handling ------------------------
 
 
 def test_rate_limit_error_raises_interpreter_unavailable():
-    client = _FakeClient(exc=anthropic.RateLimitError(
-        "rate limited", response=_fake_http_response(429), body=None
-    ))
+    client = _FakeClient(exc=errors.ClientError(429, {"error": {"message": "rate limited"}}))
     with pytest.raises(InterpreterUnavailableError):
         interpret_chart_request("hazme una torta por vendedor", COLUMNS, client=client)
 
@@ -224,38 +232,41 @@ def test_rate_limit_error_raises_interpreter_unavailable():
 def test_authentication_error_from_provider_raises_interpreter_unavailable():
     """The provider rejected a *configured* key (e.g. revoked) - distinct
     from the "no key at all" case below, which the SDK signals differently."""
-    client = _FakeClient(exc=anthropic.AuthenticationError(
-        "invalid api key", response=_fake_http_response(401), body=None
-    ))
+    client = _FakeClient(exc=errors.ClientError(401, {"error": {"message": "invalid api key"}}))
     with pytest.raises(InterpreterUnavailableError):
         interpret_chart_request("hazme una torta por vendedor", COLUMNS, client=client)
 
 
 def test_missing_api_key_raises_interpreter_unavailable_without_hitting_the_network(monkeypatch):
-    """Regression test (Epic 6 code review): when ANTHROPIC_API_KEY is unset
-    and no `client` is injected, interpret_chart_request() must degrade to
-    InterpreterUnavailableError - not let a raw exception escape. The real
-    anthropic SDK does NOT raise anthropic.AnthropicError for this case (it
-    raises a bare TypeError deep inside client.messages.create(), which the
-    `except anthropic.AnthropicError` clause does not catch) - this test
-    exercises the real `anthropic.Anthropic()` construction path (no fake
-    client passed) to catch exactly that gap."""
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    """Regression test (Epic 6 code review, still enforced after the Gemini
+    swap): when GEMINI_API_KEY is unset and no `client` is injected,
+    interpret_chart_request() must degrade to InterpreterUnavailableError -
+    not let a raw exception escape. genai.Client() itself DOES raise for a
+    missing key (a plain ValueError, stricter than the old Anthropic SDK),
+    but the explicit env-var check here means this never depends on that
+    SDK-specific behavior - exercises the real construction path (no fake
+    client passed) to prove it never reaches genai.Client() at all."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     with pytest.raises(InterpreterUnavailableError):
         interpret_chart_request("hazme una torta por vendedor", COLUMNS)
 
 
 def test_connection_error_raises_interpreter_unavailable():
-    client = _FakeClient(exc=anthropic.APIConnectionError(request=_fake_http_request()))
+    client = _FakeClient(exc=errors.ServerError(503, {"error": {"message": "unavailable"}}))
     with pytest.raises(InterpreterUnavailableError):
         interpret_chart_request("hazme una torta por vendedor", COLUMNS, client=client)
 
 
-def test_refusal_stop_reason_is_treated_as_not_resolved():
+def test_safety_blocked_finish_reason_is_treated_as_not_resolved():
+    """Gemini's equivalent of Anthropic's stop_reason == 'refusal' - the
+    model declined rather than erroring. Must be a normal "not resolved"
+    outcome (AC2), not raise InterpreterUnavailableError (which would
+    incorrectly read as a service outage and refund the usage slot the
+    route already spent for this request)."""
     response = _FakeResponse(
         {"resolved": False, "column": None, "valueColumn": None, "chartType": None, "reason": None},
-        stop_reason="refusal",
+        finish_reason=types.FinishReason.SAFETY,
     )
     client = _FakeClient(response=response)
     result = interpret_chart_request("hazme una torta por vendedor", COLUMNS, client=client)
@@ -266,15 +277,3 @@ def test_blank_question_raises_value_error():
     client = _FakeClient(response=_FakeResponse({}))
     with pytest.raises(ValueError):
         interpret_chart_request("   ", COLUMNS, client=client)
-
-
-def _fake_http_request():
-    import httpx
-
-    return httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-
-
-def _fake_http_response(status_code):
-    import httpx
-
-    return httpx.Response(status_code, request=_fake_http_request())

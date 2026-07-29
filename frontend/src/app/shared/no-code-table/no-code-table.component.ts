@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 
-import { CellResult, ExcelProfileColumn } from '../../models/api.models';
+import { ExcelProfileColumn, TableResult } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 import { ExcelProfileState } from '../no-code-chart/no-code-chart.component';
 
@@ -30,7 +30,7 @@ export class NoCodeTableComponent implements OnChanges {
   // neto de toda la factura", read as biggest-first).
   ascending = false;
   sorting = false;
-  sortResult: CellResult | null = null;
+  sortResult: TableResult | null = null;
 
   // Story 8.2: group-by columns (checkboxes, same pattern as Story 7.2's
   // chart grouping) + a required value column to sum and take percentages
@@ -39,7 +39,7 @@ export class NoCodeTableComponent implements OnChanges {
   selectedGroupColumns: string[] = [];
   selectedSummaryValueColumn: string | null = null;
   summarizing = false;
-  summaryResult: CellResult | null = null;
+  summaryResult: TableResult | null = null;
 
   constructor(private notebook: NotebookService) {}
 
@@ -125,6 +125,7 @@ export class NoCodeTableComponent implements OnChanges {
               message: backendMessage ?? 'No se pudo contactar el servidor.',
               traceback: '',
             },
+            explanation: null,
           };
         },
       });
@@ -156,6 +157,7 @@ export class NoCodeTableComponent implements OnChanges {
             message: backendMessage ?? 'No se pudo contactar el servidor.',
             traceback: '',
           },
+          explanation: null,
         };
       },
     });
