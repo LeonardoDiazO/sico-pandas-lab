@@ -250,30 +250,59 @@ def generate_chart():
         return api_response(message="La lista de columnas para agrupar no es válida.", success=False, status=400)
     if chart_type != "histograma" and not columns:
         return api_response(message="Falta elegir al menos una columna para agrupar.", success=False, status=400)
-    if chart_type == "linea" and len(columns) > 1:
+    if chart_type in ("linea", "area", "boxplot") and len(columns) != 1:
+        label = "línea" if chart_type == "linea" else ("área" if chart_type == "area" else "caja y bigotes")
         return api_response(
-            message="La gráfica de línea solo admite una columna de fecha.", success=False, status=400
+            message=f"La gráfica de {label} necesita exactamente una columna.", success=False, status=400
         )
-    if chart_type == "histograma" and not value_column:
+    if chart_type in ("heatmap", "dispersion") and len(columns) != 2:
+        label = "mapa de calor" if chart_type == "heatmap" else "dispersión"
         return api_response(
-            message="Falta elegir una columna de valor para el histograma.", success=False, status=400
+            message=f"La gráfica de {label} necesita exactamente dos columnas.", success=False, status=400
+        )
+    if chart_type in ("histograma", "area", "boxplot", "heatmap") and not value_column:
+        label = {
+            "histograma": "el histograma",
+            "area": "la gráfica de área",
+            "boxplot": "la gráfica de caja y bigotes",
+            "heatmap": "el mapa de calor",
+        }[chart_type]
+        return api_response(
+            message=f"Falta elegir una columna de valor para {label}.", success=False, status=400
         )
     if isinstance(column_types, dict):
-        if chart_type in ("torta", "barras"):
+        if chart_type in ("torta", "barras", "heatmap"):
             incompatible = [c for c in columns if column_types.get(c) not in (None, "categorica")]
             if incompatible:
+                label = "torta y barras necesitan" if chart_type in ("torta", "barras") else "el mapa de calor necesita"
                 return api_response(
-                    message=f"'{incompatible[0]}' no es una columna de categoría — "
-                    "torta y barras necesitan columnas de categoría.",
+                    message=f"'{incompatible[0]}' no es una columna de categoría — {label} columnas de categoría.",
                     success=False,
                     status=400,
                 )
-        elif chart_type == "linea" and columns and column_types.get(columns[0]) not in (None, "fecha"):
+        elif chart_type in ("linea", "area") and columns and column_types.get(columns[0]) not in (None, "fecha"):
+            label = "línea" if chart_type == "linea" else "área"
             return api_response(
-                message=f"'{columns[0]}' no es una columna de fecha — línea necesita una columna de fecha.",
+                message=f"'{columns[0]}' no es una columna de fecha — {label} necesita una columna de fecha.",
                 success=False,
                 status=400,
             )
+        elif chart_type == "boxplot" and columns and column_types.get(columns[0]) not in (None, "categorica"):
+            return api_response(
+                message=f"'{columns[0]}' no es una columna de categoría — "
+                "caja y bigotes necesita una columna de categoría.",
+                success=False,
+                status=400,
+            )
+        elif chart_type == "dispersion":
+            incompatible = [c for c in columns if column_types.get(c) not in (None, "numerica")]
+            if incompatible:
+                return api_response(
+                    message=f"'{incompatible[0]}' no es una columna numérica — "
+                    "dispersión necesita dos columnas numéricas.",
+                    success=False,
+                    status=400,
+                )
 
     if needs_cardinality_check(chart_type) and not force:
         check_result = _manager().execute(_session_id(), build_cardinality_check_code(variable, columns))

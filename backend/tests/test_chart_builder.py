@@ -3,8 +3,10 @@ import ast
 import pytest
 
 from app.notebook.chart_builder import (
+    CHART_TYPES,
     HIGH_CARDINALITY_THRESHOLD,
     TOP_N_CATEGORIES_BEFORE_OTROS,
+    _looks_like_money,
     build_cardinality_check_code,
     build_chart_code,
     needs_cardinality_check,
@@ -256,10 +258,13 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     added what the percentage is a share OF (see
     test_torta_legend_percentage_says_what_it_is_a_percentage_of); a further
     round added the slice's absolute value alongside the percentage (see
-    test_torta_legend_includes_absolute_value) - this now pins that final
-    string (using the live constant, not a bare literal, so this test
-    doesn't silently go stale if the threshold moves again), still
-    guarding that the underlying grouping expression
+    test_torta_legend_includes_absolute_value); a further round added a "$"
+    prefix + Colombian "." thousands separator when the value column looks
+    like money (see test_torta_legend_formats_money_column_as_colombian_pesos)
+    - 'neto' matches that heuristic, so this now pins that final string
+    (using the live constant, not a bare literal, so this test doesn't
+    silently go stale if the threshold moves again), still guarding that the
+    underlying grouping expression
     (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
     n = TOP_N_CATEGORIES_BEFORE_OTROS
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
@@ -274,8 +279,9 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         "colors=plt.get_cmap('tab20').colors[:len(_chart_data)], pctdistance=0.8)\n"
         "_total = _chart_data.sum()\n"
         "_pct_de = 'neto'\n"
+        "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')\n"
         "_ax.legend(_wedges, "
-        "[f'{name} - {val:,.0f} ({val / _total * 100:.1f}%) de {_pct_de}' "
+        "[f'{name} - {_fmt_valor(val)} ({val / _total * 100:.1f}%) de {_pct_de}' "
         "for name, val in _chart_data.items()], "
         "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
         "plt.title('neto por vendedor', fontsize=13, fontweight='bold')\n"
@@ -411,11 +417,11 @@ def test_torta_legend_percentage_says_what_it_is_a_percentage_of():
 def test_torta_legend_includes_absolute_value():
     """User feedback: "38.6% de neto, pero ¿cuánto es neto?" - the percentage
     alone doesn't say the actual amount. Every legend entry must also show
-    the slice's real total (thousands-separated, same :,.0f pattern already
-    used on barras' y-axis), alongside - not instead of - the percentage."""
+    the slice's real total via _fmt_valor, alongside - not instead of - the
+    percentage."""
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
-    assert "val:,.0f" in code
+    assert "_fmt_valor(val)" in code
     assert "val / _total * 100" in code
 
     import matplotlib
@@ -432,6 +438,65 @@ def test_torta_legend_includes_absolute_value():
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert result["image_base64"]
+
+
+# --- User feedback: "$" sign + Colombian punctuation for money columns ---
+
+
+def test_looks_like_money_matches_common_spanish_accounting_terms():
+    for name in ["neto", "Valor Total", "VENTA", "costo unitario", "Precio", "monto_pagado"]:
+        assert _looks_like_money(name) is True
+
+
+def test_looks_like_money_does_not_match_plain_quantities_or_codes():
+    for name in ["Cant", "Consec", "Codigo", "vendedor", "Documento", None, ""]:
+        assert _looks_like_money(name) is False
+
+
+def test_torta_legend_formats_money_column_as_colombian_pesos():
+    """A money-looking value column (e.g. 'neto') gets a '$' prefix and '.'
+    as the thousands separator (Colombian convention) instead of the plain
+    ','-separated number - built via .replace(',', '.') on the existing
+    :,.0f formatting rather than Python's locale module, which isn't
+    guaranteed to be es_CO inside the sandboxed worker."""
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"vendedor": ["V0", "V1"], "neto": [1234567.0, 500.0]})
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]
+
+
+def test_torta_legend_leaves_non_money_column_formatting_unchanged():
+    """A quantity column (e.g. 'Cant') must NOT get a '$' prefix - only the
+    plain :,.0f format, exactly as before this change."""
+    code = build_chart_code("torta", "df", ["vendedor"], "Cant")
+    _assert_valid_python(code)
+    assert "_fmt_valor = lambda v: f'{v:,.0f}'" in code
+    assert "'$'" not in code
+
+
+def test_barras_y_axis_formats_money_column_as_colombian_pesos():
+    code = build_chart_code("barras", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert '"$ " + f\'{x:,.0f}\'.replace(\',\', \'.\')' in code
+
+
+def test_barras_y_axis_leaves_non_money_column_formatting_unchanged():
+    code = build_chart_code("barras", "df", ["vendedor"], "Cant")
+    _assert_valid_python(code)
+    assert "f'{x:,.0f}'" in code
+    assert "$" not in code
 
 
 def test_torta_legend_percentage_label_column_name_with_quote_is_safe():
@@ -560,3 +625,110 @@ def test_torta_clips_negative_values_before_plotting():
     )
     assert result["Otros"] == 0  # 5 + (-60) = -55, clipped to 0 instead of crashing
     result.plot.pie(autopct="%1.1f%%", ylabel="", figsize=(8, 8))  # must not raise
+
+
+# --- New chart types (user feedback: "acaso no existen más?") ------------------
+
+
+def _run(code, df):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = df
+    result = execute_code(code, namespace)
+    assert result["error"] is None, result["error"]
+    assert result["image_base64"]
+    return result
+
+
+def test_area_requires_exactly_one_fecha_column_and_a_value_column():
+    """30 days of data (not just 2-3) - same reasoning as linea's own
+    test_linea_runs_end_to_end_with_many_days_and_produces_an_image: a date
+    x-axis with too few points is a known matplotlib edge case (the
+    auto-locator/tight_layout margin math can behave oddly), independent of
+    anything specific to area."""
+    import numpy as np
+    import pandas as pd
+
+    code = build_chart_code("area", "df", ["dia"], "neto")
+    _assert_valid_python(code)
+    assert ".plot.area(" in code
+    assert "neto" in code
+
+    dates = pd.date_range("2026-05-01", periods=30, freq="D")
+    df = pd.DataFrame(
+        {"dia": dates.strftime("%Y%m%d").astype(int), "neto": np.random.randint(1000, 50000, 30)}
+    )
+    _run(code, df)
+
+
+def test_area_formats_money_column_as_colombian_pesos():
+    code = build_chart_code("area", "df", ["dia"], "neto")
+    _assert_valid_python(code)
+    assert '"$ " + f\'{y:,.0f}\'.replace(\',\', \'.\')' in code
+
+
+def test_area_leaves_non_money_column_unchanged():
+    code = build_chart_code("area", "df", ["dia"], "Cant")
+    _assert_valid_python(code)
+    assert "$" not in code
+
+
+def test_boxplot_needs_one_categorical_and_a_value_column():
+    import pandas as pd
+
+    code = build_chart_code("boxplot", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "sns.boxplot(" in code
+    assert "x='vendedor'" in code
+    assert "y='neto'" in code
+
+    df = pd.DataFrame(
+        {"vendedor": ["V0", "V0", "V1", "V1"], "neto": [100.0, 150.0, 80.0, 90.0]}
+    )
+    _run(code, df)
+
+
+def test_heatmap_needs_two_categorical_columns_and_a_value_column():
+    import pandas as pd
+
+    code = build_chart_code("heatmap", "df", ["vendedor", "mes"], "neto")
+    _assert_valid_python(code)
+    assert "pivot_table(" in code
+    assert "sns.heatmap(" in code
+
+    df = pd.DataFrame(
+        {
+            "vendedor": ["V0", "V0", "V1", "V1"],
+            "mes": ["Enero", "Febrero", "Enero", "Febrero"],
+            "neto": [100.0, 150.0, 80.0, 90.0],
+        }
+    )
+    _run(code, df)
+
+
+def test_dispersion_needs_two_numeric_columns_and_ignores_value_column():
+    import pandas as pd
+
+    code = build_chart_code("dispersion", "df", ["cant", "neto"], None)
+    _assert_valid_python(code)
+    assert "_ax.scatter(" in code
+    assert "cant" in code
+    assert "neto" in code
+
+    df = pd.DataFrame({"cant": [1, 2, 3, 4], "neto": [100.0, 150.0, 80.0, 200.0]})
+    _run(code, df)
+
+
+def test_all_new_chart_types_are_in_the_closed_set():
+    for chart_type in ("area", "boxplot", "heatmap", "dispersion"):
+        assert chart_type in CHART_TYPES
+
+
+def test_boxplot_and_heatmap_get_the_cardinality_warning_but_not_dispersion():
+    assert needs_cardinality_check("boxplot") is True
+    assert needs_cardinality_check("heatmap") is True
+    assert needs_cardinality_check("dispersion") is False

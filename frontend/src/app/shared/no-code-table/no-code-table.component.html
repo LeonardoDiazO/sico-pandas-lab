@@ -93,7 +93,13 @@
           @for (card of summaryCards; track card.label) {
             <div class="summary-card" [class.crossed]="card.marker">
               <div class="card-label">{{ card.label }}</div>
-              <div class="card-value">{{ card.value | number: '1.0-0' }}</div>
+              <div class="card-value">
+                @if (summaryValueIsMoney) {
+                  {{ card.value | currency: 'COP' : 'symbol' : '1.0-0' }}
+                } @else {
+                  {{ card.value | number: '1.0-0' }}
+                }
+              </div>
               <div class="card-pct">{{ card.pctTotal }}% del total</div>
               @if (card.marker) {
                 <div class="card-marker">{{ card.marker }}</div>

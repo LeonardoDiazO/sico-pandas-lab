@@ -18,20 +18,37 @@ a small closed set already validated by the caller - this never builds code
 from free-form user text.
 """
 
-CHART_TYPES = {"torta", "barras", "linea", "histograma"}
+CHART_TYPES = {
+    "torta", "barras", "linea", "histograma",
+    # User feedback ("acaso no existen más [gráficas]?"): area/boxplot/heatmap
+    # reuse the exact same {columns: categorica/fecha, value_column: numerica}
+    # request shape the four original types already use - dispersion is the
+    # one genuine exception (it needs two NUMERIC columns, no value_column;
+    # see the "dispersion" branch below and the frontend's dedicated X/Y
+    # selects, since its inputs don't fit the categorical-checkbox model).
+    "area", "boxplot", "heatmap", "dispersion",
+}
 
 # Pie/bar charts become unreadable well before 20 slices; a time series or a
 # histogram bins/aggregates automatically so cardinality of the raw column
-# isn't a legibility problem for those - the check only applies here.
+# isn't a legibility problem for those - the check only applies here. boxplot
+# and heatmap have the same "too many categories" legibility problem as
+# torta/barras (a boxplot with 80 boxes, or an 80x80 heatmap grid, are just as
+# illegible) - dispersion is exempt like linea/histograma: it plots individual
+# numeric values, not category counts, so cardinality isn't the risk there.
 HIGH_CARDINALITY_THRESHOLD = 15
-_CARDINALITY_CHECK_TYPES = {"torta", "barras"}
+_CARDINALITY_CHECK_TYPES = {"torta", "barras", "boxplot", "heatmap"}
 
 # This decides how many individual categories torta/barras actually draw
 # once generation proceeds (Story 7.4, extended to barras post-Epic-7 once
 # multi-column combinations - Story 7.2 - made it easy to blow past the
 # threshold with 80+ unique combinations) - the rest get folded into a
 # single "Otros" slice/bar instead of rendering dozens of illegible slivers
-# or bars.
+# or bars. Deliberately torta/barras-only: boxplot/heatmap still get the
+# cardinality WARNING above, but there's no sane way to "fold" a box-and-
+# whisker distribution or a heatmap cell the way a pie/bar total can just be
+# summed into one bucket - if the user forces generation anyway, they get
+# every category, however cluttered.
 #
 # Deliberately equal to HIGH_CARDINALITY_THRESHOLD (post-Epic-7, user
 # feedback): "Otros" should only ever kick in once the user has already seen
@@ -42,6 +59,32 @@ _CARDINALITY_CHECK_TYPES = {"torta", "barras"}
 # categories the user had no idea were coming; tying them together closes
 # that gap instead of just re-picking another arbitrary constant.
 TOP_N_CATEGORIES_BEFORE_OTROS = HIGH_CARDINALITY_THRESHOLD
+
+# User feedback (real file: "detallado comfenalco"): a money column (neto,
+# valor total, costo...) needs a "$" sign and Colombian-style "." thousands
+# separator to actually read as currency - a plain quantity column (Cant,
+# Consec) must NOT get a "$" prefix. excel_profiler.py has no concept of
+# "this numeric column is money" (it only classifies categorica/numerica/
+# fecha/descartable), so this is a substring heuristic on the column name,
+# same trade-off the profiler itself already accepts elsewhere (e.g. its
+# DATE_YYYYMMDD_PATTERN guesses "date" from shape, not a declared type) -
+# imperfect but good enough without asking the user to tag every column.
+#
+# Duplicated in frontend/src/app/shared/money-format.ts (no shared module
+# between the Python backend and the TypeScript frontend) - keep both
+# keyword lists in sync if this one changes.
+_MONEY_KEYWORDS = (
+    "valor", "venta", "costo", "neto", "precio", "monto", "pago",
+    "saldo", "ingreso", "egreso", "factura", "flete", "descuento",
+    "iva", "bruto", "importe", "subtotal",
+)
+
+
+def _looks_like_money(column_name):
+    if not column_name:
+        return False
+    lowered = column_name.lower()
+    return any(keyword in lowered for keyword in _MONEY_KEYWORDS)
 
 
 def needs_cardinality_check(chart_type):
@@ -68,9 +111,19 @@ def build_chart_code(chart_type, variable, columns, value_column):
     matplotlib figure ready to be captured as the cell result image.
 
     `columns` is a list of column names (never None; empty for chart types
-    that ignore it, e.g. histograma). `linea` always takes exactly one
-    column - callers must enforce that before calling this (see
-    routes.py::generate_chart, Story 7.2 AC4).
+    that ignore it, e.g. histograma). Per-type column count/type
+    requirements (all enforced by the caller - routes.py::generate_chart -
+    before this function is reached, closed-set selection same as
+    chart_type itself):
+
+    - torta/barras: 1+ categorica/fecha columns, value_column optional.
+    - linea: exactly 1 fecha column, value_column optional.
+    - area: exactly 1 fecha column, value_column REQUIRED.
+    - boxplot: exactly 1 categorica column, value_column REQUIRED.
+    - heatmap: exactly 2 categorica columns, value_column REQUIRED.
+    - dispersion: exactly 2 numerica columns (X, Y) carried in `columns` -
+      value_column is unused for this one type (see the "dispersion" branch).
+    - histograma: `columns` ignored entirely, value_column REQUIRED.
 
     Raises ValueError for an unrecognized chart_type - callers must already
     validate against CHART_TYPES before calling this (closed-set selection).
@@ -79,6 +132,7 @@ def build_chart_code(chart_type, variable, columns, value_column):
         raise ValueError(f"Tipo de gráfica no reconocido: {chart_type!r}")
 
     if chart_type in ("torta", "barras"):
+        is_money = _looks_like_money(value_column)
         series_expr = _grouped_series_expr(variable, columns, value_column)
         title = _title_for(columns, value_column)
         series_expr = _limit_to_top_n_plus_others(series_expr, TOP_N_CATEGORIES_BEFORE_OTROS)
@@ -131,11 +185,23 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 f"_pct_de = {(value_column or 'la cantidad de filas')!r}",
                 # User feedback: the percentage alone doesn't say the actual
                 # amount ("38.6% de neto, pero ¿cuánto es neto?") - val is
-                # already the slice's real total, just add it with a
-                # thousands separator (same :,.0f pattern already used on
-                # barras' y-axis) ahead of the percentage.
+                # already the slice's real total, so show it too. When the
+                # value column looks like money (_looks_like_money), format
+                # it as Colombian pesos: "$ " prefix (matching the frontend's
+                # es-CO `currency` pipe pattern, "¤ #,##0.00") + "." as the
+                # thousands separator (built from the same :,.0f as before, then
+                # .replace(',', '.') - simpler and more robust than reaching
+                # for Python's locale module inside the sandboxed worker,
+                # whose system locale isn't guaranteed to be es_CO). A
+                # non-money numeric column (e.g. a quantity) keeps the exact
+                # prior plain format - unchanged.
+                (
+                    "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')"
+                    if is_money
+                    else "_fmt_valor = lambda v: f'{v:,.0f}'"
+                ),
                 "_ax.legend(_wedges, "
-                "[f'{name} - {val:,.0f} ({val / _total * 100:.1f}%) de {_pct_de}' "
+                "[f'{name} - {_fmt_valor(val)} ({val / _total * 100:.1f}%) de {_pct_de}' "
                 "for name, val in _chart_data.items()], "
                 "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
             ]
@@ -144,8 +210,12 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 "_ax = _chart_data.plot.bar(figsize=(10, 7), "
                 "color=plt.get_cmap('tab20').colors[:len(_chart_data)])",
                 # Plain thousands-separated numbers instead of matplotlib's
-                # default "1e8"-style scientific notation on the y-axis.
-                "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _pos: f'{x:,.0f}'))",
+                # default "1e8"-style scientific notation on the y-axis -
+                # same money-detection and Colombian-punctuation treatment as
+                # the torta legend above, for the same reason.
+                "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _pos: "
+                + ("\"$ \" + f'{x:,.0f}'.replace(',', '.')" if is_money else "f'{x:,.0f}'")
+                + "))",
                 # Long composite labels (Story 7.2) get truncated for the
                 # x-axis specifically - this only changes the tick text, not
                 # the underlying data/legend/exported values.
@@ -159,15 +229,7 @@ def build_chart_code(chart_type, variable, columns, value_column):
 
     if chart_type == "linea":
         column = columns[0]
-        # astype(str) before parsing - a "fecha" column stored as a bare
-        # integer YYYYMMDD (e.g. 20260602, the exact shape
-        # excel_profiler.py's own DATE_YYYYMMDD_PATTERN already recognizes)
-        # gets misparsed by pd.to_datetime() as nanoseconds-since-epoch when
-        # passed the raw int, producing a garbage ~1970 date instead of the
-        # real one - casting to str first (same pattern excel_profiler.py
-        # itself uses to detect these columns) fixes it without changing
-        # behavior for already-string or already-Timestamp columns.
-        dates_expr = f"pd.to_datetime({variable}[{column!r}].astype(str), errors='coerce')"
+        dates_expr = _date_series_expr(variable, column)
         if value_column:
             # dt.floor('D') (not dt.date) - keeps a real pandas
             # Timestamp/DatetimeIndex, so matplotlib's date-aware tick
@@ -190,9 +252,108 @@ def build_chart_code(chart_type, variable, columns, value_column):
             "plt.tight_layout()"
         )
 
+    if chart_type == "area":
+        # Required value_column (unlike linea, where it's optional): a
+        # count-mode area chart ("cantidad de filas por fecha") would be
+        # visually identical to linea's own count mode - area's only reason
+        # to exist as a separate type is showing a summed value filled in,
+        # so it requires the input that makes that distinct (caller must
+        # enforce this before calling - routes.py's generate_chart).
+        column = columns[0]
+        dates_expr = _date_series_expr(variable, column)
+        series_expr = f"{variable}.groupby({dates_expr}.dt.floor('D'))[{value_column!r}].sum()"
+        is_money = _looks_like_money(value_column)
+        formatter_expr = "\"$ \" + f'{y:,.0f}'.replace(',', '.')" if is_money else "f'{y:,.0f}'"
+        return (
+            f"_ax = {series_expr}.plot.area(figsize=(10, 6), alpha=0.6, "
+            "color=plt.get_cmap('tab20').colors[0])\n"
+            f"_ax.set_ylabel({value_column!r})\n"
+            "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: " + formatter_expr + "))\n"
+            f"{_bold_title_line(f'{value_column} por {column} (área)')}\n"
+            "plt.tight_layout()"
+        )
+
+    if chart_type == "boxplot":
+        # Exactly 1 categorical column (caller-enforced) + a required
+        # numeric value_column - there's no meaningful "count rows" mode for
+        # a box-and-whisker plot. Uses seaborn (already preloaded by
+        # execution.py's build_namespace() for every cell) rather than
+        # pandas' own df.boxplot(), which needs a MultiIndex/groupby dance to
+        # get one box per category - sns.boxplot(x=, y=) does it directly.
+        # NaN group values are silently dropped by seaborn's default -
+        # unlike torta/barras' explicit "(vacío)" bucket (_grouping_expr),
+        # deliberately not replicated here to keep this first pass simple.
+        column = columns[0]
+        is_money = _looks_like_money(value_column)
+        formatter_expr = "\"$ \" + f'{y:,.0f}'.replace(',', '.')" if is_money else "f'{y:,.0f}'"
+        return (
+            "_fig, _ax = plt.subplots(figsize=(10, 7))\n"
+            f"sns.boxplot(data={variable}, x={column!r}, y={value_column!r}, "
+            f"hue={column!r}, palette='tab20', legend=False, ax=_ax)\n"
+            "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: " + formatter_expr + "))\n"
+            "_ax.set_xticklabels([_t.get_text()[:28] + ('…' if len(_t.get_text()) > 28 else '') "
+            "for _t in _ax.get_xticklabels()], rotation=45, ha='right')\n"
+            f"{_bold_title_line(f'Distribución de {value_column} por {column}')}\n"
+            "plt.tight_layout()"
+        )
+
+    if chart_type == "heatmap":
+        # Exactly 2 categorical columns (caller-enforced) + a required
+        # numeric value_column, summed into a pivot table (rows x cols).
+        # Cell annotations use a plain ',.0f' format (comma thousands, no
+        # "$" prefix, no Colombian punctuation) - seaborn's `fmt` is a bare
+        # format-spec string applied per-cell internally, not a callable, so
+        # the _looks_like_money() treatment used elsewhere in this module
+        # can't be reused here without pre-formatting every cell into its
+        # own annotation array; left as a known simplification for this
+        # first pass rather than adding that complexity up front.
+        row_col, col_col = columns[0], columns[1]
+        pivot_expr = (
+            f"{variable}.pivot_table(index={row_col!r}, columns={col_col!r}, "
+            f"values={value_column!r}, aggfunc='sum', fill_value=0)"
+        )
+        return (
+            f"_pivot = {pivot_expr}\n"
+            "_fig, _ax = plt.subplots(figsize=(10, 8))\n"
+            "sns.heatmap(_pivot, annot=True, fmt=',.0f', cmap='YlGnBu', ax=_ax)\n"
+            f"{_bold_title_line(f'{value_column} por {row_col} y {col_col}')}\n"
+            "plt.tight_layout()"
+        )
+
+    if chart_type == "dispersion":
+        # The one chart type that doesn't fit {columns: categorica/fecha,
+        # value_column: numerica} - it needs two NUMERIC columns (X, Y), so
+        # both travel in `columns` (caller-enforced: exactly 2, both
+        # numerica) and value_column is unused. No cardinality check/Otros
+        # bucketing applies (see _CARDINALITY_CHECK_TYPES) - a scatter of
+        # individual points scales visually with density, not category count.
+        x_col, y_col = columns[0], columns[1]
+        return (
+            "_fig, _ax = plt.subplots(figsize=(9, 7))\n"
+            f"_ax.scatter({variable}[{x_col!r}], {variable}[{y_col!r}], "
+            "alpha=0.6, color=plt.get_cmap('tab20').colors[0])\n"
+            f"_ax.set_xlabel({x_col!r})\n"
+            f"_ax.set_ylabel({y_col!r})\n"
+            f"{_bold_title_line(f'{y_col} vs {x_col}')}\n"
+            "plt.tight_layout()"
+        )
+
     # histograma: distribution of a single numeric column, grouping columns ignored
     title = f"Distribución de {value_column}"
     return f"{variable}[{value_column!r}].plot.hist()\n{_bold_title_line(title)}\nplt.tight_layout()"
+
+
+def _date_series_expr(variable, column):
+    """astype(str) before parsing - a "fecha" column stored as a bare
+    integer YYYYMMDD (e.g. 20260602, the exact shape excel_profiler.py's own
+    DATE_YYYYMMDD_PATTERN already recognizes) gets misparsed by
+    pd.to_datetime() as nanoseconds-since-epoch when passed the raw int,
+    producing a garbage ~1970 date instead of the real one - casting to str
+    first (same pattern excel_profiler.py itself uses to detect these
+    columns) fixes it without changing behavior for already-string or
+    already-Timestamp columns. Shared by linea and area - both plot a date
+    column on the x-axis."""
+    return f"pd.to_datetime({variable}[{column!r}].astype(str), errors='coerce')"
 
 
 def _grouping_expr(variable, columns):

@@ -11,7 +11,15 @@ export interface ExcelProfileState {
 
 const GROUPABLE_TYPES: ExcelProfileColumn['type'][] = ['categorica', 'fecha'];
 
-export type ChartKind = 'torta' | 'barras' | 'linea' | 'histograma';
+export type ChartKind =
+  | 'torta'
+  | 'barras'
+  | 'linea'
+  | 'histograma'
+  | 'area'
+  | 'boxplot'
+  | 'heatmap'
+  | 'dispersion';
 
 interface ChartTypeOption {
   value: ChartKind;
@@ -23,6 +31,26 @@ const CHART_TYPE_LABELS: Record<ChartKind, string> = {
   barras: 'Barras',
   linea: 'Línea',
   histograma: 'Histograma',
+  area: 'Área',
+  boxplot: 'Caja y bigotes',
+  heatmap: 'Mapa de calor',
+  dispersion: 'Dispersión',
+};
+
+// User feedback ("sería bueno explicar antes"): shown right under the chart
+// type selector so the user knows what columns it needs BEFORE clicking
+// "Generar" and hitting a backend validation error - same facts documented
+// in chart_builder.py's build_chart_code() docstring, kept in sync manually
+// (no shared module between the Python backend and this TypeScript frontend).
+const CHART_TYPE_HINTS: Record<ChartKind, string> = {
+  torta: 'Necesita 1 o más columnas de categoría/fecha para agrupar (columna de valor opcional). Ideal con pocas categorías — arriba de ~15 se agrupan como "Otros".',
+  barras: 'Necesita 1 o más columnas de categoría/fecha para agrupar (columna de valor opcional). Mismo límite de ~15 categorías legibles que torta.',
+  linea: 'Necesita exactamente 1 columna de fecha (columna de valor opcional).',
+  histograma: 'Necesita 1 columna numérica — ignora cualquier columna de agrupación.',
+  area: 'Necesita exactamente 1 columna de fecha + 1 columna numérica (obligatoria).',
+  boxplot: 'Necesita exactamente 1 columna de categoría + 1 columna numérica (obligatoria).',
+  heatmap: 'Necesita exactamente 2 columnas de categoría + 1 columna numérica (obligatoria).',
+  dispersion: 'Necesita 2 columnas numéricas distintas (eje X y eje Y) — elígelas abajo.',
 };
 
 /**
@@ -50,6 +78,12 @@ export class NoCodeChartComponent implements OnChanges {
   selectedColumns: string[] = [];
   selectedValueColumn: string | null = null;
   selectedChartType: ChartKind | null = null;
+  // Dispersión is the one chart type that needs two NUMERIC columns (X, Y)
+  // instead of the categorica/fecha checkbox + single numeric value model
+  // every other type uses - own dedicated selects rather than repurposing
+  // selectedColumns/selectedValueColumn's meaning per chart type.
+  selectedScatterX: string | null = null;
+  selectedScatterY: string | null = null;
   generating = false;
   chartResult: ChartResult | null = null;
   cardinalityWarning: CardinalityWarning | null = null;
@@ -72,7 +106,20 @@ export class NoCodeChartComponent implements OnChanges {
     return this.profile?.columns.filter((c) => c.type === 'numerica') ?? [];
   }
 
-  private static readonly ALL_CHART_KINDS: ChartKind[] = ['torta', 'barras', 'linea', 'histograma'];
+  get chartTypeHint(): string | null {
+    return this.selectedChartType ? CHART_TYPE_HINTS[this.selectedChartType] : null;
+  }
+
+  private static readonly ALL_CHART_KINDS: ChartKind[] = [
+    'torta',
+    'barras',
+    'linea',
+    'histograma',
+    'area',
+    'boxplot',
+    'heatmap',
+    'dispersion',
+  ];
 
   get chartTypeOptions(): ChartTypeOption[] {
     // By user request: the user picks whichever chart type they want, no
@@ -111,6 +158,15 @@ export class NoCodeChartComponent implements OnChanges {
         // to remember to opt IN to a sum every time.
         this.selectedValueColumn = this.numericColumns[0]?.name ?? null;
       }
+      // No smart default for X/Y (dispersión is opt-in, unlike the other
+      // types) - just drop a selection that no longer exists on the new
+      // profile, same reasoning as selectedColumns' groupable.has() filter.
+      if (!this.numericColumns.some((c) => c.name === this.selectedScatterX)) {
+        this.selectedScatterX = null;
+      }
+      if (!this.numericColumns.some((c) => c.name === this.selectedScatterY)) {
+        this.selectedScatterY = null;
+      }
     }
     this.revalidateChartType();
   }
@@ -144,6 +200,11 @@ export class NoCodeChartComponent implements OnChanges {
     if (this.selectedChartType === 'histograma') {
       return !!this.selectedValueColumn;
     }
+    if (this.selectedChartType === 'dispersion') {
+      return (
+        !!this.selectedScatterX && !!this.selectedScatterY && this.selectedScatterX !== this.selectedScatterY
+      );
+    }
     return this.selectedColumns.length > 0;
   }
 
@@ -153,14 +214,11 @@ export class NoCodeChartComponent implements OnChanges {
     }
     this.generating = true;
     this.clearResult();
+    const isScatter = this.selectedChartType === 'dispersion';
+    const columns = isScatter ? [this.selectedScatterX!, this.selectedScatterY!] : this.selectedColumns;
+    const valueColumn = isScatter ? null : this.selectedValueColumn;
     this.notebook
-      .generateChart(
-        this.profile.variable,
-        this.selectedColumns,
-        this.selectedValueColumn,
-        this.selectedChartType,
-        force,
-      )
+      .generateChart(this.profile.variable, columns, valueColumn, this.selectedChartType, force)
       .subscribe({
         next: (res) => {
           this.generating = false;

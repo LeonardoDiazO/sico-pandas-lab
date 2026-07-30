@@ -36,6 +36,21 @@ _NUMERIC_TYPE = "numerica"
 # no-code-chart.component.ts chartTypeOptions getter applies for the manual
 # selectors. Kept as one small table (rather than a chain of if-statements)
 # so a future chart type is one row to add, not a new branch to hand-write.
+#
+# Deliberately still just these 4, even though chart_builder.py's CHART_TYPES
+# (used above for the schema's `chartType` enum) now has 8: area/boxplot need
+# a REQUIRED value_column that this table's (field, type) shape has no way to
+# express (it only checks type-compatibility when a field is present, never
+# "this field must be present") - resolving to area/boxplot without a value
+# column would pass this validation but then fail /generate-chart's own
+# check. heatmap/dispersion need TWO type-checked columns, which this table
+# can't express at all. Rather than half-fit those four in and risk an
+# "assistant said it resolved but generation failed anyway" experience,
+# _CHART_TYPE_REQUIREMENTS.get(chart_type) below returns None for all of
+# them - same as any other unrecognized value - and _validate_and_normalize
+# falls back to _NOT_RESOLVED, same as the model naming a type outside the
+# schema's enum entirely. The assistant staying "manual selectors only" for
+# these four is a safe, intentional scope boundary, not an oversight.
 _CHART_TYPE_REQUIREMENTS = {
     "torta": ("column", "categorica"),
     "barras": ("column", "categorica"),

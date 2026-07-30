@@ -54,4 +54,37 @@ def build_chart_explanation(chart_type, columns, value_column):
             "— en qué rangos hay más o menos datos."
         )
 
+    if chart_type == "area":
+        column = columns[0] if columns else None
+        return (
+            f"Esta gráfica de área muestra cómo cambia el total de {value_column} "
+            f"a lo largo del tiempo, usando {column} como fecha — igual que la de línea, "
+            "pero rellena para resaltar la tendencia acumulada."
+        )
+
+    if chart_type == "boxplot":
+        column = columns[0] if columns else None
+        return (
+            f"Esta gráfica de caja y bigotes muestra cómo se distribuye {value_column} "
+            f"dentro de cada valor de {column} — la caja es dónde está la mayoría de los "
+            "datos, y los puntos sueltos son valores atípicos (muy altos o muy bajos)."
+        )
+
+    if chart_type == "heatmap":
+        row_col = columns[0] if columns else None
+        col_col = columns[1] if len(columns) > 1 else None
+        return (
+            f"Este mapa de calor cruza {row_col} y {col_col}: cada celda muestra el total "
+            f"de {value_column} para esa combinación — mientras más oscuro el color, mayor el valor."
+        )
+
+    if chart_type == "dispersion":
+        x_col = columns[0] if columns else None
+        y_col = columns[1] if len(columns) > 1 else None
+        return (
+            f"Esta gráfica de dispersión muestra un punto por cada fila, comparando "
+            f"{x_col} (eje X) contra {y_col} (eje Y) — útil para ver si hay una relación "
+            "entre las dos columnas (ej. a más cantidad, ¿más valor?)."
+        )
+
     return None

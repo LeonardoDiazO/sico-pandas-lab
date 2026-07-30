@@ -1,8 +1,17 @@
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
-import { NgModule, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { LOCALE_ID, NgModule, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BrowserModule } from '@angular/platform-browser';
 import { MonacoEditorModule } from 'ngx-monaco-editor-v2';
+
+import { registerLocaleData } from '@angular/common';
+import localeEsCO from '@angular/common/locales/es-CO';
+
+// Colombian number/currency formatting ("." thousands, "," decimals, "$" for
+// COP) for every `number`/`currency` pipe in the app - this is a Colombian
+// accounting tool (SICO), so es-CO is the right default everywhere, not just
+// for the money-detected KPI values.
+registerLocaleData(localeEsCO);
 
 import { App } from './app';
 import { AppRoutingModule } from './app-routing-module';
@@ -25,6 +34,7 @@ import { TourOverlayComponent } from './core/tour-overlay/tour-overlay.component
     provideBrowserGlobalErrorListeners(),
     provideHttpClient(withInterceptorsFromDi()),
     { provide: HTTP_INTERCEPTORS, useClass: SessionInterceptor, multi: true },
+    { provide: LOCALE_ID, useValue: 'es-CO' },
   ],
   bootstrap: [App],
 })

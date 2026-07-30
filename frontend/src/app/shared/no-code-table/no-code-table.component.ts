@@ -3,6 +3,7 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 
 import { ExcelProfileColumn, TableResult } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
+import { looksLikeMoney } from '../money-format';
 import { ExcelProfileState } from '../no-code-chart/no-code-chart.component';
 
 // Same set Story 7.2 already established for chart grouping - a numeric
@@ -87,6 +88,12 @@ export class NoCodeTableComponent implements OnChanges {
       records.length > 0 &&
       records.length <= MAX_GROUPS_FOR_CARDS
     );
+  }
+
+  // The value column is the same for every card in a given summary - whether
+  // it's money is a property of that column, not of each individual group.
+  get summaryValueIsMoney(): boolean {
+    return looksLikeMoney(this.selectedSummaryValueColumn);
   }
 
   get summaryCards(): SummaryCard[] {

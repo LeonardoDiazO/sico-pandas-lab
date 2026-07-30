@@ -101,3 +101,35 @@ def test_torta_and_barras_point_to_the_summary_table_for_full_detail():
         text = build_chart_explanation(chart_type, ["vendedor"], "neto")
         _assert_plain_language(text)
         assert "tabla de resumen" in text
+
+
+# --- New chart types (user feedback: "acaso no existen más?") ------------------
+
+
+def test_area_mentions_date_and_value():
+    text = build_chart_explanation("area", ["dia"], "neto")
+    _assert_plain_language(text)
+    assert "dia" in text
+    assert "neto" in text
+
+
+def test_boxplot_mentions_group_and_value():
+    text = build_chart_explanation("boxplot", ["vendedor"], "neto")
+    _assert_plain_language(text)
+    assert "vendedor" in text
+    assert "neto" in text
+
+
+def test_heatmap_mentions_both_grouping_columns_and_value():
+    text = build_chart_explanation("heatmap", ["vendedor", "mes"], "neto")
+    _assert_plain_language(text)
+    assert "vendedor" in text
+    assert "mes" in text
+    assert "neto" in text
+
+
+def test_dispersion_mentions_both_axis_columns():
+    text = build_chart_explanation("dispersion", ["cant", "neto"], None)
+    _assert_plain_language(text)
+    assert "cant" in text
+    assert "neto" in text
