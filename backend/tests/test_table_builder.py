@@ -1,5 +1,6 @@
 import ast
 
+from app.notebook.chart_builder import HIGH_CARDINALITY_THRESHOLD
 from app.notebook.table_builder import (
     build_column_values_code,
     build_summary_code,
@@ -807,3 +808,146 @@ def test_filters_with_a_single_quote_in_the_value_do_not_break_generated_syntax(
         "df", "neto", False, filters=[{"column": "cliente", "values": ["O'Brien", "A"]}]
     )
     _assert_valid_python(code)
+
+
+# --- Pareto diagram (bars + cumulative-% line), drawn automatically ------
+# (user feedback: "esta grafica la tenemos que sacar al instante en que
+# hacemos el Resumen y porcentaje por columna con sus ejes en porcentaje")
+
+
+def test_summary_code_also_draws_a_pareto_chart():
+    code = build_summary_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert "_ax1.bar(" in code
+    assert "_ax2 = _ax1.twinx()" in code
+    assert "_ax2.plot(" in code
+    assert "_ax2.axhline(80" in code
+    # the table itself is still the cell's final expression - the chart must
+    # not replace it
+    assert code.strip().splitlines()[-1].startswith("pd.DataFrame(")
+
+
+def test_summary_pareto_chart_runs_end_to_end_and_produces_an_image():
+    """Empirical verification: execution.py's _capture_figure() must pick up
+    the chart automatically (it runs after every cell regardless of the
+    cell's final expression), so the SAME response carries both the table
+    (result_html) and the chart (image_base64)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["A", "A", "B", "C", "C", "C"],
+            "neto": [100.0, 100.0, 300.0, 200.0, 200.0, 100.0],
+        }
+    )
+    code = build_summary_code("df", ["cliente"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["result_html"] is not None
+    assert result["image_base64"]
+
+
+def test_summary_pareto_chart_hides_x_labels_past_the_cardinality_threshold():
+    """A real file had 79 clients - individual x-axis labels for that many
+    bars would only overlap into unreadable clutter, so they're hidden past
+    HIGH_CARDINALITY_THRESHOLD (same one chart_builder.py uses)."""
+    code = build_summary_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert f"if len(_t) <= {HIGH_CARDINALITY_THRESHOLD}:" in code
+    assert "_ax1.set_xticks([])" in code
+
+
+def test_summary_pareto_chart_formats_money_column_y_axis_as_colombian_pesos():
+    code = build_summary_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert "'$ ' + f'{y:,.0f}'.replace(',', '.')" in code
+
+
+def test_summary_pareto_chart_leaves_non_money_column_y_axis_unchanged():
+    code = build_summary_code("df", ["cliente"], "cantidad")
+    _assert_valid_python(code)
+    assert "f'{y:,.0f}'" in code
+    assert "$" not in code
+
+
+# --- Pareto (80/20) also for "Ordenar tabla", at individual-ROW level -----
+# (user feedback: "tengo entendido que deberia hacerse no con el acumulado
+# por representante legal sino por el detallado")
+
+
+def test_sort_descending_also_gets_the_80_20_marker_and_chart():
+    code = build_sort_code("df", "neto", False)
+    _assert_valid_python(code)
+    assert "'80/20'" in code
+    assert "_ax1.bar(" in code
+    assert "_ax2 = _ax1.twinx()" in code
+
+
+def test_sort_ascending_does_not_get_the_80_20_marker_or_chart():
+    """Ascending order ("menor a mayor") has no natural "80/20 from the top"
+    reading - keeps the pre-existing %/cumulative-only view unchanged."""
+    code = build_sort_code("df", "neto", True)
+    _assert_valid_python(code)
+    assert "'80/20'" not in code
+    assert "_ax1.bar(" not in code
+
+
+def test_sort_descending_pareto_marks_the_right_row_and_prints_row_level_insight():
+    """Empirical verification: the 80/20 is computed over INDIVIDUAL ROWS
+    (not grouped by any category), and the printed sentence says "fila(s)",
+    not "categoría(s)"."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    # 4 individual invoice rows (same client repeated - the row-level 80/20
+    # must not collapse them into one group, unlike build_summary_code).
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["LATIN", "LATIN", "LATIN", "OTRO"],
+            "neto": [500.0, 290.0, 150.0, 60.0],
+        }
+    )
+    code = build_sort_code("df", "neto", False)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["result_html"] is not None
+    assert result["image_base64"]
+    # totals: 500+290+150+60=1000 -> cum 50, 79, 94, 100 - crossing at row 3 (94%)
+    assert "3 de 4" in result["stdout"]
+    assert "fila" in result["stdout"]
+    assert "categoría" not in result["stdout"]
+
+
+def test_sort_descending_pareto_formats_money_column_in_chart_y_axis():
+    code = build_sort_code("df", "neto", False)
+    _assert_valid_python(code)
+    assert "'$ ' + f'{y:,.0f}'.replace(',', '.')" in code
+
+
+def test_sort_descending_pareto_zero_total_does_not_produce_inf_or_nan():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"cliente": ["A", "B"], "saldo": [1000.0, -1000.0]})
+    code = build_sort_code("df", "saldo", False)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "inf" not in result["result_html"]
+    assert "nan" not in result["result_html"]
+    assert "inf" not in result["stdout"]

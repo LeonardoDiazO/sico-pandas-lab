@@ -8,7 +8,7 @@ so CELL_TIMEOUT_SECONDS and the existing DataFrame -> HTML capture
 (execution.py::_capture_value(), already used by the free notebook's
 df.head()) come for free. No new execution or rendering mechanism needed.
 """
-from app.notebook.chart_builder import _grouping_expr, _looks_like_money
+from app.notebook.chart_builder import HIGH_CARDINALITY_THRESHOLD, _grouping_expr, _looks_like_money
 
 # Excel-style filter dropdown ("choose which values to include"), Story 8.4.
 # A high-cardinality column (e.g. an invoice number - virtually every row
@@ -102,20 +102,44 @@ def build_sort_code(variable, value_column, ascending, filters=None):
     también en ordenar tabla") - optional list of {"column", "values"}
     Excel-style filters, applied via _filter_lines() BEFORE sorting, so
     '% del total'/'% acumulado' reflect the filtered rows, not the whole file.
+
+    User feedback ("tengo entendido que [el 80/20] deberia hacerse no con el
+    acumulado por representante legal sino por el detallado"): when
+    ascending=False (the default, "mayor a menor"), this now also computes
+    the same 80/20 marker column and draws the same Pareto chart as
+    build_summary_code - but over individual ROWS instead of a grouped
+    category (see _pareto_marker_lines' grouping=None branch). _t is built
+    from `source.sort_values(value_column, ascending=False)` - the EXACT
+    same expression as _ordenado itself in this branch, so _pct/_acum/_marca
+    already share _ordenado's row order with no reindex needed (pandas'
+    .assign() still aligns by index either way). Ascending order ("menor a
+    mayor") has no natural "80/20 from the top" reading, so it keeps the
+    simpler %/cumulative-only view instead (pre-existing behavior,
+    unchanged).
     """
     filter_lines, source = _filter_lines(variable, filters or [])
-    value_expr = _money_format_expr(f"_ordenado[{value_column!r}]") if _looks_like_money(value_column) else None
+    is_money = _looks_like_money(value_column)
+    value_expr = _money_format_expr(f"_ordenado[{value_column!r}]") if is_money else None
+
     lines = filter_lines + [
         f"_ordenado = {source}.sort_values({value_column!r}, ascending={bool(ascending)!r})",
-        f"_total = {source}[{value_column!r}].sum()",
-        # Same zero-total guard as build_summary_code (Epic 8 code review) -
-        # a signed value_column whose rows cancel out to exactly zero would
-        # otherwise leak "inf"/"nan" text into the table.
-        f"_pct = (_ordenado[{value_column!r}] / _total * 100)"
-        ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
-        "_acum = _pct.cumsum().round(1)",
     ]
-    assign_kwargs = "'% del total': _pct, '% acumulado': _acum"
+    if ascending:
+        lines += [
+            f"_total = {source}[{value_column!r}].sum()",
+            # Same zero-total guard as build_summary_code (Epic 8 code
+            # review) - a signed value_column whose rows cancel out to
+            # exactly zero would otherwise leak "inf"/"nan" text into the
+            # table.
+            f"_pct = (_ordenado[{value_column!r}] / _total * 100)"
+            ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
+            "_acum = _pct.cumsum().round(1)",
+        ]
+        assign_kwargs = "'% del total': _pct, '% acumulado': _acum"
+    else:
+        lines += _pareto_marker_lines(source, None, value_column, "fila concentra", "filas concentran")
+        lines += _pareto_chart_lines(value_column)
+        assign_kwargs = "'% del total': _pct, '% acumulado': _acum, '80/20': _marca"
     if value_expr:
         assign_kwargs = f"{value_column!r}: {value_expr}, {assign_kwargs}"
     # Bare expression, not assigned to a variable - execution.py only
@@ -124,14 +148,30 @@ def build_sort_code(variable, value_column, ascending, filters=None):
     return "\n".join(lines)
 
 
-def _pareto_marker_lines(variable, grouping, value_column):
-    """Code lines that compute _t (group totals, sorted descending), '% del
-    total' (_pct), '% acumulado' (_acum), and the 80/20 marker column
-    (_marca) - shared by build_summary_code and build_summary_detail_code so
-    the crossing-row-counting logic (and its code-review-caught off-by-one
-    fix, see the comment below) can't quietly diverge between the two."""
+def _pareto_marker_lines(
+    variable, grouping, value_column, noun_singular="categoría concentra", noun_plural="categorías concentran"
+):
+    """Code lines that compute _t (sorted descending), '% del total'
+    (_pct), '% acumulado' (_acum), and the 80/20 marker column (_marca) -
+    shared by build_summary_code and build_summary_detail_code so the
+    crossing-row-counting logic (and its code-review-caught off-by-one fix,
+    see the comment below) can't quietly diverge between them.
+
+    `grouping` is None for the ungrouped/row-level case (build_sort_code,
+    user feedback: "esta grafica la tenemos que sacar... por el detallado" -
+    the same 80/20 marker/chart, but over individual rows instead of
+    categories) - _t becomes each row's own value, sorted descending,
+    instead of a groupby sum. `noun_singular`/`noun_plural` let the printed
+    sentence say "fila(s) concentra(n)" instead of "categoría(s)
+    concentra(n)" for that case.
+    """
+    t_expr = (
+        f"{variable}[{value_column!r}].sort_values(ascending=False)"
+        if grouping is None
+        else f"{variable}.groupby({grouping})[{value_column!r}].sum().sort_values(ascending=False)"
+    )
     return [
-        f"_t = {variable}.groupby({grouping})[{value_column!r}].sum().sort_values(ascending=False)",
+        f"_t = {t_expr}",
         # A signed value_column can make group totals cancel out to exactly
         # zero (e.g. a "saldo" column with equal and opposite balances) -
         # dividing by a zero total produces +/-inf, and cumsum() of that
@@ -161,8 +201,60 @@ def _pareto_marker_lines(variable, grouping, value_column):
         "    _marca.iloc[_n_cruce - 1] = '✓ ← 80% aquí'",
         "    _pct_cruce = _cruce.iloc[0]",
         "    _n_total = len(_acum)",
-        "    _palabra = 'categoría concentra' if _n_cruce == 1 else 'categorías concentran'",
+        f"    _palabra = {noun_singular!r} if _n_cruce == 1 else {noun_plural!r}",
         "    print(f'{_n_cruce} de {_n_total} {_palabra} el {_pct_cruce:.0f}% del total.')",
+    ]
+
+
+def _pareto_chart_lines(value_column):
+    """The classic Pareto diagram: each group's own bar (left axis, real
+    values) plus the cumulative-% line (right axis, 0-100 - this is the
+    actual "80/20" part) over the exact same _t/_acum _pareto_marker_lines()
+    already computed - no new calculation, just a second way to look at the
+    same numbers.
+
+    User feedback: "esta grafica la tenemos que sacar al instante en que
+    hacemos el Resumen... con sus ejes en porcentaje" - drawn automatically
+    every time build_summary_code runs (not a separate chart type the user
+    has to go pick manually in no-code-chart), placed immediately before the
+    table's own final DataFrame expression. Both end up in the same
+    response for free: execution.py's _capture_figure() runs after every
+    cell regardless of what its final expression was (which stays the
+    DataFrame, untouched) - no new capture mechanism needed here, and
+    app-cell-result.component.html already renders result_html and
+    image_base64 side by side whenever both are present.
+
+    x-axis tick labels are hidden past HIGH_CARDINALITY_THRESHOLD groups -
+    same threshold chart_builder.py already uses for its own cardinality
+    warning. A real file had 79 clients: individual labels there would only
+    overlap into unreadable clutter, and the table right next to this chart
+    already has every real category name - the chart's job is the shape of
+    the curve and where it crosses 80%, not re-reading every label.
+    """
+    is_money = _looks_like_money(value_column)
+    y_formatter = (
+        "lambda y, _pos: '$ ' + f'{y:,.0f}'.replace(',', '.')"
+        if is_money
+        else "lambda y, _pos: f'{y:,.0f}'"
+    )
+    return [
+        "_fig, _ax1 = plt.subplots(figsize=(11, 6))",
+        "_ax1.bar(range(len(_t)), _t.values, color=plt.get_cmap('tab20').colors[0])",
+        f"_ax1.set_ylabel({value_column!r})",
+        f"_ax1.yaxis.set_major_formatter(plt.FuncFormatter({y_formatter}))",
+        "_ax2 = _ax1.twinx()",
+        "_ax2.plot(range(len(_t)), _acum.values, color='#d62728', marker='o', markersize=3, linewidth=1.5)",
+        "_ax2.set_ylim(0, 105)",
+        "_ax2.set_ylabel('% acumulado')",
+        "_ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: f'{y:.0f}%'))",
+        "_ax2.axhline(80, color='#888888', linestyle='--', linewidth=1)",
+        f"if len(_t) <= {HIGH_CARDINALITY_THRESHOLD}:",
+        "    _ax1.set_xticks(range(len(_t)))",
+        "    _ax1.set_xticklabels([str(_i)[:20] for _i in _t.index], rotation=45, ha='right')",
+        "else:",
+        "    _ax1.set_xticks([])",
+        "plt.title('Pareto (80/20)', fontsize=13, fontweight='bold')",
+        "plt.tight_layout()",
     ]
 
 
@@ -197,18 +289,29 @@ def build_summary_code(variable, columns, value_column, filters=None):
     columna") - same Excel-style {"column", "values"} filters as
     build_sort_code, applied before grouping so every total/percentage/the
     80% crossing reflects the filtered rows, not the whole file.
+
+    Also draws the classic Pareto diagram (bars + cumulative-% line, see
+    _pareto_chart_lines) automatically - user feedback: "esta grafica la
+    tenemos que sacar al instante en que hacemos el Resumen... con sus ejes
+    en porcentaje" - not a separate chart type to go pick manually.
     """
     filter_lines, source = _filter_lines(variable, filters or [])
     grouping = _grouping_expr(source, columns)
     value_expr = _money_format_expr("_t") if _looks_like_money(value_column) else "_t"
-    lines = filter_lines + _pareto_marker_lines(source, grouping, value_column) + [
-        # Bare expression, not assigned to a variable - execution.py only
-        # captures the LAST expression statement of a cell as the result;
-        # an assignment here would leave result_html as None. The `if`
-        # block above is a separate top-level statement, so it doesn't
-        # affect this still being the cell's final expression.
-        f"pd.DataFrame({{{value_column!r}: {value_expr}, '% del total': _pct, '% acumulado': _acum, '80/20': _marca}})",
-    ]
+    lines = (
+        filter_lines
+        + _pareto_marker_lines(source, grouping, value_column)
+        + _pareto_chart_lines(value_column)
+        + [
+            # Bare expression, not assigned to a variable - execution.py only
+            # captures the LAST expression statement of a cell as the result;
+            # an assignment here would leave result_html as None. Everything
+            # above (the `if` block, the Pareto chart) is separate top-level
+            # statements, so none of it affects this still being the cell's
+            # final expression.
+            f"pd.DataFrame({{{value_column!r}: {value_expr}, '% del total': _pct, '% acumulado': _acum, '80/20': _marca}})",
+        ]
+    )
     return "\n".join(lines)
 
 

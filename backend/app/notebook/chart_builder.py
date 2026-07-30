@@ -168,7 +168,33 @@ def build_chart_code(chart_type, variable, columns, value_column):
         # for torta, its index (legend labels) (user feedback: charts with
         # up to TOP_N_CATEGORIES_BEFORE_OTROS+1 long composite labels were
         # unreadable with matplotlib's flat single-color defaults).
-        lines = [f"_chart_data = {series_expr}"]
+        #
+        # _total/_fmt_valor are shared by torta AND barras (moved out of the
+        # torta-only block they started in) - user feedback: "no está
+        # apareciendo cuánto es el valor neto total" - a chart broken into
+        # slices/bars never showed the OVERALL total, only each one's own
+        # share, so both chart types now put it in the title (see
+        # _title_with_total_lines below), and barras' y-axis formatter
+        # reuses the exact same _fmt_valor instead of its own separate
+        # money-formatting expression (removes a near-duplicate).
+        lines = [
+            f"_chart_data = {series_expr}",
+            "_total = _chart_data.sum()",
+            # When the value column looks like money (_looks_like_money),
+            # format it as Colombian pesos: "$ " prefix (matching the
+            # frontend's es-CO `currency` pipe pattern, "¤ #,##0.00") + "."
+            # as the thousands separator (built from the same :,.0f as
+            # before, then .replace(',', '.') - simpler and more robust
+            # than reaching for Python's locale module inside the sandboxed
+            # worker, whose system locale isn't guaranteed to be es_CO). A
+            # non-money numeric column (e.g. a quantity) keeps the exact
+            # prior plain format - unchanged.
+            (
+                "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')"
+                if is_money
+                else "_fmt_valor = lambda v: f'{v:,.0f}'"
+            ),
+        ]
         if chart_type == "torta":
             lines += [
                 "_fig, _ax = plt.subplots(figsize=(11, 8))",
@@ -185,7 +211,7 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 # invisible everywhere - the legend is the one place it's
                 # guaranteed legible no matter how small the slice or how
                 # many categories there are (user feedback).
-                "_total = _chart_data.sum()",
+                #
                 # User feedback: "el 100% de qué?" - a bare "32.2%" doesn't
                 # say what it's a share of. _pct_de is embedded via repr()
                 # (value_column comes from user-uploaded Excel content) as
@@ -194,23 +220,6 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 # so a stray quote in the column name can't break the
                 # generated code's syntax.
                 f"_pct_de = {(value_column or 'la cantidad de filas')!r}",
-                # User feedback: the percentage alone doesn't say the actual
-                # amount ("38.6% de neto, pero ¿cuánto es neto?") - val is
-                # already the slice's real total, so show it too. When the
-                # value column looks like money (_looks_like_money), format
-                # it as Colombian pesos: "$ " prefix (matching the frontend's
-                # es-CO `currency` pipe pattern, "¤ #,##0.00") + "." as the
-                # thousands separator (built from the same :,.0f as before, then
-                # .replace(',', '.') - simpler and more robust than reaching
-                # for Python's locale module inside the sandboxed worker,
-                # whose system locale isn't guaranteed to be es_CO). A
-                # non-money numeric column (e.g. a quantity) keeps the exact
-                # prior plain format - unchanged.
-                (
-                    "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')"
-                    if is_money
-                    else "_fmt_valor = lambda v: f'{v:,.0f}'"
-                ),
                 "_ax.legend(_wedges, "
                 "[f'{name} - {_fmt_valor(val)} ({val / _total * 100:.1f}%) de {_pct_de}' "
                 "for name, val in _chart_data.items()], "
@@ -222,11 +231,8 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 "color=plt.get_cmap('tab20').colors[:len(_chart_data)])",
                 # Plain thousands-separated numbers instead of matplotlib's
                 # default "1e8"-style scientific notation on the y-axis -
-                # same money-detection and Colombian-punctuation treatment as
-                # the torta legend above, for the same reason.
-                "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _pos: "
-                + ("\"$ \" + f'{x:,.0f}'.replace(',', '.')" if is_money else "f'{x:,.0f}'")
-                + "))",
+                # reuses the same _fmt_valor as the title/torta legend.
+                "_ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _pos: _fmt_valor(x)))",
                 # Long composite labels (Story 7.2) get truncated for the
                 # x-axis specifically - this only changes the tick text, not
                 # the underlying data/legend/exported values.
@@ -234,7 +240,7 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 "_t.get_text()[:28] + ('…' if len(_t.get_text()) > 28 else '') "
                 "for _t in _ax.get_xticklabels()], rotation=45, ha='right')",
             ]
-        lines.append(_bold_title_line(title))
+        lines += _title_with_total_lines(title)
         lines.append("plt.tight_layout()")
         return "\n".join(lines)
 
@@ -426,6 +432,23 @@ def _bold_title_line(title):
     consistent, professional-looking product instead of each carrying
     matplotlib's plain default title."""
     return f"plt.title({title!r}, fontsize=13, fontweight='bold')"
+
+
+def _title_with_total_lines(title):
+    """torta/barras-only variant of _bold_title_line: appends the chart's
+    grand total to the title, via the _total/_fmt_valor already defined
+    earlier in build_chart_code's torta/barras branch. User feedback: "no
+    está apareciendo cuánto es el valor neto total" - broken into slices/
+    bars, a chart never showed the OVERALL total, only each one's own share.
+
+    Built as runtime string concatenation (title!r + literal + _fmt_valor(_total))
+    rather than an f-string embedding `title` directly - `title` can contain a
+    stray quote (column names come from user-uploaded Excel content), and
+    repr() is what already keeps that safe everywhere else in this module."""
+    return [
+        f"_titulo = {title!r} + ' — Total: ' + _fmt_valor(_total)",
+        "plt.title(_titulo, fontsize=13, fontweight='bold')",
+    ]
 
 
 def _title_for(columns, value_column):

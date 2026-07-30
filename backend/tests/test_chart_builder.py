@@ -260,12 +260,15 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     round added the slice's absolute value alongside the percentage (see
     test_torta_legend_includes_absolute_value); a further round added a "$"
     prefix + Colombian "." thousands separator when the value column looks
-    like money (see test_torta_legend_formats_money_column_as_colombian_pesos)
-    - 'neto' matches that heuristic, so this now pins that final string
-    (using the live constant, not a bare literal, so this test doesn't
-    silently go stale if the threshold moves again), still guarding that the
-    underlying grouping expression
-    (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
+    like money (see test_torta_legend_formats_money_column_as_colombian_pesos);
+    a further round moved _total/_fmt_valor to before the torta/barras split
+    and added the grand total to the title (see
+    test_torta_title_includes_the_grand_total) - 'neto' matches the money
+    heuristic, so this now pins that final string (using the live constant,
+    not a bare literal, so this test doesn't silently go stale if the
+    threshold moves again), still guarding that the underlying grouping
+    expression (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is
+    unchanged."""
     n = TOP_N_CATEGORIES_BEFORE_OTROS
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
     assert code == (
@@ -273,18 +276,19 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         f"pd.concat([_s.iloc[:{n}], pd.Series({{'Otros': _s.iloc[{n}:].sum()}})]))"
         "(df.groupby('vendedor')['neto'].sum().sort_values(ascending=False))"
         ".groupby(level=0, sort=False).sum().clip(lower=0)\n"
+        "_total = _chart_data.sum()\n"
+        "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')\n"
         "_fig, _ax = plt.subplots(figsize=(11, 8))\n"
         "_wedges, _texts, _autotexts = _ax.pie(_chart_data.values, labels=None, "
         "autopct=lambda p: f'{p:.1f}%' if p >= 3 else '', "
         "colors=plt.get_cmap('tab20').colors[:len(_chart_data)], pctdistance=0.8)\n"
-        "_total = _chart_data.sum()\n"
         "_pct_de = 'neto'\n"
-        "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')\n"
         "_ax.legend(_wedges, "
         "[f'{name} - {_fmt_valor(val)} ({val / _total * 100:.1f}%) de {_pct_de}' "
         "for name, val in _chart_data.items()], "
         "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
-        "plt.title('neto por vendedor', fontsize=13, fontweight='bold')\n"
+        "_titulo = 'neto por vendedor' + ' — Total: ' + _fmt_valor(_total)\n"
+        "plt.title(_titulo, fontsize=13, fontweight='bold')\n"
         "plt.tight_layout()"
     )
 
@@ -497,16 +501,58 @@ def test_torta_legend_leaves_non_money_column_formatting_unchanged():
 
 
 def test_barras_y_axis_formats_money_column_as_colombian_pesos():
+    """barras' y-axis formatter reuses the shared _fmt_valor (defined once,
+    ahead of the torta/barras split) rather than its own separate
+    money-formatting expression - see test_torta_title_includes_the_grand_total
+    for the refactor that introduced the shared definition."""
     code = build_chart_code("barras", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
-    assert '"$ " + f\'{x:,.0f}\'.replace(\',\', \'.\')' in code
+    assert "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')" in code
+    assert "lambda x, _pos: _fmt_valor(x)" in code
 
 
 def test_barras_y_axis_leaves_non_money_column_formatting_unchanged():
     code = build_chart_code("barras", "df", ["vendedor"], "Cant")
     _assert_valid_python(code)
-    assert "f'{x:,.0f}'" in code
+    assert "_fmt_valor = lambda v: f'{v:,.0f}'" in code
     assert "$" not in code
+
+
+# --- User feedback: "no está apareciendo cuánto es el valor neto total" --------
+
+
+def test_torta_title_includes_the_grand_total():
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "_titulo = 'neto por vendedor' + ' — Total: ' + _fmt_valor(_total)" in code
+    assert "plt.title(_titulo, fontsize=13, fontweight='bold')" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"vendedor": ["V0", "V1"], "neto": [1234567.0, 500.0]})
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]
+
+
+def test_barras_title_also_includes_the_grand_total():
+    code = build_chart_code("barras", "df", ["vendedor"], "cantidad")
+    _assert_valid_python(code)
+    assert "_titulo = 'cantidad por vendedor' + ' — Total: ' + _fmt_valor(_total)" in code
+
+
+def test_title_with_total_is_safe_for_column_names_with_a_single_quote():
+    """`title` can contain a stray quote (column names come from
+    user-uploaded Excel content) - built via title!r + concatenation, not an
+    f-string embedding title directly, so this must stay valid Python."""
+    code = build_chart_code("torta", "df", ["vendor's code"], "amount's")
+    _assert_valid_python(code)
 
 
 def test_torta_legend_percentage_label_column_name_with_quote_is_safe():
