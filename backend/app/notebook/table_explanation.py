@@ -35,5 +35,8 @@ def build_summary_detail_explanation(columns, value_column):
     return (
         f"Cada grupo de {label} aparece primero con su fila 'TOTAL', seguida de todas sus filas "
         f"individuales ordenadas de mayor a menor {value_column}. "
-        f'"% de su grupo" es qué parte del total de ESE grupo (no del total general) representa esa fila.'
+        'En la fila "TOTAL" de cada grupo, "% del total" y "% acumulado" son sobre el total general '
+        '(igual que en el resumen sin detalle), y la columna "80/20" marca ahí qué grupos concentran '
+        'el 80% del total. "% de su grupo" (en las filas individuales) es distinto: qué parte del '
+        "total de ESE grupo (no del total general) representa esa fila."
     )

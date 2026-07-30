@@ -503,3 +503,78 @@ def test_detail_multiple_columns_uses_composite_grouping_key():
     code = build_summary_detail_code("df", ["cliente", "mes"], "neto")
     _assert_valid_python(code)
     assert ".astype(str).agg(' - '.join, axis=1)" in code
+
+
+def test_detail_includes_80_20_marker_column():
+    """Bug report: checking "Mostrar detalle" silently dropped the 80/20
+    Pareto analysis the user already had in the plain summary - the marker
+    belongs on each group's TOTAL row (the group-level metric), not on the
+    individual rows underneath it (which already have their own
+    '% de su grupo')."""
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert "'80/20'" in code
+    assert "_acum[_acum >= 80]" in code
+
+
+def test_detail_prints_plain_language_pareto_insight():
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert "print(f'{_n_cruce} de {_n_total} {_palabra} el {_pct_cruce:.0f}% del total.')" in code
+
+
+def test_detail_pareto_marker_lands_on_the_correct_group_total_row_not_an_individual_row():
+    """Empirical verification (same standard as Story 8.3) - same A/B/C/D
+    dataset already used to regression-test the aggregate summary's marker
+    position (test_summary_pareto_runs_end_to_end_marks_the_right_row_and_prints_insight),
+    now checking the marker lands on the group's "— TOTAL" row in the
+    detailed view, not on one of its individual rows."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["A", "A", "B", "C", "C", "C", "D"],
+            "neto": [100.0, 100.0, 300.0, 200.0, 200.0, 100.0, 50.0],
+        }
+    )
+    # totals: C=500 (47.6%), B=300 (28.6%), A=200 (19.0%), D=50 (4.8%) -> total=1050
+    # sorted desc: C(cum 47.6), B(cum 76.2), A(cum 95.2), D(cum 100.0) -> crossing row is A
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    assert html is not None
+    assert html.count("✓ ← 80% aquí") == 1
+    row_a_total = html[html.index("A — TOTAL") : html.index("</tr>", html.index("A — TOTAL"))]
+    assert "✓ ← 80% aquí" in row_a_total
+
+    stdout = result["stdout"]
+    assert "3 de 4" in stdout
+    assert "95% del total." in stdout
+
+
+def test_detail_zero_total_does_not_produce_inf_or_nan_in_the_80_20_columns():
+    """Same zero-total guard as build_summary_code, now also needed for the
+    group-level '% del total'/'% acumulado'/'80/20' columns this detailed
+    view carries on each TOTAL row."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"cliente": ["A", "B"], "saldo": [1000.0, -1000.0]})
+    code = build_summary_detail_code("df", ["cliente"], "saldo")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "inf" not in result["result_html"]
+    assert "nan" not in result["result_html"]
+    assert "inf" not in result["stdout"]

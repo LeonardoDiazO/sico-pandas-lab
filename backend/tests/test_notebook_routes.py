@@ -879,8 +879,10 @@ def test_summary_table_detail_true_returns_subtotal_and_individual_rows(client):
     assert data["error"] is None
     assert "TOTAL" in data["result_html"]
     assert "% de su grupo" in data["result_html"]
+    assert "80/20" in data["result_html"]
     assert data["explanation"] is not None
     assert "% de su grupo" in data["explanation"]
+    assert "80/20" in data["explanation"]
 
 
 def test_summary_table_detail_false_or_absent_keeps_the_aggregate_only_view(client):

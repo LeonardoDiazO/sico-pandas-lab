@@ -44,3 +44,12 @@ def test_summary_detail_explanation_mentions_grouping_column_value_column_and_it
     assert "cliente" in text
     assert "neto" in text
     assert "% de su grupo" in text
+
+
+def test_summary_detail_explanation_mentions_the_80_20_marker():
+    """Bug report: checking "Mostrar detalle" was silently dropping the
+    80/20 analysis the aggregate summary already had - now that the marker
+    is back (on each group's TOTAL row), the explanation must say so."""
+    text = build_summary_detail_explanation(["cliente"], "neto")
+    _assert_plain_language(text)
+    assert "80/20" in text

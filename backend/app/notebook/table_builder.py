@@ -37,29 +37,13 @@ def build_sort_code(variable, value_column, ascending):
     return "\n".join(lines)
 
 
-def build_summary_code(variable, columns, value_column):
-    """Group by column(s), sum a value column, and compute each group's
-    share of the total plus a running cumulative share (sorted descending)
-    - answers "who concentrates the value" (Story 8.2) directly, and marks
-    the exact row where the cumulative share first reaches 80% (Story 8.3,
-    Pareto) with a plain-text column instead of a pandas Styler background
-    color - a Styler isn't a DataFrame/Series, so execution.py's existing
-    _capture_value() wouldn't know how to render it without being extended;
-    a text column needs zero changes there.
-
-    Reuses chart_builder._grouping_expr() rather than duplicating the
-    single-vs-multiple-column / composite-key-join / fillna('(vacío)')
-    logic it already established and tested - so the two modules can't
-    quietly diverge on how a composite key is built.
-
-    Simplification (documented, not handled): assumes value_column sums are
-    non-negative, so the cumulative share is monotonically increasing (the
-    typical case - invoice/client totals). A heavily mixed-sign value_column
-    could make "where it crosses 80%" less intuitive - out of scope here,
-    same risk tolerance as the rest of this epic.
-    """
-    grouping = _grouping_expr(variable, columns)
-    lines = [
+def _pareto_marker_lines(variable, grouping, value_column):
+    """Code lines that compute _t (group totals, sorted descending), '% del
+    total' (_pct), '% acumulado' (_acum), and the 80/20 marker column
+    (_marca) - shared by build_summary_code and build_summary_detail_code so
+    the crossing-row-counting logic (and its code-review-caught off-by-one
+    fix, see the comment below) can't quietly diverge between the two."""
+    return [
         f"_t = {variable}.groupby({grouping})[{value_column!r}].sum().sort_values(ascending=False)",
         # A signed value_column can make group totals cancel out to exactly
         # zero (e.g. a "saldo" column with equal and opposite balances) -
@@ -92,6 +76,32 @@ def build_summary_code(variable, columns, value_column):
         "    _n_total = len(_acum)",
         "    _palabra = 'categoría concentra' if _n_cruce == 1 else 'categorías concentran'",
         "    print(f'{_n_cruce} de {_n_total} {_palabra} el {_pct_cruce:.0f}% del total.')",
+    ]
+
+
+def build_summary_code(variable, columns, value_column):
+    """Group by column(s), sum a value column, and compute each group's
+    share of the total plus a running cumulative share (sorted descending)
+    - answers "who concentrates the value" (Story 8.2) directly, and marks
+    the exact row where the cumulative share first reaches 80% (Story 8.3,
+    Pareto) with a plain-text column instead of a pandas Styler background
+    color - a Styler isn't a DataFrame/Series, so execution.py's existing
+    _capture_value() wouldn't know how to render it without being extended;
+    a text column needs zero changes there.
+
+    Reuses chart_builder._grouping_expr() rather than duplicating the
+    single-vs-multiple-column / composite-key-join / fillna('(vacío)')
+    logic it already established and tested - so the two modules can't
+    quietly diverge on how a composite key is built.
+
+    Simplification (documented, not handled): assumes value_column sums are
+    non-negative, so the cumulative share is monotonically increasing (the
+    typical case - invoice/client totals). A heavily mixed-sign value_column
+    could make "where it crosses 80%" less intuitive - out of scope here,
+    same risk tolerance as the rest of this epic.
+    """
+    grouping = _grouping_expr(variable, columns)
+    lines = _pareto_marker_lines(variable, grouping, value_column) + [
         # Bare expression, not assigned to a variable - execution.py only
         # captures the LAST expression statement of a cell as the result;
         # an assignment here would leave result_html as None. The `if`
@@ -118,10 +128,15 @@ def build_summary_detail_code(variable, columns, value_column):
 
     Reuses chart_builder._grouping_expr() for the same reason build_summary_code
     does - single source of truth for the single-vs-multi-column / composite-key
-    / fillna('(vacío)') logic.
+    / fillna('(vacío)') logic. Also reuses _pareto_marker_lines() (bug report:
+    checking "Mostrar detalle" was silently dropping the 80/20 analysis the
+    aggregate summary already had) - the marker/'% del total'/'% acumulado'
+    are GROUP-level metrics, so they're attached to each group's "— TOTAL"
+    row only, never to the individual rows underneath it (which carry their
+    own row-level '% de su grupo' instead).
     """
     grouping = _grouping_expr(variable, columns)
-    lines = [
+    lines = _pareto_marker_lines(variable, grouping, value_column) + [
         f"_grupo = {grouping}",
         f"_total_grupo = {variable}.groupby(_grupo)[{value_column!r}].transform('sum')",
         # Same zero-total guard as build_summary_code/build_sort_code - a
@@ -130,18 +145,17 @@ def build_summary_detail_code(variable, columns, value_column):
         f"_pct_grupo = ({variable}[{value_column!r}] / _total_grupo * 100)"
         ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
         f"_detalle = {variable}.assign(**{{'Grupo': _grupo, '% de su grupo': _pct_grupo}})",
-        f"_orden = _detalle.groupby('Grupo')[{value_column!r}].sum().sort_values(ascending=False).index",
         # Categorical (not plain sort_values on the string column) so groups
-        # stay ordered by TOTAL descending, not alphabetically - matches
-        # build_summary_code's ordering.
-        "_detalle['Grupo'] = pd.Categorical(_detalle['Grupo'], categories=_orden, ordered=True)",
+        # stay ordered by TOTAL descending (same order _t already has), not
+        # alphabetically - matches build_summary_code's ordering.
+        "_detalle['Grupo'] = pd.Categorical(_detalle['Grupo'], categories=_t.index, ordered=True)",
         f"_detalle = _detalle.sort_values(['Grupo', {value_column!r}], ascending=[True, False])",
-        f"_subtot = _detalle.groupby('Grupo', observed=True)[{value_column!r}].sum().reindex(_orden)",
-        f"_filas_subtot = pd.DataFrame("
-        f"{{'Grupo': [f'{{g}} — TOTAL' for g in _orden], {value_column!r}: _subtot.values}})",
-        "_filas_subtot['__orden__'] = range(len(_orden))",
+        f"_filas_subtot = pd.DataFrame({{"
+        f"'Grupo': [f'{{g}} — TOTAL' for g in _t.index], {value_column!r}: _t.values, "
+        "'% del total': _pct.values, '% acumulado': _acum.values, '80/20': _marca.values})",
+        "_filas_subtot['__orden__'] = range(len(_t))",
         "_filas_subtot['__es_total__'] = True",
-        "_detalle['__orden__'] = _detalle['Grupo'].map({g: i for i, g in enumerate(_orden)})",
+        "_detalle['__orden__'] = _detalle['Grupo'].map({g: i for i, g in enumerate(_t.index)})",
         "_detalle['__es_total__'] = False",
         "_final = pd.concat([_filas_subtot, _detalle], ignore_index=True)",
         # Bare expression, not assigned to a variable - execution.py only
