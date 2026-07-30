@@ -8,7 +8,22 @@ so CELL_TIMEOUT_SECONDS and the existing DataFrame -> HTML capture
 (execution.py::_capture_value(), already used by the free notebook's
 df.head()) come for free. No new execution or rendering mechanism needed.
 """
-from app.notebook.chart_builder import _grouping_expr
+from app.notebook.chart_builder import _grouping_expr, _looks_like_money
+
+
+def _money_format_expr(series_expr):
+    """Wraps a pandas Series expression so it displays as Colombian pesos
+    ("$ 1.234.567") - same "$ " prefix + :,.0f + .replace(',', '.') trick
+    chart_builder.py already uses for chart legends/axes, applied here to a
+    table's own value column instead. Only ever used at DISPLAY time, after
+    every numeric computation that needs the real float (sum, %, sort order)
+    has already happened - a formatted string can't be summed or divided.
+    pd.notna() guard: a missing value must stay missing, not become the
+    literal string "$ nan"."""
+    return (
+        f"{series_expr}.apply(lambda v: '$ ' + f'{{v:,.0f}}'.replace(',', '.') "
+        "if pd.notna(v) else v)"
+    )
 
 
 def build_sort_code(variable, value_column, ascending):
@@ -20,7 +35,15 @@ def build_sort_code(variable, value_column, ascending):
     "detailed" view where grouping isn't required, with the same percentage
     columns explained the same way). The row-count cap already applied by
     execution.py's DataFrame capture (the same one df.head() already
-    respects) covers truncation - nothing extra here."""
+    respects) covers truncation - nothing extra here.
+
+    User feedback (real file: "detallado comfenalco"): when value_column
+    looks like money (_looks_like_money, same heuristic chart_builder.py
+    uses for chart legends/axes), its displayed values get a "$ " prefix and
+    Colombian "." thousands separator - computed here, at display time,
+    AFTER _pct/_acum already used the real numeric column above, since a
+    formatted string can't be divided or summed."""
+    value_expr = _money_format_expr(f"_ordenado[{value_column!r}]") if _looks_like_money(value_column) else None
     lines = [
         f"_ordenado = {variable}.sort_values({value_column!r}, ascending={bool(ascending)!r})",
         f"_total = {variable}[{value_column!r}].sum()",
@@ -30,10 +53,13 @@ def build_sort_code(variable, value_column, ascending):
         f"_pct = (_ordenado[{value_column!r}] / _total * 100)"
         ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
         "_acum = _pct.cumsum().round(1)",
-        # Bare expression, not assigned to a variable - execution.py only
-        # captures the LAST expression statement of a cell as the result.
-        "_ordenado.assign(**{'% del total': _pct, '% acumulado': _acum})",
     ]
+    assign_kwargs = "'% del total': _pct, '% acumulado': _acum"
+    if value_expr:
+        assign_kwargs = f"{value_column!r}: {value_expr}, {assign_kwargs}"
+    # Bare expression, not assigned to a variable - execution.py only
+    # captures the LAST expression statement of a cell as the result.
+    lines.append(f"_ordenado.assign(**{{{assign_kwargs}}})")
     return "\n".join(lines)
 
 
@@ -99,15 +125,22 @@ def build_summary_code(variable, columns, value_column):
     typical case - invoice/client totals). A heavily mixed-sign value_column
     could make "where it crosses 80%" less intuitive - out of scope here,
     same risk tolerance as the rest of this epic.
+
+    User feedback (real file: "detallado comfenalco"): when value_column
+    looks like money, the displayed group totals get the same "$ "/"." pesos
+    treatment as build_sort_code - only in this FINAL DataFrame, after _t has
+    already done its numeric duty in _pareto_marker_lines above (percentages,
+    the 80% crossing) - a formatted string can't be summed or divided.
     """
     grouping = _grouping_expr(variable, columns)
+    value_expr = _money_format_expr("_t") if _looks_like_money(value_column) else "_t"
     lines = _pareto_marker_lines(variable, grouping, value_column) + [
         # Bare expression, not assigned to a variable - execution.py only
         # captures the LAST expression statement of a cell as the result;
         # an assignment here would leave result_html as None. The `if`
         # block above is a separate top-level statement, so it doesn't
         # affect this still being the cell's final expression.
-        f"pd.DataFrame({{{value_column!r}: _t, '% del total': _pct, '% acumulado': _acum, '80/20': _marca}})",
+        f"pd.DataFrame({{{value_column!r}: {value_expr}, '% del total': _pct, '% acumulado': _acum, '80/20': _marca}})",
     ]
     return "\n".join(lines)
 
@@ -134,6 +167,15 @@ def build_summary_detail_code(variable, columns, value_column):
     are GROUP-level metrics, so they're attached to each group's "— TOTAL"
     row only, never to the individual rows underneath it (which carry their
     own row-level '% de su grupo' instead).
+
+    User feedback (real file: "detallado comfenalco"): when value_column
+    looks like money, its displayed values (both the "— TOTAL" subtotal rows
+    AND the individual rows underneath) get the same "$ "/"." pesos
+    treatment as build_sort_code/build_summary_code - applied once to the
+    already-concatenated _final column at the very end, after every numeric
+    use of value_column (the group sort, the per-row sort, the % de su
+    grupo math) is done - a formatted string can't be summed, divided, or
+    sorted numerically.
     """
     grouping = _grouping_expr(variable, columns)
     lines = _pareto_marker_lines(variable, grouping, value_column) + [
@@ -158,9 +200,15 @@ def build_summary_detail_code(variable, columns, value_column):
         "_detalle['__orden__'] = _detalle['Grupo'].map({g: i for i, g in enumerate(_t.index)})",
         "_detalle['__es_total__'] = False",
         "_final = pd.concat([_filas_subtot, _detalle], ignore_index=True)",
-        # Bare expression, not assigned to a variable - execution.py only
-        # captures the LAST expression statement of a cell as the result.
-        "_final.sort_values(['__orden__', '__es_total__'], ascending=[True, False])"
+        "_final = _final.sort_values(['__orden__', '__es_total__'], ascending=[True, False])"
         ".drop(columns=['__orden__', '__es_total__'])",
     ]
+    # Bare expression, not assigned to a variable - execution.py only
+    # captures the LAST expression statement of a cell as the result.
+    if _looks_like_money(value_column):
+        lines.append(
+            f"_final.assign(**{{{value_column!r}: {_money_format_expr(f'_final[{value_column!r}]')}}})"
+        )
+    else:
+        lines.append("_final")
     return "\n".join(lines)

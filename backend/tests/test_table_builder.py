@@ -67,6 +67,46 @@ def test_column_name_with_a_single_quote_does_not_break_generated_syntax():
     _assert_valid_python(code)
 
 
+def test_sort_formats_money_column_as_colombian_pesos():
+    """User feedback: "en esta parte de ordenar tabla no está colocando los
+    valores en peso colombiano" - a money value column (e.g. 'neto') must
+    display as "$ 1.234.567" in the sorted table, same treatment
+    chart_builder.py already applies to chart legends/axes. The sort/%
+    columns above (computed from the real numeric _ordenado[value_column])
+    must stay correct - only the DISPLAYED value_column changes."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"cliente": ["A", "B", "C"], "neto": [50.0, 200.0, 1234567.0]}
+    )
+    code = build_sort_code("df", "neto", False)
+    _assert_valid_python(code)
+    assert "'$ ' + f'{v:,.0f}'.replace(',', '.')" in code
+
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    assert ">$ 1.234.567<" in html
+    assert ">$ 200<" in html
+    assert ">$ 50<" in html
+    # the % columns must still be computed from the real numeric values, not
+    # from the money-formatted strings (would otherwise raise/produce garbage)
+    assert "inf" not in html
+    assert "nan" not in html
+
+
+def test_sort_leaves_non_money_column_formatting_unchanged():
+    code = build_sort_code("df", "cantidad", False)
+    _assert_valid_python(code)
+    assert "$" not in code
+
+
 def test_sort_runs_end_to_end_against_a_real_dataframe():
     """Empirical verification (same standard as Epic 7's review), not just a
     string assertion - executes the generated code against a synthetic
@@ -136,8 +176,9 @@ def test_summary_single_column_with_null_category_does_not_drop_rows():
     assert result["error"] is None
     assert "(vacío)" in result["result_html"]
     # the total across all 3 rows (350.0) must be reflected in the
-    # percentages, not just the 2 non-null rows (300.0)
-    assert ">50.0<" in result["result_html"]
+    # percentages, not just the 2 non-null rows (300.0). "neto" is money
+    # (_looks_like_money), so its displayed value is "$ 50", not "50.0".
+    assert ">$ 50<" in result["result_html"]
 
 
 def test_summary_multiple_columns_uses_composite_grouping_key():
@@ -195,13 +236,15 @@ def test_summary_runs_end_to_end_and_percentages_sum_to_roughly_100():
     assert html is not None
 
     percentages = [float(m) for m in re.findall(r'<td[^>]*>(\d+\.\d)</td>', html)]
-    # 3 groups x 3 numeric columns (neto, % del total, % acumulado) = 9 cells
-    # (the 4th column, '80/20', is text/empty - Story 8.3 - and never
-    # matches this digit-only pattern)
-    assert len(percentages) == 9
+    # 3 groups x 2 numeric columns (% del total, % acumulado) = 6 cells.
+    # "neto" is money (_looks_like_money) - its own cells render as "$ 200"
+    # (no decimal point via :,.0f), so they never match this digit.digit
+    # pattern - only the percentage columns do.
+    assert len(percentages) == 6
     # "% acumulado" is the 3rd <td> in each row (neto, % del total, % acumulado, ...)
     row_c = html[html.index(">C<") : html.index("</tr>", html.index(">C<"))]
     cells_c = re.findall(r"<td[^>]*>([^<]*)</td>", row_c)
+    assert cells_c[0] == "$ 500"  # neto total for C, Colombian-formatted pesos
     assert float(cells_c[2]) == 50.0
 
 
@@ -384,11 +427,31 @@ def test_summary_pareto_matches_the_canonical_abcde_example():
 
 
 def test_detail_last_line_is_a_bare_expression_not_an_assignment():
+    """Uses a non-money value column ("cantidad") deliberately - this test is
+    about the bare-expression/no-assignment structural invariant, not about
+    money formatting (see test_detail_money_column_final_line_formats_pesos
+    below for that). _final itself (built via the plain .drop(columns=...)
+    chain, assigned on the second-to-last line) is the bare final expression
+    in the non-money case."""
+    code = build_summary_detail_code("df", ["cliente"], "cantidad")
+    _assert_valid_python(code)
+    lines = code.strip().splitlines()
+    assert lines[-1] == "_final"
+    assert "drop(columns=" in lines[-2]
+
+
+def test_detail_money_column_final_line_formats_pesos():
+    """A money value column (e.g. 'neto') gets its own final line: the plain
+    .drop(columns=...) chain is assigned to _final first, then the bare
+    expression becomes _final.assign(...) with the money-formatted column -
+    still a bare expression (execution.py needs the last statement to be one
+    to capture result_html), just a different final line than the non-money
+    case above."""
     code = build_summary_detail_code("df", ["cliente"], "neto")
     _assert_valid_python(code)
     last_line = code.strip().splitlines()[-1]
-    assert not last_line.startswith("_final =")
-    assert "drop(columns=" in last_line
+    assert last_line.startswith("_final.assign(")
+    assert "'$ ' + f'{v:,.0f}'.replace(',', '.')" in last_line
 
 
 def test_detail_includes_percentage_of_its_own_group():
@@ -430,11 +493,12 @@ def test_detail_runs_end_to_end_one_subtotal_row_per_group_then_its_own_rows():
     # LATIN's total (3300) is bigger than OL GROUP's (1200) -> LATIN's block comes first
     assert html.index("LATIN") < html.index("OL GROUP")
     assert html.count("TOTAL") == 2
-    # within LATIN's block, individual rows appear in value-descending order (2000, 1000, 300)
+    # within LATIN's block, individual rows appear in value-descending order
+    # (2000, 1000, 300) - "neto" is money, so displayed as Colombian pesos.
     idx_total = html.index("LATIN — TOTAL")
-    idx_2000 = html.index(">2000.0<")
-    idx_1000 = html.index(">1000.0<")
-    idx_300 = html.index(">300.0<")
+    idx_2000 = html.index(">$ 2.000<")
+    idx_1000 = html.index(">$ 1.000<")
+    idx_300 = html.index(">$ 300<")
     assert idx_total < idx_2000 < idx_1000 < idx_300
     # LATIN's 3 individual invoices all show up as separate rows (the user's
     # literal ask: "que salga LATIN LOGISTICS ... las n veces")
@@ -476,7 +540,7 @@ def test_detail_null_category_is_kept_under_vacio_bucket_not_dropped():
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert "(vacío)" in result["result_html"]
-    assert ">50.0<" in result["result_html"]
+    assert ">$ 50<" in result["result_html"]
 
 
 def test_detail_zero_group_total_does_not_produce_inf_or_nan():
