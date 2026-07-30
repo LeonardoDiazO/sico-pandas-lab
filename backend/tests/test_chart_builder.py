@@ -453,6 +453,16 @@ def test_looks_like_money_does_not_match_plain_quantities_or_codes():
         assert _looks_like_money(name) is False
 
 
+def test_looks_like_money_matches_space_split_headers():
+    """Real bug report (file: "relacion de facturas matecol.xlsx"): its own
+    value column header is a two-row split header whose specific-field row
+    renders as "N E T O" - one letter per cell joined with spaces, not the
+    plain "NETO" a naive test would assume. Money detection must not go
+    silently blind on this real, already-encountered header shape."""
+    for name in ["N E T O", "n e t o", "  N   E   T   O  ", "V A L O R   T O T A L"]:
+        assert _looks_like_money(name) is True
+
+
 def test_torta_legend_formats_money_column_as_colombian_pesos():
     """A money-looking value column (e.g. 'neto') gets a '$' prefix and '.'
     as the thousands separator (Colombian convention) instead of the plain
@@ -732,3 +742,27 @@ def test_boxplot_and_heatmap_get_the_cardinality_warning_but_not_dispersion():
     assert needs_cardinality_check("boxplot") is True
     assert needs_cardinality_check("heatmap") is True
     assert needs_cardinality_check("dispersion") is False
+
+
+def test_torta_formats_space_split_neto_header_as_pesos_end_to_end():
+    """Empirical regression test for the real bug report above - not just
+    the unit-level _looks_like_money() check, but the full generated code
+    executed against a real DataFrame shaped like the actual file."""
+    code = build_chart_code("torta", "df", ["vendedor"], "N E T O")
+    _assert_valid_python(code)
+    assert "'$ ' + f'{v:,.0f}'.replace(',', '.')" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"vendedor": ["V0", "V1"], "N E T O": [5370404.53, 1234567.0]}
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]

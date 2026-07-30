@@ -81,9 +81,20 @@ _MONEY_KEYWORDS = (
 
 
 def _looks_like_money(column_name):
+    """Real bug report (file: "relacion de facturas matecol.xlsx"): its own
+    value column is literally named "N E T O" - one letter per cell joined
+    with spaces (a two-row split header: a category row + a specific-field
+    row, both real in that report). ' '.join('neto'.lower()) contains no
+    space-free "neto" substring, so it silently never matched - the pie
+    chart/tables built correctly but with zero money formatting, no error
+    anywhere to notice. Stripping ALL whitespace before matching (not just
+    trimming the ends) fixes this generically for any similarly space-split
+    header, without ever creating a false match: no keyword below contains a
+    space itself, so removing spaces from the candidate name can only turn a
+    previously-missed match into a correct one, never the reverse."""
     if not column_name:
         return False
-    lowered = column_name.lower()
+    lowered = "".join(column_name.lower().split())
     return any(keyword in lowered for keyword in _MONEY_KEYWORDS)
 
 

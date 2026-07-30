@@ -30,9 +30,17 @@ const MONEY_KEYWORDS = [
 ];
 
 export function looksLikeMoney(columnName: string | null | undefined): boolean {
+  // Real bug report (file: "relacion de facturas matecol.xlsx"): its own
+  // value column is literally named "N E T O" - one letter per cell joined
+  // with spaces (a two-row split header in that report). Stripping ALL
+  // whitespace before matching (not just trimming the ends) fixes this
+  // generically - no keyword above contains a space itself, so this can
+  // only turn a previously-missed match into a correct one, never the
+  // reverse. Same fix as backend/app/notebook/chart_builder.py's
+  // _looks_like_money() - keep both in sync.
   if (!columnName) {
     return false;
   }
-  const lowered = columnName.toLowerCase();
+  const lowered = columnName.toLowerCase().replace(/\s+/g, '');
   return MONEY_KEYWORDS.some((keyword) => lowered.includes(keyword));
 }
