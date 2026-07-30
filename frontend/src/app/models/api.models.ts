@@ -20,7 +20,11 @@ export interface CellResult {
   // view (e.g. KPI cards) from the exact data without re-parsing HTML. Only
   // ever populated when the cell's last expression was a DataFrame.
   result_records?: Record<string, unknown>[] | null;
-  image_base64: string | null;
+  // Inline SVG markup (not a base64 PNG) - user feedback: "sería bueno
+  // tener un tooltip... para diferenciar[los]" - native <title> hover
+  // tooltips (backend's execution.py::_inject_svg_tooltips) only fire when
+  // the SVG is inline in the DOM, not referenced via <img src=...>.
+  chart_svg: string | null;
   error: CellError | null;
   session_restarted?: boolean;
 }

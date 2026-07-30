@@ -46,13 +46,33 @@ def test_error_does_not_wipe_prior_state():
     assert result["result_text"] == "10"
 
 
-def test_matplotlib_figure_is_captured_as_base64():
+def test_matplotlib_figure_is_captured_as_inline_svg():
+    """SVG (not base64 PNG) - native <title> hover tooltips (user feedback:
+    "sería bueno tener un tooltip... para diferenciar[los]") only work when
+    the SVG is inline in the DOM, not referenced via <img src=...>."""
     result, _ = run(
         "import matplotlib.pyplot as plt\nplt.plot([1,2,3],[4,5,6])"
     )
     assert result["error"] is None
-    assert result["image_base64"] is not None
-    assert len(result["image_base64"]) > 100
+    assert result["chart_svg"] is not None
+    assert "<svg" in result["chart_svg"]
+
+
+def test_svg_tooltip_is_injected_for_a_gid_tagged_artist():
+    """The mechanism chart_builder.py/table_builder.py's generated code
+    relies on: set_gid("tt-" + urllib.parse.quote(label)) on an artist before
+    the figure is captured, then _capture_figure() injects a <title> holding
+    that (decoded, HTML-escaped) label as the first child of the matching
+    SVG group - the browser's native tooltip mechanism does the rest."""
+    result, _ = run(
+        "import matplotlib.pyplot as plt\n"
+        "import urllib.parse\n"
+        "_fig, _ax = plt.subplots()\n"
+        "_bars = _ax.bar([0], [10])\n"
+        "_bars.patches[0].set_gid('tt-' + urllib.parse.quote('LATIN LOGISTICS: $ 1.234.567'))"
+    )
+    assert result["error"] is None
+    assert "<title>LATIN LOGISTICS: $ 1.234.567</title>" in result["chart_svg"]
 
 
 def test_dataframe_result_also_includes_json_records():

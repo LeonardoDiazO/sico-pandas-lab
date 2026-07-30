@@ -22,4 +22,17 @@ export class CellResultComponent {
     }
     return this.sanitizer.bypassSecurityTrustHtml(this.result.result_html);
   }
+
+  // Inline SVG (not an <img src="data:image/png;base64,...">) - user
+  // feedback: "sería bueno tener un tooltip... para diferenciar[los]" -
+  // native <title> hover tooltips (execution.py's _inject_svg_tooltips)
+  // only fire when the SVG markup is inline in the DOM, not referenced via
+  // <img>. Same trust rationale as safeHtml above - our own backend
+  // (matplotlib) produced it.
+  get safeChartSvg(): SafeHtml | null {
+    if (!this.result?.chart_svg) {
+      return null;
+    }
+    return this.sanitizer.bypassSecurityTrustHtml(this.result.chart_svg);
+  }
 }

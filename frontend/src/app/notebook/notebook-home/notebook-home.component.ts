@@ -108,7 +108,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
           stdout: null,
           result_html: null,
           result_text: null,
-          image_base64: null,
+          chart_svg: null,
           error: { type: 'RedError', message: 'No se pudo contactar el servidor.', traceback: '' },
         };
       },

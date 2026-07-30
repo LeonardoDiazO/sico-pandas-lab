@@ -145,12 +145,18 @@ select {
   color: #a13a3a;
 }
 
+// Inline SVG (not <img>, since native <title> hover tooltips need the
+// markup in the DOM directly) - ::ng-deep to reach into the [innerHTML] content.
 .chart-image {
-  display: block;
   margin-top: 0.8rem;
-  max-width: 100%;
-  border: 1px solid #dfe0ff;
-  border-radius: 6px;
+
+  ::ng-deep svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #dfe0ff;
+    border-radius: 6px;
+  }
 }
 
 .chart-explanation {

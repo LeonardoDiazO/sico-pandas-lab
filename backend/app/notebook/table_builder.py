@@ -222,32 +222,41 @@ def _pareto_chart_lines(value_column):
     cell regardless of what its final expression was (which stays the
     DataFrame, untouched) - no new capture mechanism needed here, and
     app-cell-result.component.html already renders result_html and
-    image_base64 side by side whenever both are present.
+    chart_svg side by side whenever both are present.
 
     x-axis tick labels are hidden past HIGH_CARDINALITY_THRESHOLD groups -
     same threshold chart_builder.py already uses for its own cardinality
     warning. A real file had 79 clients: individual labels there would only
     overlap into unreadable clutter, and the table right next to this chart
     already has every real category name - the chart's job is the shape of
-    the curve and where it crosses 80%, not re-reading every label.
+    the curve and where it crosses 80%, not re-reading every label. User
+    feedback: "sería bueno tener un tooltip... para diferenciar[los] cuando
+    no caben todos los representantes" - each bar gets a hover tooltip with
+    its full name, value, and cumulative % (same set_gid()/native <title>
+    mechanism as chart_builder.py's torta/barras - see
+    execution.py's _inject_svg_tooltips), so the exact identity a hidden
+    x-axis label would have shown is still one hover away.
     """
     is_money = _looks_like_money(value_column)
-    y_formatter = (
-        "lambda y, _pos: '$ ' + f'{y:,.0f}'.replace(',', '.')"
-        if is_money
-        else "lambda y, _pos: f'{y:,.0f}'"
-    )
     return [
+        "import urllib.parse as _urlp",
+        (
+            "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')"
+            if is_money
+            else "_fmt_valor = lambda v: f'{v:,.0f}'"
+        ),
         "_fig, _ax1 = plt.subplots(figsize=(11, 6))",
-        "_ax1.bar(range(len(_t)), _t.values, color=plt.get_cmap('tab20').colors[0])",
+        "_barras_pareto = _ax1.bar(range(len(_t)), _t.values, color=plt.get_cmap('tab20').colors[0])",
         f"_ax1.set_ylabel({value_column!r})",
-        f"_ax1.yaxis.set_major_formatter(plt.FuncFormatter({y_formatter}))",
+        "_ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: _fmt_valor(y)))",
         "_ax2 = _ax1.twinx()",
         "_ax2.plot(range(len(_t)), _acum.values, color='#d62728', marker='o', markersize=3, linewidth=1.5)",
         "_ax2.set_ylim(0, 105)",
         "_ax2.set_ylabel('% acumulado')",
         "_ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: f'{y:.0f}%'))",
         "_ax2.axhline(80, color='#888888', linestyle='--', linewidth=1)",
+        "for _bp, _i, _v, _a in zip(_barras_pareto, _t.index, _t.values, _acum.values): "
+        "_bp.set_gid('tt-' + _urlp.quote(f'{_i}: {_fmt_valor(_v)} ({_a:.1f}% acum)'))",
         f"if len(_t) <= {HIGH_CARDINALITY_THRESHOLD}:",
         "    _ax1.set_xticks(range(len(_t)))",
         "    _ax1.set_xticklabels([str(_i)[:20] for _i in _t.index], rotation=45, ha='right')",

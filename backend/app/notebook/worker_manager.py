@@ -171,7 +171,7 @@ class WorkerManager:
                     "stdout": "",
                     "result_html": None,
                     "result_text": None,
-                    "image_base64": None,
+                    "chart_svg": None,
                     "error": {
                         "type": "TimeoutError",
                         "message": str(exc),
@@ -196,7 +196,7 @@ class WorkerManager:
                     "stdout": "",
                     "result_html": None,
                     "result_text": None,
-                    "image_base64": None,
+                    "chart_svg": None,
                     "error": {"type": "TimeoutError", "message": str(exc), "traceback": ""},
                     "session_restarted": True,
                     "challenge": None,

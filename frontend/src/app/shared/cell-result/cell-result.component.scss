@@ -89,9 +89,14 @@
   }
 }
 
-.chart img {
-  max-width: 100%;
-  height: auto;
-  border: 1px solid #e2e2ef;
-  border-radius: 6px;
+// Inline SVG (not <img>, since native <title> hover tooltips need the
+// markup in the DOM directly) - ::ng-deep to reach into the [innerHTML]
+// content, same pattern .table-wrap already uses for the pandas HTML table.
+.chart {
+  ::ng-deep svg {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #e2e2ef;
+    border-radius: 6px;
+  }
 }

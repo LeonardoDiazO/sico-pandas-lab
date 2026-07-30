@@ -195,7 +195,7 @@ def cancel_excel_cleanup():
 def _empty_cell_result():
     """A CellResult with nothing in it - used when a cardinality warning
     blocks generation before any chart code ran."""
-    return {"stdout": "", "result_html": None, "result_text": None, "image_base64": None, "error": None}
+    return {"stdout": "", "result_html": None, "result_text": None, "chart_svg": None, "error": None}
 
 
 def _chart_response_data(result, needs_confirmation=False, cardinality_warning=None, explanation=None):

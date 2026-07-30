@@ -25,10 +25,8 @@
       <pre class="result-block value">{{ result.result_text }}</pre>
     }
 
-    @if (result.image_base64) {
-      <div class="result-block chart">
-        <img [src]="'data:image/png;base64,' + result.image_base64" alt="gráfica" />
-      </div>
+    @if (safeChartSvg) {
+      <div class="result-block chart" [innerHTML]="safeChartSvg"></div>
     }
   </div>
 }

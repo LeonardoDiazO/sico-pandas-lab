@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
 import { CardinalityWarning, ChartInterpretation, ChartResult, ExcelProfileColumn } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
@@ -96,7 +97,23 @@ export class NoCodeChartComponent implements OnChanges {
   interpreting = false;
   interpretationReason: string | null = null;
 
-  constructor(private notebook: NotebookService) {}
+  constructor(
+    private notebook: NotebookService,
+    private sanitizer: DomSanitizer,
+  ) {}
+
+  // Inline SVG (not an <img src="data:image/png;base64,...">) - user
+  // feedback: "sería bueno tener un tooltip..." - native <title> hover
+  // tooltips (execution.py's _inject_svg_tooltips) only fire when the SVG
+  // markup is inline in the DOM. Same trust rationale as
+  // cell-result.component.ts's identical getter - our own backend
+  // (matplotlib) produced it.
+  get safeChartSvg(): SafeHtml | null {
+    if (!this.chartResult?.chart_svg) {
+      return null;
+    }
+    return this.sanitizer.bypassSecurityTrustHtml(this.chartResult.chart_svg);
+  }
 
   get groupableColumns(): ExcelProfileColumn[] {
     return this.profile?.columns.filter((c) => GROUPABLE_TYPES.includes(c.type)) ?? [];
@@ -239,7 +256,7 @@ export class NoCodeChartComponent implements OnChanges {
             stdout: null,
             result_html: null,
             result_text: null,
-            image_base64: null,
+            chart_svg: null,
             error: {
               type: 'RedError',
               message: backendMessage ?? 'No se pudo contactar el servidor.',

@@ -275,7 +275,7 @@ export class NoCodeTableComponent implements OnChanges {
             stdout: null,
             result_html: null,
             result_text: null,
-            image_base64: null,
+            chart_svg: null,
             error: {
               type: 'RedError',
               message: backendMessage ?? 'No se pudo contactar el servidor.',
@@ -310,7 +310,7 @@ export class NoCodeTableComponent implements OnChanges {
           stdout: null,
           result_html: null,
           result_text: null,
-          image_base64: null,
+          chart_svg: null,
           error: {
             type: 'RedError',
             message: backendMessage ?? 'No se pudo contactar el servidor.',

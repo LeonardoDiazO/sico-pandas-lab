@@ -110,7 +110,7 @@ def test_linea_runs_end_to_end_with_many_days_and_produces_an_image():
     code = build_chart_code("linea", "df", ["dia"], "neto")
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
 
 def test_linea_casts_to_string_before_parsing_so_yyyymmdd_integers_work():
@@ -140,7 +140,7 @@ def test_linea_casts_to_string_before_parsing_so_yyyymmdd_integers_work():
     )
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
     parsed = pd.to_datetime(namespace["df"]["dia"].astype(str), errors="coerce")
     assert parsed.dt.year.eq(2026).all()  # not ~1970, the pre-fix garbage result
@@ -263,7 +263,9 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     like money (see test_torta_legend_formats_money_column_as_colombian_pesos);
     a further round moved _total/_fmt_valor to before the torta/barras split
     and added the grand total to the title (see
-    test_torta_title_includes_the_grand_total) - 'neto' matches the money
+    test_torta_title_includes_the_grand_total); a further round added a
+    hover tooltip per slice via set_gid() (see
+    test_torta_wedges_get_a_hover_tooltip_gid) - 'neto' matches the money
     heuristic, so this now pins that final string (using the live constant,
     not a bare literal, so this test doesn't silently go stale if the
     threshold moves again), still guarding that the underlying grouping
@@ -276,6 +278,7 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         f"pd.concat([_s.iloc[:{n}], pd.Series({{'Otros': _s.iloc[{n}:].sum()}})]))"
         "(df.groupby('vendedor')['neto'].sum().sort_values(ascending=False))"
         ".groupby(level=0, sort=False).sum().clip(lower=0)\n"
+        "import urllib.parse as _urlp\n"
         "_total = _chart_data.sum()\n"
         "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')\n"
         "_fig, _ax = plt.subplots(figsize=(11, 8))\n"
@@ -287,6 +290,8 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         "[f'{name} - {_fmt_valor(val)} ({val / _total * 100:.1f}%) de {_pct_de}' "
         "for name, val in _chart_data.items()], "
         "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
+        "for _w, _n, _v in zip(_wedges, _chart_data.index, _chart_data.values): "
+        "_w.set_gid('tt-' + _urlp.quote(f'{_n}: {_fmt_valor(_v)}'))\n"
         "_titulo = 'neto por vendedor' + ' — Total: ' + _fmt_valor(_total)\n"
         "plt.title(_titulo, fontsize=13, fontweight='bold')\n"
         "plt.tight_layout()"
@@ -400,7 +405,7 @@ def test_torta_legend_includes_percentage_for_every_slice():
     )
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
 
 def test_torta_legend_percentage_says_what_it_is_a_percentage_of():
@@ -441,7 +446,7 @@ def test_torta_legend_includes_absolute_value():
     )
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
 
 # --- User feedback: "$" sign + Colombian punctuation for money columns ---
@@ -488,7 +493,7 @@ def test_torta_legend_formats_money_column_as_colombian_pesos():
     namespace["df"] = pd.DataFrame({"vendedor": ["V0", "V1"], "neto": [1234567.0, 500.0]})
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
 
 def test_torta_legend_leaves_non_money_column_formatting_unchanged():
@@ -538,7 +543,7 @@ def test_torta_title_includes_the_grand_total():
     namespace["df"] = pd.DataFrame({"vendedor": ["V0", "V1"], "neto": [1234567.0, 500.0]})
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
 
 def test_barras_title_also_includes_the_grand_total():
@@ -620,7 +625,7 @@ def test_professional_look_torta_and_barras_run_end_to_end_without_error():
         code = build_chart_code(chart_type, "df", ["vendedor"], "neto")
         result = execute_code(code, namespace)
         assert result["error"] is None
-        assert result["image_base64"]
+        assert result["chart_svg"]
 
 
 def test_barras_merges_duplicate_otros_label_too():
@@ -696,7 +701,7 @@ def _run(code, df):
     namespace["df"] = df
     result = execute_code(code, namespace)
     assert result["error"] is None, result["error"]
-    assert result["image_base64"]
+    assert result["chart_svg"]
     return result
 
 
@@ -811,4 +816,51 @@ def test_torta_formats_space_split_neto_header_as_pesos_end_to_end():
     )
     result = execute_code(code, namespace)
     assert result["error"] is None
-    assert result["image_base64"]
+    assert result["chart_svg"]
+
+
+# --- Hover tooltips via native SVG <title> (user feedback: "sería bueno
+# tener un tooltip... para diferenciar[los] cuando no caben todos los
+# representantes") --------------------------------------------------------
+
+
+def test_torta_wedges_get_a_hover_tooltip_gid():
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "_w.set_gid('tt-' + _urlp.quote(f'{_n}: {_fmt_valor(_v)}'))" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"vendedor": ["LATIN LOGISTICS", "OL GROUP"], "neto": [1234567.0, 500.0]}
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "<title>LATIN LOGISTICS: $ 1.234.567</title>" in result["chart_svg"]
+
+
+def test_barras_bars_get_a_hover_tooltip_gid():
+    code = build_chart_code("barras", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "_p.set_gid('tt-' + _urlp.quote(f'{_n}: {_fmt_valor(_v)}'))" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"vendedor": ["LATIN LOGISTICS", "OL GROUP"], "neto": [1234567.0, 500.0]}
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "<title>LATIN LOGISTICS: $ 1.234.567</title>" in result["chart_svg"]

@@ -118,8 +118,8 @@
     @if (chartResult) {
       @if (chartResult.error) {
         <p class="chart-error">No se pudo generar la gráfica: {{ chartResult.error.message }}</p>
-      } @else if (chartResult.image_base64) {
-        <img class="chart-image" [src]="'data:image/png;base64,' + chartResult.image_base64" alt="Gráfica generada" />
+      } @else if (safeChartSvg) {
+        <div class="chart-image" [innerHTML]="safeChartSvg"></div>
         @if (chartResult.explanation) {
           <p class="chart-explanation">{{ chartResult.explanation }}</p>
         }

@@ -179,6 +179,14 @@ def build_chart_code(chart_type, variable, columns, value_column):
         # money-formatting expression (removes a near-duplicate).
         lines = [
             f"_chart_data = {series_expr}",
+            # User feedback: "sería bueno tener un tooltip... para
+            # diferenciar[los] cuando no caben todos los representantes" -
+            # x-axis/legend labels get truncated or hidden past a certain
+            # count (Story 7.4's "Otros" bucket, the x-tick truncation
+            # below), so hovering a slice/bar is the only way left to see
+            # its full name - see execution.py's _inject_svg_tooltips for
+            # how a gid set here turns into a native <title> tooltip.
+            "import urllib.parse as _urlp",
             "_total = _chart_data.sum()",
             # When the value column looks like money (_looks_like_money),
             # format it as Colombian pesos: "$ " prefix (matching the
@@ -224,6 +232,10 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 "[f'{name} - {_fmt_valor(val)} ({val / _total * 100:.1f}%) de {_pct_de}' "
                 "for name, val in _chart_data.items()], "
                 "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
+                # Hover tooltip per slice - full name + value, even for the
+                # slices whose autopct label was suppressed below 3%.
+                "for _w, _n, _v in zip(_wedges, _chart_data.index, _chart_data.values): "
+                "_w.set_gid('tt-' + _urlp.quote(f'{_n}: {_fmt_valor(_v)}'))",
             ]
         else:
             lines += [
@@ -239,6 +251,9 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 "_ax.set_xticklabels(["
                 "_t.get_text()[:28] + ('…' if len(_t.get_text()) > 28 else '') "
                 "for _t in _ax.get_xticklabels()], rotation=45, ha='right')",
+                # Hover tooltip per bar - the full (untruncated) name + value.
+                "for _p, _n, _v in zip(_ax.patches, _chart_data.index, _chart_data.values): "
+                "_p.set_gid('tt-' + _urlp.quote(f'{_n}: {_fmt_valor(_v)}'))",
             ]
         lines += _title_with_total_lines(title)
         lines.append("plt.tight_layout()")

@@ -5,10 +5,12 @@ directly. The worker process (worker.py) calls execute_code() inside an
 isolated child process; nothing here talks to the network or the database.
 """
 import ast
-import base64
+import html
 import io
 import json
+import re
 import traceback
+import urllib.parse
 from contextlib import redirect_stdout
 
 # Hard caps so a single cell cannot flood the response with megabytes of text.
@@ -103,8 +105,39 @@ def _capture_value(value):
     return None, _truncate(repr(value), MAX_STDOUT_CHARS), None
 
 
+# User feedback: "sería bueno tener un tooltip... para diferenciar[los]
+# cuando no caben todos los representantes" - chart_builder.py/table_builder.py
+# hide x-axis labels past a cardinality threshold (otherwise dozens of
+# overlapping labels are worse than none), so hovering is the only way left
+# to find out which bar/wedge is which. Any artist a chart-building module
+# wants hoverable gets `artist.set_gid("tt-" + urllib.parse.quote(label))`
+# BEFORE the figure is saved - _SVG_TOOLTIP_PATTERN below finds every SVG
+# group with that gid and injects a <title> as its first child. <title> is
+# the standard, native SVG/HTML way to attach a hover tooltip - the browser
+# shows it with zero JavaScript, but ONLY when the SVG is inline in the DOM
+# (not referenced via <img src=...>, which is why _capture_figure below
+# returns raw SVG markup instead of a base64 PNG - see notebook-home's
+# app-cell-result, which renders it via [innerHTML] like the table already
+# is). URL-encoding the label (not raw text) before it goes into the gid
+# guarantees the id attribute only ever contains URL-safe characters,
+# sidestepping any question of how completely matplotlib's own SVG writer
+# escapes arbitrary text in an id="..." attribute.
+_SVG_TOOLTIP_PATTERN = re.compile(r'(<g id="tt-([^"]*)"[^>]*>)')
+
+
+def _inject_svg_tooltips(svg_text):
+    def _replace(match):
+        opening_tag, encoded_label = match.group(1), match.group(2)
+        label = urllib.parse.unquote(encoded_label)
+        return f"{opening_tag}<title>{html.escape(label)}</title>"
+
+    return _SVG_TOOLTIP_PATTERN.sub(_replace, svg_text)
+
+
 def _capture_figure(namespace):
-    """Grab the most recent matplotlib figure as a base64 PNG, if any."""
+    """Grab the most recent matplotlib figure as inline SVG markup (not a
+    base64 PNG - see _inject_svg_tooltips' docstring for why native <title>
+    hover tooltips need that)."""
     plt = namespace.get("plt")
     if plt is None:
         return None
@@ -112,12 +145,12 @@ def _capture_figure(namespace):
     if not fignums:
         return None
     fig = plt.figure(fignums[-1])
-    buf = io.BytesIO()
+    buf = io.StringIO()
     try:
-        fig.savefig(buf, format="png", bbox_inches="tight", dpi=90)
+        fig.savefig(buf, format="svg", bbox_inches="tight")
     finally:
         plt.close("all")
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+    return _inject_svg_tooltips(buf.getvalue())
 
 
 def execute_code(code, namespace):
@@ -131,7 +164,7 @@ def execute_code(code, namespace):
     result_html = None
     result_text = None
     result_records = None
-    image_base64 = None
+    chart_svg = None
     error = None
 
     try:
@@ -142,7 +175,7 @@ def execute_code(code, namespace):
             "result_html": None,
             "result_text": None,
             "result_records": None,
-            "image_base64": None,
+            "chart_svg": None,
             "error": {
                 "type": "SyntaxError",
                 "message": str(exc.msg),
@@ -165,7 +198,7 @@ def execute_code(code, namespace):
                     namespace,
                 )
                 result_html, result_text, result_records = _capture_value(value)
-        image_base64 = _capture_figure(namespace)
+        chart_svg = _capture_figure(namespace)
     except Exception as exc:  # noqa: BLE001 - user code, must not escape
         error = {
             "type": type(exc).__name__,
@@ -178,6 +211,6 @@ def execute_code(code, namespace):
         "result_html": result_html,
         "result_text": result_text,
         "result_records": result_records,
-        "image_base64": image_base64,
+        "chart_svg": chart_svg,
         "error": error,
     }

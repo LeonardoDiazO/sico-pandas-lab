@@ -831,7 +831,7 @@ def test_summary_pareto_chart_runs_end_to_end_and_produces_an_image():
     """Empirical verification: execution.py's _capture_figure() must pick up
     the chart automatically (it runs after every cell regardless of the
     cell's final expression), so the SAME response carries both the table
-    (result_html) and the chart (image_base64)."""
+    (result_html) and the chart (chart_svg)."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -850,7 +850,7 @@ def test_summary_pareto_chart_runs_end_to_end_and_produces_an_image():
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert result["result_html"] is not None
-    assert result["image_base64"]
+    assert result["chart_svg"]
 
 
 def test_summary_pareto_chart_hides_x_labels_past_the_cardinality_threshold():
@@ -866,13 +866,14 @@ def test_summary_pareto_chart_hides_x_labels_past_the_cardinality_threshold():
 def test_summary_pareto_chart_formats_money_column_y_axis_as_colombian_pesos():
     code = build_summary_code("df", ["cliente"], "neto")
     _assert_valid_python(code)
-    assert "'$ ' + f'{y:,.0f}'.replace(',', '.')" in code
+    assert "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')" in code
+    assert "_ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: _fmt_valor(y)))" in code
 
 
 def test_summary_pareto_chart_leaves_non_money_column_y_axis_unchanged():
     code = build_summary_code("df", ["cliente"], "cantidad")
     _assert_valid_python(code)
-    assert "f'{y:,.0f}'" in code
+    assert "_fmt_valor = lambda v: f'{v:,.0f}'" in code
     assert "$" not in code
 
 
@@ -922,7 +923,7 @@ def test_sort_descending_pareto_marks_the_right_row_and_prints_row_level_insight
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert result["result_html"] is not None
-    assert result["image_base64"]
+    assert result["chart_svg"]
     # totals: 500+290+150+60=1000 -> cum 50, 79, 94, 100 - crossing at row 3 (94%)
     assert "3 de 4" in result["stdout"]
     assert "fila" in result["stdout"]
@@ -932,7 +933,8 @@ def test_sort_descending_pareto_marks_the_right_row_and_prints_row_level_insight
 def test_sort_descending_pareto_formats_money_column_in_chart_y_axis():
     code = build_sort_code("df", "neto", False)
     _assert_valid_python(code)
-    assert "'$ ' + f'{y:,.0f}'.replace(',', '.')" in code
+    assert "_fmt_valor = lambda v: '$ ' + f'{v:,.0f}'.replace(',', '.')" in code
+    assert "_ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _pos: _fmt_valor(y)))" in code
 
 
 def test_sort_descending_pareto_zero_total_does_not_produce_inf_or_nan():
@@ -951,3 +953,28 @@ def test_sort_descending_pareto_zero_total_does_not_produce_inf_or_nan():
     assert "inf" not in result["result_html"]
     assert "nan" not in result["result_html"]
     assert "inf" not in result["stdout"]
+
+
+def test_pareto_chart_bars_get_a_hover_tooltip_with_name_value_and_cumulative_pct():
+    """User feedback: "sería bueno tener un tooltip... para diferenciar[los]
+    cuando no caben todos los representantes" - the Pareto chart's bars
+    (both in build_summary_code and build_sort_code's descending branch)
+    must be hoverable even when x-axis labels are hidden."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"cliente": ["LATIN LOGISTICS", "OL GROUP"], "neto": [1234567.0, 500.0]}
+    )
+    code = build_summary_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert "_bp.set_gid('tt-' + _urlp.quote(f'{_i}: {_fmt_valor(_v)} ({_a:.1f}% acum)'))" in code
+
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "<title>LATIN LOGISTICS: $ 1.234.567" in result["chart_svg"]
