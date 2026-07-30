@@ -109,6 +109,13 @@ export interface TableResult extends CellResult {
   explanation: string | null;
 }
 
+// Story 8.4: Excel-style "choose which values to include" filter, applied
+// before sorting/grouping in both /sort-table and /summary-table.
+export interface ColumnFilter {
+  column: string;
+  values: string[];
+}
+
 // Story 6.1: 'torta' | 'barras' | 'linea' | 'histograma' - mirrors ChartKind
 // in shared/no-code-chart/no-code-chart.component.ts (Story 5.2), where the
 // canonical type still lives (do not treat this as a second source of truth,

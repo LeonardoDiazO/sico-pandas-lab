@@ -1,6 +1,11 @@
 import ast
 
-from app.notebook.table_builder import build_summary_code, build_summary_detail_code, build_sort_code
+from app.notebook.table_builder import (
+    build_column_values_code,
+    build_summary_code,
+    build_summary_detail_code,
+    build_sort_code,
+)
 
 
 def _assert_valid_python(code):
@@ -642,3 +647,163 @@ def test_detail_zero_total_does_not_produce_inf_or_nan_in_the_80_20_columns():
     assert "inf" not in result["result_html"]
     assert "nan" not in result["result_html"]
     assert "inf" not in result["stdout"]
+
+
+# --- Excel-style column filters (Story 8.4, user feedback: "colocar los
+# filtros para ordenar también en ordenar tabla" / "también en Resumen y
+# porcentaje por columna") -----------------------------------------------
+
+
+def test_column_values_code_returns_sorted_distinct_values():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"vdor": ["C", "A", "B", "A", None]})
+    code = build_column_values_code("df", "vdor")
+    _assert_valid_python(code)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["result_records"] == [{"vdor": "A"}, {"vdor": "B"}, {"vdor": "C"}]
+
+
+def test_column_values_code_stringifies_numeric_values():
+    """Filter comparison (_filter_lines) also uses .astype(str) - both sides
+    must agree on the string form regardless of the column's real dtype."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"legal": [3, 6, 3]})
+    code = build_column_values_code("df", "legal")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["result_records"] == [{"legal": "3"}, {"legal": "6"}]
+
+
+def test_sort_with_filter_only_includes_selected_values():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"vdor": ["A", "B", "C"], "neto": [100.0, 200.0, 300.0]}
+    )
+    code = build_sort_code("df", "neto", False, filters=[{"column": "vdor", "values": ["A", "C"]}])
+    _assert_valid_python(code)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    assert ">A<" in html and ">C<" in html
+    assert ">B<" not in html
+
+
+def test_sort_filter_percentages_reflect_the_filtered_subset_not_the_whole_file():
+    """Excel's own behavior when you filter+look at a %: the total is of
+    what's VISIBLE, not the whole underlying file."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"vdor": ["A", "B", "C"], "cantidad": [100.0, 200.0, 300.0]}
+    )
+    # Filtered to just A and C (100 + 300 = 400 total) - A should be 25%, not
+    # 100/(100+200+300)=16.7% (the unfiltered grand total).
+    code = build_sort_code(
+        "df", "cantidad", False, filters=[{"column": "vdor", "values": ["A", "C"]}]
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "25.0" in result["result_html"]
+    assert "16.7" not in result["result_html"]
+
+
+def test_sort_without_filters_is_unaffected_by_the_filters_parameter():
+    """filters=None (the default) must produce byte-identical code to before
+    this feature existed - no regression for the common, filter-less case."""
+    with_default = build_sort_code("df", "neto", False)
+    with_empty_list = build_sort_code("df", "neto", False, filters=[])
+    with_none = build_sort_code("df", "neto", False, filters=None)
+    assert with_default == with_empty_list == with_none
+    assert "_filtrado" not in with_default
+
+
+def test_summary_with_filter_only_aggregates_selected_values():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["A", "A", "B", "C"],
+            "vdor": ["V1", "V1", "V2", "V1"],
+            "neto": [100.0, 50.0, 200.0, 300.0],
+        }
+    )
+    # Filtered to vdor=V1 only -> cliente A totals 150, C totals 300; B (V2) excluded entirely.
+    code = build_summary_code(
+        "df", ["cliente"], "neto", filters=[{"column": "vdor", "values": ["V1"]}]
+    )
+    _assert_valid_python(code)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    assert ">B<" not in html
+    assert ">A<" in html and ">C<" in html
+
+
+def test_summary_detail_with_filter_excludes_non_matching_rows_and_groups():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["A", "A", "B"],
+            "legal": [3, 6, 3],
+            "neto": [100.0, 50.0, 200.0],
+        }
+    )
+    code = build_summary_detail_code(
+        "df", ["cliente"], "neto", filters=[{"column": "legal", "values": ["3"]}]
+    )
+    _assert_valid_python(code)
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    assert "150.0" not in html  # A's un-filtered total (100+50) must not appear
+    assert ">B<" in html
+
+
+def test_filters_with_a_single_quote_in_the_value_do_not_break_generated_syntax():
+    """Filter values, like column names, can come from real (messy)
+    user-uploaded Excel content - repr() must be used to embed them."""
+    code = build_sort_code(
+        "df", "neto", False, filters=[{"column": "cliente", "values": ["O'Brien", "A"]}]
+    )
+    _assert_valid_python(code)

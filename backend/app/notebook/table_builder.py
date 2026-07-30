@@ -10,6 +10,60 @@ df.head()) come for free. No new execution or rendering mechanism needed.
 """
 from app.notebook.chart_builder import _grouping_expr, _looks_like_money
 
+# Excel-style filter dropdown ("choose which values to include"), Story 8.4.
+# A high-cardinality column (e.g. an invoice number - virtually every row
+# unique) would flood a checkbox list uselessly, so this caps how many
+# distinct values build_column_values_code() ever returns for one.
+MAX_FILTER_VALUES = 500
+
+
+def build_column_values_code(variable, column):
+    """Distinct values of a column, as strings, for the "Filtrar por
+    columna" checkbox list (Excel-style: "choose which values to include").
+
+    Reuses execution.py's existing DataFrame -> result_records capture
+    (the same one the KPI cards already use) instead of a new stdout/JSON
+    mechanism: the result is a one-column DataFrame, so result_records comes
+    back as [{column: value}, ...] with zero new code in execution.py.
+
+    .astype(str) before .unique() - not because every column is text, but
+    so the values compare consistently with how _filter_lines() below
+    applies the filter (also via .astype(str).isin(...)), regardless of the
+    column's real dtype (a numeric code or an unparsed "fecha" column both
+    just become their string form on both sides of the comparison).
+    """
+    return (
+        f"_valores = sorted({variable}[{column!r}].dropna().astype(str).unique().tolist())"
+        f"[:{MAX_FILTER_VALUES}]\n"
+        f"pd.DataFrame({{{column!r}: _valores}})"
+    )
+
+
+def _filter_lines(variable, filters):
+    """Code lines that narrow `variable` down to only the selected values
+    per column (AND across multiple filters, Excel-style), one line per
+    filter so each step is independently readable/debuggable. Returns
+    (lines, source_name): source_name is `variable` itself when there are
+    no filters (skips a redundant copy), or `_filtrado` once at least one
+    filter has narrowed it - callers use source_name everywhere they'd
+    otherwise reference `variable`, so every computation downstream (sums,
+    percentages, sorting) reflects the filtered subset, not the whole file
+    (matching Excel's own "% of what's visible" behavior when you filter).
+
+    .astype(str) before .isin() - same reasoning as build_column_values_code:
+    the values a user picks come from that function's own .astype(str)
+    listing, so the comparison must use the same string form regardless of
+    the column's real dtype.
+    """
+    if not filters:
+        return [], variable
+    lines = [f"_filtrado = {variable}"]
+    for f in filters:
+        lines.append(
+            f"_filtrado = _filtrado[_filtrado[{f['column']!r}].astype(str).isin({f['values']!r})]"
+        )
+    return lines, "_filtrado"
+
 
 def _money_format_expr(series_expr):
     """Wraps a pandas Series expression so it displays as Colombian pesos
@@ -26,7 +80,7 @@ def _money_format_expr(series_expr):
     )
 
 
-def build_sort_code(variable, value_column, ascending):
+def build_sort_code(variable, value_column, ascending, filters=None):
     """Sort every row (all columns kept, not a projection down to just
     value_column - the user asked to see the whole record ordered by a
     column, not a narrowed view) by a single value column, and add the same
@@ -42,11 +96,18 @@ def build_sort_code(variable, value_column, ascending):
     uses for chart legends/axes), its displayed values get a "$ " prefix and
     Colombian "." thousands separator - computed here, at display time,
     AFTER _pct/_acum already used the real numeric column above, since a
-    formatted string can't be divided or summed."""
+    formatted string can't be divided or summed.
+
+    filters (Story 8.4, user feedback: "colocar los filtros para ordenar
+    también en ordenar tabla") - optional list of {"column", "values"}
+    Excel-style filters, applied via _filter_lines() BEFORE sorting, so
+    '% del total'/'% acumulado' reflect the filtered rows, not the whole file.
+    """
+    filter_lines, source = _filter_lines(variable, filters or [])
     value_expr = _money_format_expr(f"_ordenado[{value_column!r}]") if _looks_like_money(value_column) else None
-    lines = [
-        f"_ordenado = {variable}.sort_values({value_column!r}, ascending={bool(ascending)!r})",
-        f"_total = {variable}[{value_column!r}].sum()",
+    lines = filter_lines + [
+        f"_ordenado = {source}.sort_values({value_column!r}, ascending={bool(ascending)!r})",
+        f"_total = {source}[{value_column!r}].sum()",
         # Same zero-total guard as build_summary_code (Epic 8 code review) -
         # a signed value_column whose rows cancel out to exactly zero would
         # otherwise leak "inf"/"nan" text into the table.
@@ -105,7 +166,7 @@ def _pareto_marker_lines(variable, grouping, value_column):
     ]
 
 
-def build_summary_code(variable, columns, value_column):
+def build_summary_code(variable, columns, value_column, filters=None):
     """Group by column(s), sum a value column, and compute each group's
     share of the total plus a running cumulative share (sorted descending)
     - answers "who concentrates the value" (Story 8.2) directly, and marks
@@ -131,10 +192,16 @@ def build_summary_code(variable, columns, value_column):
     treatment as build_sort_code - only in this FINAL DataFrame, after _t has
     already done its numeric duty in _pareto_marker_lines above (percentages,
     the 80% crossing) - a formatted string can't be summed or divided.
+
+    filters (Story 8.4, user feedback: "también en Resumen y porcentaje por
+    columna") - same Excel-style {"column", "values"} filters as
+    build_sort_code, applied before grouping so every total/percentage/the
+    80% crossing reflects the filtered rows, not the whole file.
     """
-    grouping = _grouping_expr(variable, columns)
+    filter_lines, source = _filter_lines(variable, filters or [])
+    grouping = _grouping_expr(source, columns)
     value_expr = _money_format_expr("_t") if _looks_like_money(value_column) else "_t"
-    lines = _pareto_marker_lines(variable, grouping, value_column) + [
+    lines = filter_lines + _pareto_marker_lines(source, grouping, value_column) + [
         # Bare expression, not assigned to a variable - execution.py only
         # captures the LAST expression statement of a cell as the result;
         # an assignment here would leave result_html as None. The `if`
@@ -145,7 +212,7 @@ def build_summary_code(variable, columns, value_column):
     return "\n".join(lines)
 
 
-def build_summary_detail_code(variable, columns, value_column):
+def build_summary_detail_code(variable, columns, value_column, filters=None):
     """User feedback on the grouped summary (build_summary_code): "faltaria
     un resumen detallado, en el que por ejemplo salga LATIN LOGISTICS
     COLOMBIA S.A.S. las n veces" - the aggregate total per group isn't
@@ -176,17 +243,21 @@ def build_summary_detail_code(variable, columns, value_column):
     use of value_column (the group sort, the per-row sort, the % de su
     grupo math) is done - a formatted string can't be summed, divided, or
     sorted numerically.
+
+    filters - same Excel-style {"column", "values"} filters as
+    build_summary_code, applied before grouping (see _filter_lines).
     """
-    grouping = _grouping_expr(variable, columns)
-    lines = _pareto_marker_lines(variable, grouping, value_column) + [
+    filter_lines, source = _filter_lines(variable, filters or [])
+    grouping = _grouping_expr(source, columns)
+    lines = filter_lines + _pareto_marker_lines(source, grouping, value_column) + [
         f"_grupo = {grouping}",
-        f"_total_grupo = {variable}.groupby(_grupo)[{value_column!r}].transform('sum')",
+        f"_total_grupo = {source}.groupby(_grupo)[{value_column!r}].transform('sum')",
         # Same zero-total guard as build_summary_code/build_sort_code - a
         # group whose rows cancel out to exactly zero (e.g. a 'saldo'
         # column) would otherwise leak inf/nan into '% de su grupo'.
-        f"_pct_grupo = ({variable}[{value_column!r}] / _total_grupo * 100)"
+        f"_pct_grupo = ({source}[{value_column!r}] / _total_grupo * 100)"
         ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
-        f"_detalle = {variable}.assign(**{{'Grupo': _grupo, '% de su grupo': _pct_grupo}})",
+        f"_detalle = {source}.assign(**{{'Grupo': _grupo, '% de su grupo': _pct_grupo}})",
         # Categorical (not plain sort_values on the string column) so groups
         # stay ordered by TOTAL descending (same order _t already has), not
         # alphabetically - matches build_summary_code's ordering.

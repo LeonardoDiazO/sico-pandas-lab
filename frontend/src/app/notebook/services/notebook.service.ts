@@ -8,6 +8,7 @@ import {
   CellResult,
   ChartInterpretation,
   ChartResult,
+  ColumnFilter,
   ExcelProfileColumn,
   LoadResult,
   TablesPayload,
@@ -61,11 +62,17 @@ export class NotebookService {
     });
   }
 
-  sortTable(variable: string, valueColumn: string, ascending: boolean): Observable<ApiResponse<TableResult>> {
+  sortTable(
+    variable: string,
+    valueColumn: string,
+    ascending: boolean,
+    filters: ColumnFilter[] = [],
+  ): Observable<ApiResponse<TableResult>> {
     return this.http.post<ApiResponse<TableResult>>(`${this.base}/api/notebook/sort-table`, {
       variable,
       valueColumn,
       ascending,
+      filters,
     });
   }
 
@@ -74,12 +81,23 @@ export class NotebookService {
     columns: string[],
     valueColumn: string,
     detail = false,
+    filters: ColumnFilter[] = [],
   ): Observable<ApiResponse<TableResult>> {
     return this.http.post<ApiResponse<TableResult>>(`${this.base}/api/notebook/summary-table`, {
       variable,
       columns,
       valueColumn,
       detail,
+      filters,
+    });
+  }
+
+  // Story 8.4: distinct values of a column, for the "Filtrar por columna"
+  // checkbox list (Excel-style: "choose which values to include").
+  columnValues(variable: string, column: string): Observable<ApiResponse<TableResult>> {
+    return this.http.post<ApiResponse<TableResult>>(`${this.base}/api/notebook/column-values`, {
+      variable,
+      column,
     });
   }
 

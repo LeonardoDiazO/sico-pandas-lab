@@ -16,7 +16,12 @@ from app.notebook.chart_builder import (
 )
 from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
-from app.notebook.table_builder import build_sort_code, build_summary_code, build_summary_detail_code
+from app.notebook.table_builder import (
+    build_column_values_code,
+    build_sort_code,
+    build_summary_code,
+    build_summary_detail_code,
+)
 from app.notebook.table_explanation import (
     build_sort_explanation,
     build_summary_detail_explanation,
@@ -218,6 +223,28 @@ def _valid_columns_list(columns):
     return all(isinstance(c, str) and c for c in columns)
 
 
+def _valid_filters_list(filters):
+    """`filters` (Story 8.4) must be a list of {"column": non-empty str,
+    "values": list[str]} dicts - the Excel-style "choose which values to
+    include" shape table_builder.py's _filter_lines() expects. An empty
+    `values` list is valid (means "nothing matches this filter", same as
+    unchecking every box in Excel's own filter dropdown) - only the TYPES
+    are validated here, not that the values/column actually exist in the
+    DataFrame (that's discovered at execution time, same as value_column
+    elsewhere in this module)."""
+    if not isinstance(filters, list):
+        return False
+    for f in filters:
+        if not isinstance(f, dict):
+            return False
+        if not isinstance(f.get("column"), str) or not f.get("column").strip():
+            return False
+        values = f.get("values")
+        if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+            return False
+    return True
+
+
 @notebook_bp.post("/generate-chart")
 def generate_chart():
     payload = request.get_json(silent=True) or {}
@@ -367,13 +394,22 @@ def sort_table():
     variable = payload.get("variable")
     value_column = payload.get("valueColumn")
     ascending = payload.get("ascending") is True
+    # Story 8.4 (user feedback: "colocar los filtros para ordenar también en
+    # ordenar tabla") - optional Excel-style column filters, applied before
+    # sorting. Missing/None treated as "no filters" for callers predating
+    # this feature.
+    filters = payload.get("filters")
+    if filters is None:
+        filters = []
 
     if not isinstance(variable, str) or not variable.strip():
         return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
     if not isinstance(value_column, str) or not value_column.strip():
         return api_response(message="Falta elegir una columna para ordenar.", success=False, status=400)
+    if not _valid_filters_list(filters):
+        return api_response(message="Los filtros no son válidos.", success=False, status=400)
 
-    code = build_sort_code(variable, value_column, ascending)
+    code = build_sort_code(variable, value_column, ascending, filters=filters)
     result = _manager().execute(_session_id(), code)
     explanation = None if result.get("error") else build_sort_explanation(value_column)
     return api_response(
@@ -403,6 +439,12 @@ def summary_table():
     # row under its group's subtotal (build_summary_detail_code) - same
     # `columns`/`valueColumn` inputs either way, no separate route needed.
     detail = payload.get("detail") is True
+    # Story 8.4 (user feedback: "también en Resumen y porcentaje por
+    # columna") - same Excel-style filters as /sort-table, applied before
+    # grouping.
+    filters = payload.get("filters")
+    if filters is None:
+        filters = []
 
     if not isinstance(variable, str) or not variable.strip():
         return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
@@ -410,11 +452,13 @@ def summary_table():
         return api_response(message="Falta elegir al menos una columna para agrupar.", success=False, status=400)
     if not isinstance(value_column, str) or not value_column.strip():
         return api_response(message="Falta elegir una columna de valor para resumir.", success=False, status=400)
+    if not _valid_filters_list(filters):
+        return api_response(message="Los filtros no son válidos.", success=False, status=400)
 
     if detail:
-        code = build_summary_detail_code(variable, columns, value_column)
+        code = build_summary_detail_code(variable, columns, value_column, filters=filters)
     else:
-        code = build_summary_code(variable, columns, value_column)
+        code = build_summary_code(variable, columns, value_column, filters=filters)
     result = _manager().execute(_session_id(), code)
     if result.get("error"):
         explanation = None
@@ -425,6 +469,30 @@ def summary_table():
     return api_response(
         data=_table_response_data(result, explanation=explanation),
         message="Resumen generado." if not result.get("error") else "No se pudo generar el resumen.",
+    )
+
+
+@notebook_bp.post("/column-values")
+def column_values():
+    """Story 8.4 - distinct values of one column, for the "Filtrar por
+    columna" checkbox list (Excel-style: "choose which values to include").
+    Reuses the same CellResult shape as every other table route (result_html
+    + result_records) even though only result_records is actually consumed
+    by the frontend here - one response shape, no special-cased envelope."""
+    payload = request.get_json(silent=True) or {}
+    variable = payload.get("variable")
+    column = payload.get("column")
+
+    if not isinstance(variable, str) or not variable.strip():
+        return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
+    if not isinstance(column, str) or not column.strip():
+        return api_response(message="Falta la columna.", success=False, status=400)
+
+    code = build_column_values_code(variable, column)
+    result = _manager().execute(_session_id(), code)
+    return api_response(
+        data=_table_response_data(result),
+        message="Valores obtenidos." if not result.get("error") else "No se pudieron obtener los valores.",
     )
 
 

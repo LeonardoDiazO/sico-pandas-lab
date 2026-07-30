@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 
-import { ExcelProfileColumn, TableResult } from '../../models/api.models';
+import { ColumnFilter, ExcelProfileColumn, TableResult } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 import { looksLikeMoney } from '../money-format';
 import { ExcelProfileState } from '../no-code-chart/no-code-chart.component';
@@ -31,6 +31,18 @@ export interface SummaryCard {
   pctTotal: number;
   pctAcum: number;
   marker: string;
+}
+
+// Story 8.4 (user feedback: "colocar los filtros para ordenar también en
+// ordenar tabla" / "también en Resumen y porcentaje por columna") - one
+// shared "Filtrar por columna" panel narrows the rows BEFORE either
+// "Ordenar tabla" or "Resumen y porcentaje por columna" runs, Excel-style:
+// per column, choose which values to include (all included by default).
+export interface ActiveFilter {
+  column: string;
+  availableValues: string[];
+  selectedValues: Set<string>;
+  loading: boolean;
 }
 
 /**
@@ -74,7 +86,66 @@ export class NoCodeTableComponent implements OnChanges {
   // summarizeTable() below); the user can still flip back to the table.
   viewAsCards = false;
 
+  // Story 8.4: shared by both "Ordenar tabla" and "Resumen y porcentaje por
+  // columna" below - filtering once and exploring both views is the real
+  // workflow (Excel's own filter dropdown works the same way, applying to
+  // whatever view/formula reads the filtered range).
+  activeFilters: ActiveFilter[] = [];
+  filterColumnToAdd: string | null = null;
+  filterLoadError: string | null = null;
+
   constructor(private notebook: NotebookService) {}
+
+  get filterableColumns(): ExcelProfileColumn[] {
+    const active = new Set(this.activeFilters.map((f) => f.column));
+    return this.groupableColumns.filter((c) => !active.has(c.name));
+  }
+
+  get filtersPayload(): ColumnFilter[] {
+    return this.activeFilters.map((f) => ({ column: f.column, values: Array.from(f.selectedValues) }));
+  }
+
+  addFilter(): void {
+    if (!this.profile || !this.filterColumnToAdd) {
+      return;
+    }
+    const column = this.filterColumnToAdd;
+    const filter: ActiveFilter = { column, availableValues: [], selectedValues: new Set(), loading: true };
+    this.activeFilters = [...this.activeFilters, filter];
+    this.filterColumnToAdd = null;
+    this.filterLoadError = null;
+    this.notebook.columnValues(this.profile.variable, column).subscribe({
+      next: (res) => {
+        const values = (res.data?.result_records ?? []).map((row) => String(row[column]));
+        filter.availableValues = values;
+        filter.selectedValues = new Set(values); // Excel default: everything selected
+        filter.loading = false;
+      },
+      error: (err: HttpErrorResponse) => {
+        this.activeFilters = this.activeFilters.filter((f) => f !== filter);
+        const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
+        this.filterLoadError = backendMessage ?? `No se pudieron cargar los valores de '${column}'.`;
+      },
+    });
+  }
+
+  removeFilter(column: string): void {
+    this.activeFilters = this.activeFilters.filter((f) => f.column !== column);
+  }
+
+  toggleFilterValue(filter: ActiveFilter, value: string): void {
+    const next = new Set(filter.selectedValues);
+    if (next.has(value)) {
+      next.delete(value);
+    } else {
+      next.add(value);
+    }
+    filter.selectedValues = next;
+  }
+
+  setAllFilterValues(filter: ActiveFilter, selected: boolean): void {
+    filter.selectedValues = selected ? new Set(filter.availableValues) : new Set();
+  }
 
   // Cards only make sense for the aggregate view (one row per group) - the
   // detail view's records are individual source rows plus subtotal rows, a
@@ -160,6 +231,11 @@ export class NoCodeTableComponent implements OnChanges {
       // selection stays manual; only the value-column default below is kept.
       this.sortResult = null;
       this.summaryResult = null;
+      // Filters are file-specific (column names/values) - a new profile
+      // means starting the filter panel fresh, same as sort/summary results.
+      this.activeFilters = [];
+      this.filterColumnToAdd = null;
+      this.filterLoadError = null;
     }
   }
 
@@ -184,6 +260,7 @@ export class NoCodeTableComponent implements OnChanges {
         this.selectedGroupColumns,
         this.selectedSummaryValueColumn,
         this.showDetail,
+        this.filtersPayload,
       )
       .subscribe({
         next: (res) => {
@@ -217,7 +294,9 @@ export class NoCodeTableComponent implements OnChanges {
     }
     this.sorting = true;
     this.sortResult = null;
-    this.notebook.sortTable(this.profile.variable, this.selectedValueColumn, this.ascending).subscribe({
+    this.notebook
+      .sortTable(this.profile.variable, this.selectedValueColumn, this.ascending, this.filtersPayload)
+      .subscribe({
       next: (res) => {
         this.sorting = false;
         this.sortResult = res.data ?? null;

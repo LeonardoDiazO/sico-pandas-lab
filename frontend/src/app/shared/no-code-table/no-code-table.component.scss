@@ -158,3 +158,45 @@ select {
   font-weight: 600;
   color: #51599b;
 }
+
+.filter-panel {
+  margin-bottom: 0.6rem;
+}
+
+.filter-error {
+  color: #a3312f;
+}
+
+.active-filter {
+  background: #fff;
+  border: 1px solid #dfe0ff;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.active-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  strong {
+    font-size: 0.85rem;
+    color: #2a2f5b;
+  }
+}
+
+.filter-select-all {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 0.3rem;
+}
+
+.filter-values {
+  max-height: 160px;
+  overflow-y: auto;
+  margin-top: 0.4rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid #f0f1ff;
+}

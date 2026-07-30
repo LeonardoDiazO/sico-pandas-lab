@@ -8,6 +8,64 @@
   } @else if (numericColumns.length === 0) {
     <p class="note">Este archivo no tiene columnas numéricas para ordenar.</p>
   } @else {
+    <div class="filter-panel">
+      <div class="panel-header">
+        <h3>Filtrar por columna</h3>
+      </div>
+      <p class="note">
+        Como el filtro de Excel: elige de qué columnas quieres ver solo ciertos valores. Aplica tanto a
+        "Ordenar tabla" como a "Resumen y porcentaje por columna" de abajo.
+      </p>
+
+      @if (filterLoadError) {
+        <p class="note filter-error">{{ filterLoadError }}</p>
+      }
+
+      @for (filter of activeFilters; track filter.column) {
+        <div class="active-filter">
+          <div class="active-filter-header">
+            <strong>{{ filter.column }}</strong>
+            <button class="link" (click)="removeFilter(filter.column)">quitar filtro</button>
+          </div>
+          @if (filter.loading) {
+            <p class="note">Cargando valores…</p>
+          } @else {
+            <div class="filter-select-all">
+              <button class="link" (click)="setAllFilterValues(filter, true)">Seleccionar todo</button>
+              <button class="link" (click)="setAllFilterValues(filter, false)">Quitar todo</button>
+            </div>
+            <div class="filter-values">
+              @for (value of filter.availableValues; track value) {
+                <label class="checkbox-option">
+                  <input
+                    type="checkbox"
+                    [checked]="filter.selectedValues.has(value)"
+                    (change)="toggleFilterValue(filter, value)"
+                  />
+                  {{ value }}
+                </label>
+              }
+            </div>
+          }
+        </div>
+      }
+
+      @if (filterableColumns.length > 0) {
+        <label class="field">
+          <span class="field-label">+ Agregar filtro por columna:</span>
+          <select [(ngModel)]="filterColumnToAdd">
+            <option [ngValue]="null">Elige una columna...</option>
+            @for (col of filterableColumns; track col.name) {
+              <option [ngValue]="col.name">{{ col.name }}</option>
+            }
+          </select>
+        </label>
+        <button class="generate-btn" (click)="addFilter()" [disabled]="!filterColumnToAdd">Agregar filtro</button>
+      }
+    </div>
+
+    <hr class="divider" />
+
     <label class="field">
       <span class="field-label">Ordenar por columna:</span>
       <select [(ngModel)]="selectedValueColumn">
