@@ -202,13 +202,16 @@ export class NoCodeTableComponent implements OnChanges {
   // final dejar algo directamente que nos ayude con un análisis" - then,
   // after trying a deterministic/hardcoded version, explicit correction:
   // "eso está mal porque debe hacerse con una IA... mandandole el promt
-  // adecuado". This getter only ASSEMBLES the aggregate stats (never raw
-  // rows - see pareto_narrative.py's security notes); generateNarrative()
-  // below sends them to the real assistant and displays whatever it
-  // returns. Parses each result's own already-computed printed sentence
-  // (table_builder.py's _pareto_marker_lines) rather than re-deriving the
-  // counts from result_records, which is capped at MAX_RESULT_ROWS and
-  // would silently undercount on a larger file.
+  // adecuado". Then a further reversal ("por qué no manda todo... para que
+  // gemini pueda sacar un analisis más completo" -> "Todo (los 88 grupos y
+  // las 171 filas completos)"): this getter assembles the FULL row/group
+  // record lists (see pareto_narrative.py's updated security notes), not
+  // just a single top entity - generateNarrative() below sends them to the
+  // real assistant and displays whatever it returns. Parses each result's
+  // own already-computed printed sentence (table_builder.py's
+  // _pareto_marker_lines) for the crossing counts, rather than re-deriving
+  // them from result_records, which is capped at MAX_RESULT_ROWS and would
+  // silently undercount on a larger file.
   get paretoStatsReady(): boolean {
     return this.buildNarrativeStats() !== null;
   }
@@ -229,9 +232,11 @@ export class NoCodeTableComponent implements OnChanges {
       .paretoNarrative(
         stats.valueColumnRow,
         stats.rowStats,
+        stats.rowRecords,
         stats.groupColumnsLabel,
         stats.valueColumnGroup,
         stats.groupStats,
+        stats.groupRecords,
       )
       .subscribe({
         next: (res) => {
@@ -249,9 +254,11 @@ export class NoCodeTableComponent implements OnChanges {
   private buildNarrativeStats(): {
     valueColumnRow: string;
     rowStats: ParetoStats;
+    rowRecords: Record<string, unknown>[];
     groupColumnsLabel: string;
     valueColumnGroup: string;
     groupStats: ParetoStats;
+    groupRecords: Record<string, unknown>[];
   } | null {
     if (!this.sortResult || this.sortResult.error || this.ascending) {
       return null; // Pareto only computed for "mayor a menor" (see build_sort_code)
@@ -269,12 +276,29 @@ export class NoCodeTableComponent implements OnChanges {
       return null;
     }
 
-    const labelKey = Object.keys(groupRecords[0]).find(
-      (key) => key !== summaryValueKey && !SUMMARY_METRIC_KEYS.includes(key),
-    );
-    const topGroupLabel = labelKey ? String(groupRecords[0][labelKey]) : '(sin nombre)';
     const rowPct = Math.round((rowInfo.nCruce / rowInfo.nTotal) * 1000) / 10;
     const groupPct = Math.round((groupInfo.nCruce / groupInfo.nTotal) * 1000) / 10;
+
+    // User feedback: "busquemos la manera de enviarselo a gemini de la
+    // manera optima y que si pueda responder bien". A raw sort-table row
+    // carries every original column (invoice #, seller, gross/net/tax
+    // breakdowns, etc.) - only the grouping column(s) (so Gemini can
+    // correlate one row back to its group/client, the exact correlation
+    // that let it wrongly guess "small scattered invoices" before) and the
+    // value/percentage/marker columns are relevant to this comparison.
+    // Projecting down to those keeps every row (the user's "todo" - all
+    // 171, not just the top one) while dropping noise that would only cost
+    // tokens and distract the model from the actual question asked.
+    const relevantKeys = new Set([...this.selectedGroupColumns, valueKey, ...SUMMARY_METRIC_KEYS]);
+    const rowRecordsProjected = rowRecords.map((record) => {
+      const projected: Record<string, unknown> = {};
+      for (const key of Object.keys(record)) {
+        if (relevantKeys.has(key)) {
+          projected[key] = record[key];
+        }
+      }
+      return projected;
+    });
 
     return {
       valueColumnRow: valueKey,
@@ -282,19 +306,19 @@ export class NoCodeTableComponent implements OnChanges {
         total: rowInfo.nTotal,
         cruce_80: rowInfo.nCruce,
         pct_base: rowPct,
-        top_valor: rowRecords[0][valueKey],
-        top_pct: rowRecords[0]['% del total'],
       },
+      rowRecords: rowRecordsProjected,
       groupColumnsLabel: this.selectedGroupColumns.join(' + ') || 'grupo',
       valueColumnGroup: summaryValueKey,
       groupStats: {
         total: groupInfo.nTotal,
         cruce_80: groupInfo.nCruce,
         pct_base: groupPct,
-        top_valor: groupRecords[0][summaryValueKey],
-        top_pct: groupRecords[0]['% del total'],
-        top_grupo_nombre: topGroupLabel,
       },
+      // Already narrow (grouping column(s) + value + '% del total'/'%
+      // acumulado'/'80/20' - see build_summary_code) and already sorted
+      // descending by value - sent as-is, every group.
+      groupRecords,
     };
   }
 

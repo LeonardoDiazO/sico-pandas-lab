@@ -12,12 +12,21 @@ rather than duplicating it - same provider, same "not configured/unavailable"
 degradation, just a different task (free-form narrative text instead of a
 closed-set JSON selection).
 
-Security note (NFR11, same principle as nl_chart_interpreter.py): only
-already-computed AGGREGATE numbers travel to the LLM here - total row/group
-counts, the 80% crossing point, the top row's and top group's own value and
-label. Every one of these is already visible on screen (the tables/charts
-already generated it) - nothing new about the underlying data is exposed,
-and no raw DataFrame rows ever leave the backend.
+Security note (NFR11 - RELAXED here, by explicit user choice): earlier
+versions of this module sent only aggregate numbers (crossing counts, one
+top row/group). The user asked why not send everything for a more complete
+analysis ("por qué no manda todo... para que gemini pueda sacar un analisis
+más completo") and explicitly chose "Todo (los 88 grupos y las 171 filas
+completos)" over a top-5/10 subset. This module now also receives the full
+row_records/group_records lists - the same rows/groups already rendered on
+screen in "Ordenar tabla"/"Resumen y porcentaje por columna" (the frontend
+projects each row down to only the grouping column(s) + value/percentage/
+marker columns before sending - see no-code-table.component.ts's
+buildNarrativeStats() - but that projection is a token/noise optimization,
+not a confidentiality boundary: every column that IS sent is real,
+identifiable client/invoice data, by the user's own informed choice, since
+they control what's in the uploaded Excel file and are responsible for
+configuring GEMINI_API_KEY themselves).
 
 Security note (NFR10): this module's only output is TEXT to display - never
 code, never a selection that drives further execution. The frontend must
@@ -38,39 +47,58 @@ from app.notebook.nl_chart_interpreter import (
 
 _SYSTEM_PROMPT = (
     "Eres un analista de datos senior explicando un hallazgo a un gerente no "
-    "técnico, en español. Se te dan números YA CALCULADOS de dos vistas de un "
-    "análisis 80/20 (Pareto) sobre el mismo archivo: una por fila individual "
-    "(ej. cada factura) y otra agrupada (ej. por cliente). Usa ÚNICAMENTE los "
-    "números que se te dan - nunca inventes cifras, nombres o columnas "
-    "adicionales. Escribe 2-4 frases explicando qué significa la diferencia "
-    "entre ambas vistas para el negocio. Si el nombre del grupo con mayor "
-    "valor (top_grupo_nombre) parece una categoría genérica o un comprador "
-    "anónimo (ej. 'consumidor final', 'varios', 'n/a', 'público general', "
-    "'mostrador', 'cliente ocasional') en vez de un cliente real e "
-    "identificable, menciona esa posibilidad explícitamente como una "
-    "advertencia para no sobre-interpretarlo como un cliente valioso. Cierra "
-    "con una conclusión de negocio de una frase, lista para citar "
-    "directamente. No uses markdown ni viñetas, solo texto corrido."
+    "técnico, en español. Se te dan dos vistas COMPLETAS y ya calculadas de "
+    "un análisis 80/20 (Pareto) sobre el mismo archivo: 'filas' es la lista "
+    "completa de cada fila individual (ej. cada factura), ordenada de mayor "
+    "a menor valor; 'grupos' es la lista completa de cada grupo (ej. cada "
+    "cliente), también ordenada de mayor a menor valor total. Ambas listas "
+    "incluyen su(s) columna(s) de agrupación, así que puedes correlacionar "
+    "una fila individual con su grupo cruzando ese valor compartido - por "
+    "ejemplo, para saber si el grupo de mayor valor realmente reúne varias "
+    "de las filas de mayor valor individual, o si en cambio depende de "
+    "muchas filas pequeñas. 'filas_resumen'/'grupos_resumen' traen el total "
+    "de filas/grupos y cuántas de ellas concentran el 80% del total. Usa "
+    "ÚNICAMENTE estos datos - nunca inventes cifras, nombres o columnas "
+    "adicionales, y no asumas nada sobre filas o grupos que no aparezcan en "
+    "las listas dadas (pueden venir recortadas por límites de la "
+    "aplicación). Cualquier afirmación sobre CÓMO se compone un grupo (si "
+    "depende de pocas filas grandes o de muchas filas pequeñas) debe poder "
+    "verificarse cruzando 'grupos' contra 'filas' - cita los valores "
+    "concretos que lo respaldan. Escribe 2-4 frases. Revisa toda la lista "
+    "de 'grupos' (no solo el primero) por si el nombre de alguno parece una "
+    "categoría genérica o un comprador anónimo (ej. 'consumidor final', "
+    "'varios', 'n/a', 'público general', 'mostrador', 'cliente ocasional') "
+    "en vez de un cliente real e identificable, y menciona esa posibilidad "
+    "explícitamente como advertencia para no sobre-interpretarlo como un "
+    "cliente valioso. Cierra con una conclusión de negocio de una frase, "
+    "lista para citar directamente. No uses markdown ni viñetas, solo texto "
+    "corrido."
 )
 
 
 def build_stats_payload(
     row_stats,
+    row_records,
     group_stats,
+    group_records,
     value_column_row,
     value_column_group,
     group_columns_label,
 ):
-    """Assembles the exact (and only) numbers sent to the LLM - each field
-    here is something the frontend already computed from its own
-    result_records/stdout (see no-code-table.component.ts), never derived
-    fresh from raw data by this module."""
+    """Assembles the exact payload sent to the LLM - the crossing summary
+    stats plus the full row/group record lists (user's explicit "Todo (los
+    88 grupos y las 171 filas completos)" choice), all of it already
+    computed/rendered by the frontend from its own result_records/stdout
+    (see no-code-table.component.ts), never derived fresh from raw data by
+    this module."""
     return {
         "columna_valor_fila": value_column_row,
-        "filas": row_stats,
+        "filas_resumen": row_stats,
+        "filas": row_records,
         "columna_agrupacion": group_columns_label,
         "columna_valor_grupo": value_column_group,
-        "grupos": group_stats,
+        "grupos_resumen": group_stats,
+        "grupos": group_records,
     }
 
 

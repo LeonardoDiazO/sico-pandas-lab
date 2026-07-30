@@ -121,15 +121,15 @@ export interface ColumnFilter {
 }
 
 // User feedback (replaces the removed deterministic/hardcoded comparison
-// text): free-form aggregate stats sent to the assistant, never raw rows -
-// see backend/app/notebook/pareto_narrative.py's own security notes.
+// text): the 80/20 crossing stats sent to the assistant alongside the full
+// row/group record lists (see NotebookService.paretoNarrative and
+// backend/app/notebook/pareto_narrative.py's own security notes - the user
+// explicitly chose to also send the complete dataset, not just these
+// aggregates, after asking "por qué no manda todo").
 export interface ParetoStats {
   total: number;
   cruce_80: number;
   pct_base: number;
-  top_valor: unknown;
-  top_pct: unknown;
-  top_grupo_nombre?: string;
 }
 
 export interface ParetoNarrativeResponse {

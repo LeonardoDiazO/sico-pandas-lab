@@ -556,30 +556,43 @@ def interpret_chart_request_route():
 def pareto_narrative_route():
     """Story 8.x (user feedback: replaces a removed deterministic/hardcoded
     text with a real assistant call) - generates a short narrative comparing
-    the row-level and grouped 80/20 views, once the frontend has both
-    (no-code-table.component.ts computes rowStats/groupStats from its own
-    already-displayed results - see pareto_narrative.py's own security notes
-    on why only these aggregate numbers travel to the LLM). Same per-session
-    assistant usage budget as /interpret-chart-request - one shared limit
-    across every LLM-backed feature in this app, not a separate budget per
-    feature."""
+    the row-level and grouped 80/20 views, once the frontend has both.
+
+    User feedback (data-minimization reversal): the frontend originally sent
+    only the top-1 row/group; the user explicitly asked "por qué no manda
+    todo" and chose "Todo (los 88 grupos y las 171 filas completos)" - so
+    rowRecords/groupRecords now carry the COMPLETE result_records lists from
+    both "Ordenar tabla" and "Resumen y porcentaje por columna" (each already
+    capped server-side at MAX_RESULT_ROWS), not just a single top entity. See
+    pareto_narrative.py's own security notes for the updated data-exposure
+    rationale. Same per-session assistant usage budget as
+    /interpret-chart-request - one shared limit across every LLM-backed
+    feature in this app, not a separate budget per feature."""
     payload = request.get_json(silent=True) or {}
     value_column_row = payload.get("valueColumnRow")
     row_stats = payload.get("rowStats")
+    row_records = payload.get("rowRecords")
     group_columns_label = payload.get("groupColumnsLabel")
     value_column_group = payload.get("valueColumnGroup")
     group_stats = payload.get("groupStats")
+    group_records = payload.get("groupRecords")
 
     if not isinstance(value_column_row, str) or not value_column_row.strip():
         return api_response(message="Falta la columna de valor de la fila.", success=False, status=400)
     if not isinstance(row_stats, dict) or not row_stats:
         return api_response(message="Faltan las estadísticas por fila.", success=False, status=400)
+    if not isinstance(row_records, list) or not row_records:
+        return api_response(message="Faltan las filas de \"Ordenar tabla\".", success=False, status=400)
     if not isinstance(group_columns_label, str) or not group_columns_label.strip():
         return api_response(message="Falta la columna de agrupación.", success=False, status=400)
     if not isinstance(value_column_group, str) or not value_column_group.strip():
         return api_response(message="Falta la columna de valor del grupo.", success=False, status=400)
     if not isinstance(group_stats, dict) or not group_stats:
         return api_response(message="Faltan las estadísticas por grupo.", success=False, status=400)
+    if not isinstance(group_records, list) or not group_records:
+        return api_response(
+            message="Faltan los grupos de \"Resumen y porcentaje por columna\".", success=False, status=400
+        )
 
     manager = _manager()
     if not manager.check_and_increment_assistant_usage(_session_id()):
@@ -592,7 +605,15 @@ def pareto_narrative_route():
             status=429,
         )
 
-    stats = build_stats_payload(row_stats, group_stats, value_column_row, value_column_group, group_columns_label)
+    stats = build_stats_payload(
+        row_stats,
+        row_records,
+        group_stats,
+        group_records,
+        value_column_row,
+        value_column_group,
+        group_columns_label,
+    )
     try:
         narrative = generate_pareto_narrative(stats)
     except InterpreterUnavailableError as exc:

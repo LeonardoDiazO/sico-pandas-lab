@@ -180,7 +180,8 @@
       </div>
       <p class="note">
         Compara el 80/20 de "Ordenar tabla" con el de "Resumen y porcentaje por columna" usando el asistente
-        (Gemini) - solo se le envían los números ya calculados arriba, nunca las filas del Excel.
+        (Gemini) - se le envían todas las filas y grupos generados arriba (sin las columnas que no aplican a
+        esta comparación), no solo un resumen.
       </p>
       <button class="generate-btn" (click)="generateNarrative()" [disabled]="narrativeLoading">
         {{ narrativeLoading ? 'Generando…' : 'Generar análisis con el asistente' }}

@@ -102,22 +102,28 @@ export class NotebookService {
   }
 
   // User feedback (replaces the removed deterministic/hardcoded comparison
-  // text): sends only already-computed aggregate stats (never raw rows) to
-  // the real assistant, once both "Ordenar tabla" and "Resumen y porcentaje
-  // por columna" exist - see pareto_narrative.py's security notes.
+  // text): sends the crossing stats AND the full row/group record lists
+  // (user's explicit "Todo (los 88 grupos y las 171 filas completos)" after
+  // asking why only a top-1 summary was sent) to the real assistant, once
+  // both "Ordenar tabla" and "Resumen y porcentaje por columna" exist - see
+  // pareto_narrative.py's security notes.
   paretoNarrative(
     valueColumnRow: string,
     rowStats: ParetoStats,
+    rowRecords: Record<string, unknown>[],
     groupColumnsLabel: string,
     valueColumnGroup: string,
     groupStats: ParetoStats,
+    groupRecords: Record<string, unknown>[],
   ): Observable<ApiResponse<ParetoNarrativeResponse>> {
     return this.http.post<ApiResponse<ParetoNarrativeResponse>>(`${this.base}/api/notebook/pareto-narrative`, {
       valueColumnRow,
       rowStats,
+      rowRecords,
       groupColumnsLabel,
       valueColumnGroup,
       groupStats,
+      groupRecords,
     });
   }
 

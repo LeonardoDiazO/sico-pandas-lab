@@ -4,15 +4,16 @@ from google.genai import errors, types
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError
 from app.notebook.pareto_narrative import build_stats_payload, generate_pareto_narrative
 
-ROW_STATS = {"total": 171, "cruce_80": 42, "pct_base": 24.6, "top_valor": "$ 12.864.579", "top_pct": 6.2}
-GROUP_STATS = {
-    "total": 88,
-    "cruce_80": 28,
-    "pct_base": 31.8,
-    "top_valor": "$ 37.345.229",
-    "top_pct": 17.9,
-    "top_grupo_nombre": "LATIN LOGISTICS COLOMBIA S.A.S.",
-}
+ROW_STATS = {"total": 171, "cruce_80": 42, "pct_base": 24.6}
+GROUP_STATS = {"total": 88, "cruce_80": 28, "pct_base": 31.8}
+ROW_RECORDS = [
+    {"Legal": "LATIN LOGISTICS COLOMBIA S.A.S.", "N E T O": "$ 12.864.579", "% del total": 6.2, "80/20": "✓"},
+    {"Legal": "CONSUMIDOR FINAL", "N E T O": "$ 9.500.000", "% del total": 4.6, "80/20": "✓"},
+]
+GROUP_RECORDS = [
+    {"Legal": "LATIN LOGISTICS COLOMBIA S.A.S.", "N E T O": "$ 37.345.229", "% del total": 17.9, "80/20": "✓"},
+    {"Legal": "CONSUMIDOR FINAL", "N E T O": "$ 20.000.000", "% del total": 9.6, "80/20": "✓"},
+]
 
 
 class _FakeCandidate:
@@ -44,17 +45,23 @@ class _FakeClient:
         self.models = _FakeModels(response=response, exc=exc)
 
 
+def _build_stats(row_stats=ROW_STATS, group_stats=GROUP_STATS, value_row="neto", value_group="neto", label="cliente"):
+    return build_stats_payload(row_stats, ROW_RECORDS, group_stats, GROUP_RECORDS, value_row, value_group, label)
+
+
 # --- build_stats_payload ---------------------------------------------------
 
 
 def test_build_stats_payload_shape():
-    payload = build_stats_payload(ROW_STATS, GROUP_STATS, "N E T O", "N E T O", "Cliente_2")
+    payload = build_stats_payload(ROW_STATS, ROW_RECORDS, GROUP_STATS, GROUP_RECORDS, "N E T O", "N E T O", "Legal")
     assert payload == {
         "columna_valor_fila": "N E T O",
-        "filas": ROW_STATS,
-        "columna_agrupacion": "Cliente_2",
+        "filas_resumen": ROW_STATS,
+        "filas": ROW_RECORDS,
+        "columna_agrupacion": "Legal",
         "columna_valor_grupo": "N E T O",
-        "grupos": GROUP_STATS,
+        "grupos_resumen": GROUP_STATS,
+        "grupos": GROUP_RECORDS,
     }
 
 
@@ -63,22 +70,27 @@ def test_build_stats_payload_shape():
 
 def test_returns_stripped_narrative_text():
     client = _FakeClient(response=_FakeResponse("  Un análisis breve.  "))
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     result = generate_pareto_narrative(stats, client=client)
     assert result == "Un análisis breve."
 
 
-def test_only_the_precomputed_stats_are_sent_no_raw_data():
-    """NFR11 equivalent for this module (see its own docstring): only
-    aggregate numbers travel to the LLM - nothing that isn't already one of
-    the fields build_stats_payload() assembles."""
+def test_full_row_and_group_records_are_sent_not_just_a_top_entity():
+    """User feedback: replaces the earlier top-1-only NFR11 test - the user
+    explicitly chose to send the complete row/group lists ("Todo (los 88
+    grupos y las 171 filas completos)"), so both entries of each fixture
+    list (not only the first) must reach the model, including the second
+    group ("CONSUMIDOR FINAL") that a top-1-only payload would have hidden."""
     client = _FakeClient(response=_FakeResponse("texto"))
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     generate_pareto_narrative(stats, client=client)
     sent = client.models.last_call_kwargs["contents"]
     assert "LATIN LOGISTICS COLOMBIA S.A.S." in sent
     assert "12.864.579" in sent
     assert "37.345.229" in sent
+    assert "CONSUMIDOR FINAL" in sent
+    assert "9.500.000" in sent
+    assert "20.000.000" in sent
 
 
 # --- generate_pareto_narrative: unavailable / error handling ----------------
@@ -86,14 +98,14 @@ def test_only_the_precomputed_stats_are_sent_no_raw_data():
 
 def test_empty_response_text_raises_interpreter_unavailable():
     client = _FakeClient(response=_FakeResponse(""))
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     with pytest.raises(InterpreterUnavailableError):
         generate_pareto_narrative(stats, client=client)
 
 
 def test_whitespace_only_response_text_raises_interpreter_unavailable():
     client = _FakeClient(response=_FakeResponse("   "))
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     with pytest.raises(InterpreterUnavailableError):
         generate_pareto_narrative(stats, client=client)
 
@@ -105,14 +117,14 @@ def test_safety_blocked_finish_reason_raises_interpreter_unavailable():
     show, so it's treated as unavailable."""
     response = _FakeResponse("texto", finish_reason=types.FinishReason.SAFETY)
     client = _FakeClient(response=response)
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     with pytest.raises(InterpreterUnavailableError):
         generate_pareto_narrative(stats, client=client)
 
 
 def test_provider_error_raises_interpreter_unavailable():
     client = _FakeClient(exc=errors.ServerError(503, {"error": {"message": "unavailable"}}))
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     with pytest.raises(InterpreterUnavailableError):
         generate_pareto_narrative(stats, client=client)
 
@@ -120,6 +132,6 @@ def test_provider_error_raises_interpreter_unavailable():
 def test_missing_api_key_raises_interpreter_unavailable_without_hitting_the_network(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    stats = build_stats_payload(ROW_STATS, GROUP_STATS, "neto", "neto", "cliente")
+    stats = _build_stats()
     with pytest.raises(InterpreterUnavailableError):
         generate_pareto_narrative(stats)
