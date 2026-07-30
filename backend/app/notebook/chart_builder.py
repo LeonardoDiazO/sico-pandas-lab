@@ -129,8 +129,14 @@ def build_chart_code(chart_type, variable, columns, value_column):
                 # so a stray quote in the column name can't break the
                 # generated code's syntax.
                 f"_pct_de = {(value_column or 'la cantidad de filas')!r}",
+                # User feedback: the percentage alone doesn't say the actual
+                # amount ("38.6% de neto, pero ¿cuánto es neto?") - val is
+                # already the slice's real total, just add it with a
+                # thousands separator (same :,.0f pattern already used on
+                # barras' y-axis) ahead of the percentage.
                 "_ax.legend(_wedges, "
-                "[f'{name} - {val / _total * 100:.1f}% de {_pct_de}' for name, val in _chart_data.items()], "
+                "[f'{name} - {val:,.0f} ({val / _total * 100:.1f}%) de {_pct_de}' "
+                "for name, val in _chart_data.items()], "
                 "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)",
             ]
         else:

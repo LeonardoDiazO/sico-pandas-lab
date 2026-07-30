@@ -21,7 +21,9 @@ def _otros_caveat(chart_type):
     noun = "porción" if chart_type == "torta" else "barra"
     return (
         f" Si hay más de {TOP_N_CATEGORIES_BEFORE_OTROS} valores distintos, los más "
-        f'pequeños se agrupan en una {noun} "Otros".'
+        f'pequeños se agrupan en una {noun} "Otros". '
+        "Para ver el detalle completo sin agrupar, usa la tabla de resumen "
+        "debajo de la gráfica."
     )
 
 

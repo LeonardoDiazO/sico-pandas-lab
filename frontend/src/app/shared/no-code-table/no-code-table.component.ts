@@ -9,6 +9,29 @@ import { ExcelProfileState } from '../no-code-chart/no-code-chart.component';
 // column doesn't make sense to group BY, only to sum.
 const GROUPABLE_TYPES: ExcelProfileColumn['type'][] = ['categorica', 'fecha'];
 
+// User feedback (real file: "detallado comfenalco"): a summary with only a
+// handful of groups (e.g. 3 cost types, 96%/2.4%/1.4%) reads better as KPI
+// cards than as a table row-by-row - but a table is still the right shape
+// once there are enough groups that cards would just wrap into a wall of
+// boxes. Chosen well below chart_builder.py's HIGH_CARDINALITY_THRESHOLD
+// (15): that threshold is about pie/bar legibility, this is about "still
+// scannable as cards at a glance," a stricter bar.
+const MAX_GROUPS_FOR_CARDS = 8;
+
+// The columns build_summary_code() always adds on top of the group-name
+// column and the value column itself (table_builder.py) - used to find
+// "whatever key is left" as the group's label, without hardcoding the
+// grouping column's actual name (which the user picks freely).
+const SUMMARY_METRIC_KEYS = ['% del total', '% acumulado', '80/20'];
+
+export interface SummaryCard {
+  label: string;
+  value: number;
+  pctTotal: number;
+  pctAcum: number;
+  marker: string;
+}
+
 /**
  * Story 8.1: sort the raw rows of a bound DataFrame by a numeric column, no
  * Python involved - the simplest of Epic 8's "no-code table" flows. Reuses
@@ -46,8 +69,45 @@ export class NoCodeTableComponent implements OnChanges {
   // as the default experience); checking it asks the backend for the
   // subtotal-plus-individual-rows shape instead (build_summary_detail_code).
   showDetail = false;
+  // Defaulted to cards whenever a new eligible summary arrives (set in
+  // summarizeTable() below); the user can still flip back to the table.
+  viewAsCards = false;
 
   constructor(private notebook: NotebookService) {}
+
+  // Cards only make sense for the aggregate view (one row per group) - the
+  // detail view's records are individual source rows plus subtotal rows, a
+  // shape cards were never designed to represent.
+  get cardsEligible(): boolean {
+    const records = this.summaryResult?.result_records;
+    return (
+      !this.showDetail &&
+      !this.summaryResult?.error &&
+      !!records &&
+      records.length > 0 &&
+      records.length <= MAX_GROUPS_FOR_CARDS
+    );
+  }
+
+  get summaryCards(): SummaryCard[] {
+    const records = this.summaryResult?.result_records;
+    const valueKey = this.selectedSummaryValueColumn;
+    if (!records || !valueKey) {
+      return [];
+    }
+    return records.map((row) => {
+      const labelKey = Object.keys(row).find(
+        (key) => key !== valueKey && !SUMMARY_METRIC_KEYS.includes(key),
+      );
+      return {
+        label: labelKey ? String(row[labelKey]) : '',
+        value: Number(row[valueKey]),
+        pctTotal: Number(row['% del total']),
+        pctAcum: Number(row['% acumulado']),
+        marker: row['80/20'] ? String(row['80/20']) : '',
+      };
+    });
+  }
 
   get numericColumns(): ExcelProfileColumn[] {
     return this.profile?.columns.filter((c) => c.type === 'numerica') ?? [];
@@ -122,6 +182,7 @@ export class NoCodeTableComponent implements OnChanges {
         next: (res) => {
           this.summarizing = false;
           this.summaryResult = res.data ?? null;
+          this.viewAsCards = this.cardsEligible;
         },
         error: (err: HttpErrorResponse) => {
           this.summarizing = false;
@@ -138,6 +199,7 @@ export class NoCodeTableComponent implements OnChanges {
             },
             explanation: null,
           };
+          this.viewAsCards = false;
         },
       });
   }

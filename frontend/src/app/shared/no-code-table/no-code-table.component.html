@@ -81,7 +81,29 @@
     </button>
 
     @if (summaryResult) {
-      <app-cell-result [result]="summaryResult"></app-cell-result>
+      @if (cardsEligible) {
+        <div class="cards-toggle">
+          <button class="link" (click)="viewAsCards = !viewAsCards">
+            {{ viewAsCards ? 'Ver como tabla' : 'Ver como tarjetas' }}
+          </button>
+        </div>
+      }
+      @if (viewAsCards && cardsEligible) {
+        <div class="summary-cards">
+          @for (card of summaryCards; track card.label) {
+            <div class="summary-card" [class.crossed]="card.marker">
+              <div class="card-label">{{ card.label }}</div>
+              <div class="card-value">{{ card.value | number: '1.0-0' }}</div>
+              <div class="card-pct">{{ card.pctTotal }}% del total</div>
+              @if (card.marker) {
+                <div class="card-marker">{{ card.marker }}</div>
+              }
+            </div>
+          }
+        </div>
+      } @else {
+        <app-cell-result [result]="summaryResult"></app-cell-result>
+      }
       @if (!summaryResult.error && summaryResult.explanation) {
         <p class="table-explanation">{{ summaryResult.explanation }}</p>
       }

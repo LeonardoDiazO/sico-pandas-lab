@@ -98,3 +98,63 @@ select {
     cursor: pointer;
   }
 }
+
+.cards-toggle {
+  margin-top: 0.6rem;
+
+  .link {
+    background: none;
+    border: none;
+    color: #51599b;
+    font-size: 0.78rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+  }
+}
+
+.summary-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+}
+
+.summary-card {
+  flex: 1 1 160px;
+  background: #fff;
+  border: 1px solid #dfe0ff;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+
+  &.crossed {
+    border-color: #51599b;
+    box-shadow: 0 0 0 1px #51599b inset;
+  }
+}
+
+.card-label {
+  font-size: 0.78rem;
+  color: #66668a;
+  overflow-wrap: break-word;
+}
+
+.card-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #2a2f5b;
+  margin-top: 0.15rem;
+}
+
+.card-pct {
+  font-size: 0.82rem;
+  color: #2a2f5b;
+  margin-top: 0.1rem;
+}
+
+.card-marker {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #51599b;
+}

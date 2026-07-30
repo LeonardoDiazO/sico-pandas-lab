@@ -16,6 +16,10 @@ export interface CellResult {
   stdout: string | null;
   result_html: string | null;
   result_text: string | null;
+  // Same rows as result_html, as JSON - lets a component build a non-table
+  // view (e.g. KPI cards) from the exact data without re-parsing HTML. Only
+  // ever populated when the cell's last expression was a DataFrame.
+  result_records?: Record<string, unknown>[] | null;
   image_base64: string | null;
   error: CellError | null;
   session_restarted?: boolean;

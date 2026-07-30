@@ -89,3 +89,15 @@ def test_barras_also_mentions_otros_bucketing_caveat():
     text = build_chart_explanation("barras", ["vendedor"], "neto")
     _assert_plain_language(text)
     assert "Otros" in text
+
+
+def test_torta_and_barras_point_to_the_summary_table_for_full_detail():
+    """User feedback: a real user hit the Otros bucket on a "detallado" file
+    and had no idea the ungrouped detail (Epic 8's no-code-table, no
+    top-N-plus-Otros limit) was one scroll away in a sibling component - the
+    explanation text is the cheapest bridge between the two, so it must
+    point there explicitly instead of only describing the bucketing."""
+    for chart_type in ("torta", "barras"):
+        text = build_chart_explanation(chart_type, ["vendedor"], "neto")
+        _assert_plain_language(text)
+        assert "tabla de resumen" in text

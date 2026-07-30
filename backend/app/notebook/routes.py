@@ -232,6 +232,15 @@ def generate_chart():
     value_column = payload.get("valueColumn")
     chart_type = payload.get("chartType")
     force = payload.get("force") is True
+    # Optional - same {name: type} shape /interpret-chart-request already
+    # receives (Story 6.1). Code review fix: nothing previously validated
+    # that a línea column was actually "fecha" or a torta/barras column was
+    # "categorica" - a categórica column selected for línea hung the worker
+    # for CELL_TIMEOUT_SECONDS (pd.to_datetime's dateutil fallback on
+    # non-date text) and surfaced a raw TimeoutError to the user. Optional
+    # (not required) so an older caller that doesn't send it keeps the
+    # pre-existing behavior instead of a hard 400.
+    column_types = payload.get("columnTypes")
 
     if not isinstance(variable, str) or not variable.strip():
         return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
@@ -249,6 +258,22 @@ def generate_chart():
         return api_response(
             message="Falta elegir una columna de valor para el histograma.", success=False, status=400
         )
+    if isinstance(column_types, dict):
+        if chart_type in ("torta", "barras"):
+            incompatible = [c for c in columns if column_types.get(c) not in (None, "categorica")]
+            if incompatible:
+                return api_response(
+                    message=f"'{incompatible[0]}' no es una columna de categoría — "
+                    "torta y barras necesitan columnas de categoría.",
+                    success=False,
+                    status=400,
+                )
+        elif chart_type == "linea" and columns and column_types.get(columns[0]) not in (None, "fecha"):
+            return api_response(
+                message=f"'{columns[0]}' no es una columna de fecha — línea necesita una columna de fecha.",
+                success=False,
+                status=400,
+            )
 
     if needs_cardinality_check(chart_type) and not force:
         check_result = _manager().execute(_session_id(), build_cardinality_check_code(variable, columns))

@@ -449,6 +449,100 @@ def test_generate_chart_linea_rejects_multiple_columns(client):
     assert response.get_json()["success"] is False
 
 
+# --- Column-type compatibility (code review fix, Epics 4-8) ---------------
+
+
+def _xlsx_bytes_with_date():
+    """A "fecha" column for testing línea's type check - _clean_xlsx_bytes()
+    has no date column."""
+    buf = io.BytesIO()
+    rows = [
+        {"fecha": pd.Timestamp("2026-01-01") + pd.Timedelta(days=i), "neto": 100.0 + i}
+        for i in range(10)
+    ]
+    pd.DataFrame(rows).to_excel(buf, index=False)
+    buf.seek(0)
+    return buf
+
+
+def test_generate_chart_rejects_linea_with_a_non_fecha_column_when_types_are_provided(client):
+    """Code review fix: previously nothing validated that a línea chart's
+    column was actually a date - selecting a categórica column hung the
+    worker for CELL_TIMEOUT_SECONDS (pd.to_datetime's dateutil fallback on
+    non-date text) and surfaced a raw TimeoutError. `columnTypes` is the
+    same {name: type} shape the frontend already sends to
+    /interpret-chart-request - this route now uses it too, when provided."""
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={
+            "variable": "df",
+            "columns": ["vendedor"],
+            "valueColumn": "neto",
+            "chartType": "linea",
+            "columnTypes": {"vendedor": "categorica", "neto": "numerica"},
+        },
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_generate_chart_accepts_linea_with_a_fecha_column_when_types_are_provided(client):
+    upload_data = {"file": (_xlsx_bytes_with_date(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={
+            "variable": "df",
+            "columns": ["fecha"],
+            "valueColumn": "neto",
+            "chartType": "linea",
+            "columnTypes": {"fecha": "fecha", "neto": "numerica"},
+        },
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["data"]["error"] is None
+    assert body["data"]["image_base64"]
+
+
+def test_generate_chart_rejects_torta_with_a_non_categorica_column_when_types_are_provided(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={
+            "variable": "df",
+            "columns": ["neto"],
+            "valueColumn": "neto",
+            "chartType": "torta",
+            "columnTypes": {"vendedor": "categorica", "neto": "numerica"},
+        },
+    )
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+
+
+def test_generate_chart_without_column_types_skips_the_compatibility_check(client):
+    """Backward compatibility: `columnTypes` is optional - a caller that
+    doesn't send it (or an older frontend build) keeps the pre-existing
+    behavior instead of a hard 400."""
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/generate-chart",
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "chartType": "linea"},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["data"]["error"] is None
+
+
 def test_generate_chart_cardinality_check_uses_combined_columns(client):
     """Variant of test_generate_chart_warns_on_high_cardinality_before_generating
     (Story 5.4) - with 2+ columns, the cardinality check must run over the

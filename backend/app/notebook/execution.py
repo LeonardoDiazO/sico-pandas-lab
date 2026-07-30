@@ -7,6 +7,7 @@ isolated child process; nothing here talks to the network or the database.
 import ast
 import base64
 import io
+import json
 import traceback
 from contextlib import redirect_stdout
 
@@ -51,30 +52,55 @@ def _truncate(text, limit):
 
 
 def _capture_value(value):
-    """Render the value of a cell's last expression, Jupyter-style."""
+    """Render the value of a cell's last expression, Jupyter-style.
+
+    Returns (result_html, result_text, result_records). result_records is a
+    JSON-safe list of row dicts (same MAX_RESULT_ROWS cap as the HTML table,
+    same rows) - purely additive alongside the HTML table, which stays the
+    primary rendering every existing consumer (app-cell-result) already
+    uses. It exists so a frontend component can build a non-table view (e.g.
+    KPI cards) from the exact same data without re-parsing HTML - only
+    populated for a DataFrame, since that's the only shape callers need it
+    for today (table_builder.py's summary/sort code).
+    """
     if value is None:
-        return None, None
+        return None, None, None
     try:
         import pandas as pd
 
         if isinstance(value, pd.DataFrame):
-            html = value.head(MAX_RESULT_ROWS).to_html(
-                classes="dataframe", border=0, max_cols=50
-            )
+            head = value.head(MAX_RESULT_ROWS)
+            html = head.to_html(classes="dataframe", border=0, max_cols=50)
             note = ""
             if len(value) > MAX_RESULT_ROWS:
                 note = (
                     f"<p class='df-note'>Mostrando {MAX_RESULT_ROWS} de "
                     f"{len(value)} filas.</p>"
                 )
-            return html + note, None
+            # A non-default index (e.g. table_builder.py's grouped summary,
+            # indexed by the group name) carries real information the HTML
+            # table already shows via to_html()'s own index column - fold it
+            # into a real column here too, otherwise to_json(orient="records")
+            # would silently drop it (unlike to_html(), it never includes the
+            # index). A fresh RangeIndex (the common case - a plain df.head())
+            # carries no information, so it's left alone rather than adding a
+            # noisy, meaningless "index" key to every record.
+            records_source = head if isinstance(head.index, pd.RangeIndex) else head.reset_index()
+            # to_json() (not a manual dict comprehension) so NaN/NaT/Timestamp
+            # values get the same safe, standard handling pandas already
+            # gives the HTML table above, instead of a second bespoke
+            # serialization that could diverge from it.
+            records = json.loads(records_source.to_json(orient="records", date_format="iso"))
+            return html + note, None, records
         if isinstance(value, pd.Series):
-            return value.head(MAX_RESULT_ROWS).to_frame().to_html(
-                classes="dataframe", border=0
-            ), None
+            return (
+                value.head(MAX_RESULT_ROWS).to_frame().to_html(classes="dataframe", border=0),
+                None,
+                None,
+            )
     except Exception:
         pass
-    return None, _truncate(repr(value), MAX_STDOUT_CHARS)
+    return None, _truncate(repr(value), MAX_STDOUT_CHARS), None
 
 
 def _capture_figure(namespace):
@@ -104,6 +130,7 @@ def execute_code(code, namespace):
     stdout_buffer = io.StringIO()
     result_html = None
     result_text = None
+    result_records = None
     image_base64 = None
     error = None
 
@@ -114,6 +141,7 @@ def execute_code(code, namespace):
             "stdout": "",
             "result_html": None,
             "result_text": None,
+            "result_records": None,
             "image_base64": None,
             "error": {
                 "type": "SyntaxError",
@@ -136,7 +164,7 @@ def execute_code(code, namespace):
                     compile(ast.Expression(last_expr.value), "<celda>", "eval"),
                     namespace,
                 )
-                result_html, result_text = _capture_value(value)
+                result_html, result_text, result_records = _capture_value(value)
         image_base64 = _capture_figure(namespace)
     except Exception as exc:  # noqa: BLE001 - user code, must not escape
         error = {
@@ -149,6 +177,7 @@ def execute_code(code, namespace):
         "stdout": _truncate(stdout_buffer.getvalue(), MAX_STDOUT_CHARS),
         "result_html": result_html,
         "result_text": result_text,
+        "result_records": result_records,
         "image_base64": image_base64,
         "error": error,
     }

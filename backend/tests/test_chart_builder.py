@@ -254,9 +254,11 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
     round then added a per-slice percentage to every legend entry (see
     test_torta_legend_includes_percentage_for_every_slice); a further round
     added what the percentage is a share OF (see
-    test_torta_legend_percentage_says_what_it_is_a_percentage_of) - this now
-    pins that final string (using the live constant, not a bare literal, so
-    this test doesn't silently go stale if the threshold moves again), still
+    test_torta_legend_percentage_says_what_it_is_a_percentage_of); a further
+    round added the slice's absolute value alongside the percentage (see
+    test_torta_legend_includes_absolute_value) - this now pins that final
+    string (using the live constant, not a bare literal, so this test
+    doesn't silently go stale if the threshold moves again), still
     guarding that the underlying grouping expression
     (`df.groupby('vendedor')['neto'].sum().sort_values(...)`) is unchanged."""
     n = TOP_N_CATEGORIES_BEFORE_OTROS
@@ -273,7 +275,8 @@ def test_single_column_generated_code_is_byte_identical_to_pre_7_2():
         "_total = _chart_data.sum()\n"
         "_pct_de = 'neto'\n"
         "_ax.legend(_wedges, "
-        "[f'{name} - {val / _total * 100:.1f}% de {_pct_de}' for name, val in _chart_data.items()], "
+        "[f'{name} - {val:,.0f} ({val / _total * 100:.1f}%) de {_pct_de}' "
+        "for name, val in _chart_data.items()], "
         "loc='center left', bbox_to_anchor=(1, 0, 0.5, 1), fontsize=8)\n"
         "plt.title('neto por vendedor', fontsize=13, fontweight='bold')\n"
         "plt.tight_layout()"
@@ -398,11 +401,37 @@ def test_torta_legend_percentage_says_what_it_is_a_percentage_of():
     code = build_chart_code("torta", "df", ["vendedor"], "neto")
     _assert_valid_python(code)
     assert "_pct_de = 'neto'" in code
-    assert "% de {_pct_de}" in code
+    assert "%) de {_pct_de}" in code
 
     code_no_value = build_chart_code("torta", "df", ["vendedor"], None)
     _assert_valid_python(code_no_value)
     assert "_pct_de = 'la cantidad de filas'" in code_no_value
+
+
+def test_torta_legend_includes_absolute_value():
+    """User feedback: "38.6% de neto, pero ¿cuánto es neto?" - the percentage
+    alone doesn't say the actual amount. Every legend entry must also show
+    the slice's real total (thousands-separated, same :,.0f pattern already
+    used on barras' y-axis), alongside - not instead of - the percentage."""
+    code = build_chart_code("torta", "df", ["vendedor"], "neto")
+    _assert_valid_python(code)
+    assert "val:,.0f" in code
+    assert "val / _total * 100" in code
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"vendedor": ["V0", "V1", "V2"], "neto": [123456.0, 500.0, 250.0]}
+    )
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert result["image_base64"]
 
 
 def test_torta_legend_percentage_label_column_name_with_quote_is_safe():
