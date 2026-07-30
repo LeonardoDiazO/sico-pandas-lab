@@ -61,6 +61,12 @@
       border: 1px solid #e2e2ef;
       padding: 0.3rem 0.5rem;
       text-align: right;
+      // User feedback: with many columns (a real file had 18), a narrow
+      // cell wrapped its text onto two lines - splitting "$ 1.234.567" into
+      // "$" on one line and "1.234.567" on the next. Cells never wrap;
+      // .table-wrap's existing overflow-x scroll (inherited from
+      // .result-block) handles a table wider than the viewport instead.
+      white-space: nowrap;
     }
 
     th {
