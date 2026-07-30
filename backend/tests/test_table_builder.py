@@ -1,6 +1,6 @@
 import ast
 
-from app.notebook.table_builder import build_sort_code, build_summary_code
+from app.notebook.table_builder import build_summary_code, build_summary_detail_code, build_sort_code
 
 
 def _assert_valid_python(code):
@@ -378,3 +378,128 @@ def test_summary_pareto_matches_the_canonical_abcde_example():
     assert "✓" in row_b and "80%" not in row_b
     assert "✓" not in row_d
     assert "✓" not in row_e
+
+
+# --- "Resumen detallado": drill into each group's individual rows ---------
+
+
+def test_detail_last_line_is_a_bare_expression_not_an_assignment():
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    last_line = code.strip().splitlines()[-1]
+    assert not last_line.startswith("_final =")
+    assert "drop(columns=" in last_line
+
+
+def test_detail_includes_percentage_of_its_own_group():
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    _assert_valid_python(code)
+    assert "% de su grupo" in code
+
+
+def test_detail_column_name_with_a_single_quote_does_not_break_generated_syntax():
+    code = build_summary_detail_code("df", ["vendor's code"], "amount's")
+    _assert_valid_python(code)
+
+
+def test_detail_runs_end_to_end_one_subtotal_row_per_group_then_its_own_rows():
+    """Empirical verification against the real execution.py pipeline: each
+    group gets exactly one 'TOTAL' row, followed by its own individual rows
+    sorted by value descending, groups ordered by total descending - the
+    "como un Excel con subtotales" shape the user asked for."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {
+            "cliente": ["LATIN", "OL GROUP", "LATIN", "LATIN", "OL GROUP"],
+            "factura": ["F1", "F2", "F3", "F4", "F5"],
+            "neto": [1000.0, 500.0, 2000.0, 300.0, 700.0],
+        }
+    )
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    assert html is not None
+    # LATIN's total (3300) is bigger than OL GROUP's (1200) -> LATIN's block comes first
+    assert html.index("LATIN") < html.index("OL GROUP")
+    assert html.count("TOTAL") == 2
+    # within LATIN's block, individual rows appear in value-descending order (2000, 1000, 300)
+    idx_total = html.index("LATIN — TOTAL")
+    idx_2000 = html.index(">2000.0<")
+    idx_1000 = html.index(">1000.0<")
+    idx_300 = html.index(">300.0<")
+    assert idx_total < idx_2000 < idx_1000 < idx_300
+    # LATIN's 3 individual invoices all show up as separate rows (the user's
+    # literal ask: "que salga LATIN LOGISTICS ... las n veces")
+    assert ">F1<" in html and ">F3<" in html and ">F4<" in html
+
+
+def test_detail_percentage_of_group_is_correct_not_percentage_of_grand_total():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame(
+        {"cliente": ["A", "A"], "neto": [300.0, 100.0]}
+    )
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    html = result["result_html"]
+    # 300 is 75% of A's own total (400), not of some larger grand total
+    assert ">75.0<" in html
+    assert ">25.0<" in html
+
+
+def test_detail_null_category_is_kept_under_vacio_bucket_not_dropped():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"cliente": ["A", None], "neto": [100.0, 50.0]})
+    code = build_summary_detail_code("df", ["cliente"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "(vacío)" in result["result_html"]
+    assert ">50.0<" in result["result_html"]
+
+
+def test_detail_zero_group_total_does_not_produce_inf_or_nan():
+    """Same degenerate case already guarded elsewhere in this module: a
+    group whose rows cancel out to exactly zero must not leak 'inf'/'nan'
+    into the '% de su grupo' column."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    namespace["df"] = pd.DataFrame({"cliente": ["A", "A"], "saldo": [1000.0, -1000.0]})
+    code = build_summary_detail_code("df", ["cliente"], "saldo")
+    result = execute_code(code, namespace)
+    assert result["error"] is None
+    assert "inf" not in result["result_html"]
+    assert "nan" not in result["result_html"]
+
+
+def test_detail_multiple_columns_uses_composite_grouping_key():
+    code = build_summary_detail_code("df", ["cliente", "mes"], "neto")
+    _assert_valid_python(code)
+    assert ".astype(str).agg(' - '.join, axis=1)" in code

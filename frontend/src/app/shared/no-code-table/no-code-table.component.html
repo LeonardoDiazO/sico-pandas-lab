@@ -71,6 +71,11 @@
       </select>
     </label>
 
+    <label class="checkbox-option">
+      <input type="checkbox" [(ngModel)]="showDetail" />
+      Mostrar detalle (ver cada fila dentro de su grupo, no solo el total)
+    </label>
+
     <button class="generate-btn" (click)="summarizeTable()" [disabled]="!canSummarize">
       {{ summarizing ? 'Generando…' : 'Generar resumen' }}
     </button>

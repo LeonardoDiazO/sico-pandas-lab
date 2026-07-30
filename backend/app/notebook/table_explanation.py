@@ -28,3 +28,12 @@ def build_summary_explanation(columns, value_column):
         '"% acumulado" va sumando esos porcentajes de mayor a menor, para ver rápido cuántos grupos '
         "concentran la mayoría del total."
     )
+
+
+def build_summary_detail_explanation(columns, value_column):
+    label = " y ".join(columns)
+    return (
+        f"Cada grupo de {label} aparece primero con su fila 'TOTAL', seguida de todas sus filas "
+        f"individuales ordenadas de mayor a menor {value_column}. "
+        f'"% de su grupo" es qué parte del total de ESE grupo (no del total general) representa esa fila.'
+    )

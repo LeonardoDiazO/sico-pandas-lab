@@ -40,6 +40,12 @@ export class NoCodeTableComponent implements OnChanges {
   selectedSummaryValueColumn: string | null = null;
   summarizing = false;
   summaryResult: TableResult | null = null;
+  // User feedback: the aggregate total per group wasn't enough - "faltaria
+  // un resumen detallado, en el que por ejemplo salga LATIN LOGISTICS ...
+  // las n veces". Off by default (keeps the original aggregate-only view
+  // as the default experience); checking it asks the backend for the
+  // subtotal-plus-individual-rows shape instead (build_summary_detail_code).
+  showDetail = false;
 
   constructor(private notebook: NotebookService) {}
 
@@ -106,7 +112,12 @@ export class NoCodeTableComponent implements OnChanges {
     this.summarizing = true;
     this.summaryResult = null;
     this.notebook
-      .summaryTable(this.profile.variable, this.selectedGroupColumns, this.selectedSummaryValueColumn)
+      .summaryTable(
+        this.profile.variable,
+        this.selectedGroupColumns,
+        this.selectedSummaryValueColumn,
+        this.showDetail,
+      )
       .subscribe({
         next: (res) => {
           this.summarizing = false;

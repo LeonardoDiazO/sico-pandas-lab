@@ -100,3 +100,53 @@ def build_summary_code(variable, columns, value_column):
         f"pd.DataFrame({{{value_column!r}: _t, '% del total': _pct, '% acumulado': _acum, '80/20': _marca}})",
     ]
     return "\n".join(lines)
+
+
+def build_summary_detail_code(variable, columns, value_column):
+    """User feedback on the grouped summary (build_summary_code): "faltaria
+    un resumen detallado, en el que por ejemplo salga LATIN LOGISTICS
+    COLOMBIA S.A.S. las n veces" - the aggregate total per group isn't
+    enough, they also want every individual row that makes up that total.
+
+    Shape: one subtotal ("... — TOTAL") row per group, immediately followed
+    by that group's own rows sorted by value_column descending, with a
+    '% de su grupo' column (each row's share of ITS OWN group's total, not
+    the grand total - build_summary_code already covers "share of the grand
+    total"). Groups themselves are ordered by group total descending, same
+    as build_summary_code, so the biggest group's block appears first - the
+    "como un Excel con subtotales" shape the user asked for.
+
+    Reuses chart_builder._grouping_expr() for the same reason build_summary_code
+    does - single source of truth for the single-vs-multi-column / composite-key
+    / fillna('(vacío)') logic.
+    """
+    grouping = _grouping_expr(variable, columns)
+    lines = [
+        f"_grupo = {grouping}",
+        f"_total_grupo = {variable}.groupby(_grupo)[{value_column!r}].transform('sum')",
+        # Same zero-total guard as build_summary_code/build_sort_code - a
+        # group whose rows cancel out to exactly zero (e.g. a 'saldo'
+        # column) would otherwise leak inf/nan into '% de su grupo'.
+        f"_pct_grupo = ({variable}[{value_column!r}] / _total_grupo * 100)"
+        ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
+        f"_detalle = {variable}.assign(**{{'Grupo': _grupo, '% de su grupo': _pct_grupo}})",
+        f"_orden = _detalle.groupby('Grupo')[{value_column!r}].sum().sort_values(ascending=False).index",
+        # Categorical (not plain sort_values on the string column) so groups
+        # stay ordered by TOTAL descending, not alphabetically - matches
+        # build_summary_code's ordering.
+        "_detalle['Grupo'] = pd.Categorical(_detalle['Grupo'], categories=_orden, ordered=True)",
+        f"_detalle = _detalle.sort_values(['Grupo', {value_column!r}], ascending=[True, False])",
+        f"_subtot = _detalle.groupby('Grupo', observed=True)[{value_column!r}].sum().reindex(_orden)",
+        f"_filas_subtot = pd.DataFrame("
+        f"{{'Grupo': [f'{{g}} — TOTAL' for g in _orden], {value_column!r}: _subtot.values}})",
+        "_filas_subtot['__orden__'] = range(len(_orden))",
+        "_filas_subtot['__es_total__'] = True",
+        "_detalle['__orden__'] = _detalle['Grupo'].map({g: i for i, g in enumerate(_orden)})",
+        "_detalle['__es_total__'] = False",
+        "_final = pd.concat([_filas_subtot, _detalle], ignore_index=True)",
+        # Bare expression, not assigned to a variable - execution.py only
+        # captures the LAST expression statement of a cell as the result.
+        "_final.sort_values(['__orden__', '__es_total__'], ascending=[True, False])"
+        ".drop(columns=['__orden__', '__es_total__'])",
+    ]
+    return "\n".join(lines)

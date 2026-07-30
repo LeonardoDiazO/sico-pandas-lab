@@ -16,8 +16,12 @@ from app.notebook.chart_builder import (
 )
 from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
-from app.notebook.table_builder import build_sort_code, build_summary_code
-from app.notebook.table_explanation import build_sort_explanation, build_summary_explanation
+from app.notebook.table_builder import build_sort_code, build_summary_code, build_summary_detail_code
+from app.notebook.table_explanation import (
+    build_sort_explanation,
+    build_summary_detail_explanation,
+    build_summary_explanation,
+)
 from app.utils.api_response import api_response
 
 notebook_bp = Blueprint("notebook", __name__, url_prefix="/api/notebook")
@@ -338,6 +342,13 @@ def summary_table():
     variable = payload.get("variable")
     columns = payload.get("columns")
     value_column = payload.get("valueColumn")
+    # User feedback: the grouped total alone wasn't enough - "faltaria un
+    # resumen detallado, en el que por ejemplo salga LATIN LOGISTICS ... las
+    # n veces". `detail` toggles between the aggregate-only view
+    # (build_summary_code) and the drill-down view with every individual
+    # row under its group's subtotal (build_summary_detail_code) - same
+    # `columns`/`valueColumn` inputs either way, no separate route needed.
+    detail = payload.get("detail") is True
 
     if not isinstance(variable, str) or not variable.strip():
         return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
@@ -346,9 +357,17 @@ def summary_table():
     if not isinstance(value_column, str) or not value_column.strip():
         return api_response(message="Falta elegir una columna de valor para resumir.", success=False, status=400)
 
-    code = build_summary_code(variable, columns, value_column)
+    if detail:
+        code = build_summary_detail_code(variable, columns, value_column)
+    else:
+        code = build_summary_code(variable, columns, value_column)
     result = _manager().execute(_session_id(), code)
-    explanation = None if result.get("error") else build_summary_explanation(columns, value_column)
+    if result.get("error"):
+        explanation = None
+    elif detail:
+        explanation = build_summary_detail_explanation(columns, value_column)
+    else:
+        explanation = build_summary_explanation(columns, value_column)
     return api_response(
         data=_table_response_data(result, explanation=explanation),
         message="Resumen generado." if not result.get("error") else "No se pudo generar el resumen.",

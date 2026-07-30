@@ -69,11 +69,17 @@ export class NotebookService {
     });
   }
 
-  summaryTable(variable: string, columns: string[], valueColumn: string): Observable<ApiResponse<TableResult>> {
+  summaryTable(
+    variable: string,
+    columns: string[],
+    valueColumn: string,
+    detail = false,
+  ): Observable<ApiResponse<TableResult>> {
     return this.http.post<ApiResponse<TableResult>>(`${this.base}/api/notebook/summary-table`, {
       variable,
       columns,
       valueColumn,
+      detail,
     });
   }
 

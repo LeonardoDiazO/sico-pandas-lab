@@ -859,3 +859,43 @@ def test_summary_table_unbound_variable_surfaces_a_clean_error_not_500(client):
     assert body["success"] is True
     assert body["data"]["error"] is not None
     assert body["data"]["error"]["type"] == "NameError"
+
+
+# --- "Resumen detallado": drill into each group's individual rows ---------
+
+
+def test_summary_table_detail_true_returns_subtotal_and_individual_rows(client):
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/summary-table",
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "detail": True},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    data = body["data"]
+    assert data["error"] is None
+    assert "TOTAL" in data["result_html"]
+    assert "% de su grupo" in data["result_html"]
+    assert data["explanation"] is not None
+    assert "% de su grupo" in data["explanation"]
+
+
+def test_summary_table_detail_false_or_absent_keeps_the_aggregate_only_view(client):
+    """Regression guard: `detail` defaults to the pre-existing aggregate-only
+    behavior (Story 8.2/8.3) when omitted, so existing callers are unaffected."""
+    upload_data = {"file": (_clean_xlsx_bytes(), "datos.xlsx")}
+    client.post("/api/notebook/upload-excel", data=upload_data, content_type="multipart/form-data")
+
+    response = client.post(
+        "/api/notebook/summary-table",
+        json={"variable": "df", "columns": ["vendedor"], "valueColumn": "neto", "detail": False},
+    )
+    body = response.get_json()
+    assert response.status_code == 200
+    data = body["data"]
+    assert data["error"] is None
+    assert "TOTAL" not in data["result_html"]
+    assert "80/20" in data["result_html"]
