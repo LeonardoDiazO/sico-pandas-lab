@@ -6,11 +6,11 @@ import { environment } from '../../../environments/environment';
 import {
   ApiResponse,
   CellResult,
-  ChartInterpretation,
   ChartResult,
   ColumnFilter,
-  ExcelProfileColumn,
   LoadResult,
+  ParetoNarrativeResponse,
+  ParetoStats,
   TablesPayload,
   TableResult,
 } from '../../models/api.models';
@@ -101,14 +101,24 @@ export class NotebookService {
     });
   }
 
-  interpretChartRequest(
-    question: string,
-    columns: ExcelProfileColumn[],
-  ): Observable<ApiResponse<ChartInterpretation>> {
-    return this.http.post<ApiResponse<ChartInterpretation>>(
-      `${this.base}/api/notebook/interpret-chart-request`,
-      { question, columns },
-    );
+  // User feedback (replaces the removed deterministic/hardcoded comparison
+  // text): sends only already-computed aggregate stats (never raw rows) to
+  // the real assistant, once both "Ordenar tabla" and "Resumen y porcentaje
+  // por columna" exist - see pareto_narrative.py's security notes.
+  paretoNarrative(
+    valueColumnRow: string,
+    rowStats: ParetoStats,
+    groupColumnsLabel: string,
+    valueColumnGroup: string,
+    groupStats: ParetoStats,
+  ): Observable<ApiResponse<ParetoNarrativeResponse>> {
+    return this.http.post<ApiResponse<ParetoNarrativeResponse>>(`${this.base}/api/notebook/pareto-narrative`, {
+      valueColumnRow,
+      rowStats,
+      groupColumnsLabel,
+      valueColumnGroup,
+      groupStats,
+    });
   }
 
   listTables(): Observable<ApiResponse<TablesPayload>> {

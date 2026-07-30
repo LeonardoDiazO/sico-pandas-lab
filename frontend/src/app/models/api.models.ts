@@ -120,6 +120,22 @@ export interface ColumnFilter {
   values: string[];
 }
 
+// User feedback (replaces the removed deterministic/hardcoded comparison
+// text): free-form aggregate stats sent to the assistant, never raw rows -
+// see backend/app/notebook/pareto_narrative.py's own security notes.
+export interface ParetoStats {
+  total: number;
+  cruce_80: number;
+  pct_base: number;
+  top_valor: unknown;
+  top_pct: unknown;
+  top_grupo_nombre?: string;
+}
+
+export interface ParetoNarrativeResponse {
+  narrative: string;
+}
+
 // Story 6.1: 'torta' | 'barras' | 'linea' | 'histograma' - mirrors ChartKind
 // in shared/no-code-chart/no-code-chart.component.ts (Story 5.2), where the
 // canonical type still lives (do not treat this as a second source of truth,

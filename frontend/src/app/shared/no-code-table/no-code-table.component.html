@@ -172,5 +172,28 @@
         <p class="table-explanation">{{ summaryResult.explanation }}</p>
       }
     }
+
+    @if (paretoStatsReady) {
+      <hr class="divider" />
+      <div class="panel-header">
+        <h3>Análisis comparativo (por fila vs. por grupo)</h3>
+      </div>
+      <p class="note">
+        Compara el 80/20 de "Ordenar tabla" con el de "Resumen y porcentaje por columna" usando el asistente
+        (Gemini) - solo se le envían los números ya calculados arriba, nunca las filas del Excel.
+      </p>
+      <button class="generate-btn" (click)="generateNarrative()" [disabled]="narrativeLoading">
+        {{ narrativeLoading ? 'Generando…' : 'Generar análisis con el asistente' }}
+      </button>
+      @if (narrativeError) {
+        <p class="note filter-error">{{ narrativeError }}</p>
+      }
+      <!-- Plain text interpolation (not [innerHTML]) - the assistant's
+           response is untrusted free-form text and must never be parsed as
+           markup, even though it only ever describes numbers we sent it. -->
+      @if (narrativeText) {
+        <p class="comparative-line">{{ narrativeText }}</p>
+      }
+    }
   }
 </div>

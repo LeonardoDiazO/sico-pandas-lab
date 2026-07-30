@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 
-import { ColumnFilter, ExcelProfileColumn, TableResult } from '../../models/api.models';
+import { ColumnFilter, ExcelProfileColumn, ParetoStats, TableResult } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 import { looksLikeMoney } from '../money-format';
 import { ExcelProfileState } from '../no-code-chart/no-code-chart.component';
@@ -31,6 +31,17 @@ export interface SummaryCard {
   pctTotal: number;
   pctAcum: number;
   marker: string;
+}
+
+// Matches table_builder.py's _pareto_marker_lines() printed sentence exactly
+// (e.g. "42 de 171 filas concentran el 80% del total." or "1 de 3 categoría
+// concentra el 80% del total.") - captures n_cruce, n_total, pct_cruce.
+const PARETO_SENTENCE_PATTERN = /(\d+) de (\d+) .+ el (\d+)% del total\./;
+
+interface ParetoInfo {
+  nCruce: number;
+  nTotal: number;
+  pctCruce: number;
 }
 
 // Story 8.4 (user feedback: "colocar los filtros para ordenar también en
@@ -187,6 +198,114 @@ export class NoCodeTableComponent implements OnChanges {
     });
   }
 
+  // User feedback: replaces the removed NL-assistant question box - "al
+  // final dejar algo directamente que nos ayude con un análisis" - then,
+  // after trying a deterministic/hardcoded version, explicit correction:
+  // "eso está mal porque debe hacerse con una IA... mandandole el promt
+  // adecuado". This getter only ASSEMBLES the aggregate stats (never raw
+  // rows - see pareto_narrative.py's security notes); generateNarrative()
+  // below sends them to the real assistant and displays whatever it
+  // returns. Parses each result's own already-computed printed sentence
+  // (table_builder.py's _pareto_marker_lines) rather than re-deriving the
+  // counts from result_records, which is capped at MAX_RESULT_ROWS and
+  // would silently undercount on a larger file.
+  get paretoStatsReady(): boolean {
+    return this.buildNarrativeStats() !== null;
+  }
+
+  narrativeLoading = false;
+  narrativeText: string | null = null;
+  narrativeError: string | null = null;
+
+  generateNarrative(): void {
+    const stats = this.buildNarrativeStats();
+    if (!stats) {
+      return;
+    }
+    this.narrativeLoading = true;
+    this.narrativeText = null;
+    this.narrativeError = null;
+    this.notebook
+      .paretoNarrative(
+        stats.valueColumnRow,
+        stats.rowStats,
+        stats.groupColumnsLabel,
+        stats.valueColumnGroup,
+        stats.groupStats,
+      )
+      .subscribe({
+        next: (res) => {
+          this.narrativeLoading = false;
+          this.narrativeText = res.data?.narrative ?? null;
+        },
+        error: (err: HttpErrorResponse) => {
+          this.narrativeLoading = false;
+          const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
+          this.narrativeError = backendMessage ?? 'No se pudo contactar el asistente.';
+        },
+      });
+  }
+
+  private buildNarrativeStats(): {
+    valueColumnRow: string;
+    rowStats: ParetoStats;
+    groupColumnsLabel: string;
+    valueColumnGroup: string;
+    groupStats: ParetoStats;
+  } | null {
+    if (!this.sortResult || this.sortResult.error || this.ascending) {
+      return null; // Pareto only computed for "mayor a menor" (see build_sort_code)
+    }
+    if (!this.summaryResult || this.summaryResult.error || this.showDetail) {
+      return null; // detail mode's records mix subtotal/individual rows - not a clean top group
+    }
+    const rowInfo = this.parseParetoSentence(this.sortResult.stdout);
+    const groupInfo = this.parseParetoSentence(this.summaryResult.stdout);
+    const valueKey = this.selectedValueColumn;
+    const summaryValueKey = this.selectedSummaryValueColumn;
+    const rowRecords = this.sortResult.result_records;
+    const groupRecords = this.summaryResult.result_records;
+    if (!rowInfo || !groupInfo || !valueKey || !summaryValueKey || !rowRecords?.length || !groupRecords?.length) {
+      return null;
+    }
+
+    const labelKey = Object.keys(groupRecords[0]).find(
+      (key) => key !== summaryValueKey && !SUMMARY_METRIC_KEYS.includes(key),
+    );
+    const topGroupLabel = labelKey ? String(groupRecords[0][labelKey]) : '(sin nombre)';
+    const rowPct = Math.round((rowInfo.nCruce / rowInfo.nTotal) * 1000) / 10;
+    const groupPct = Math.round((groupInfo.nCruce / groupInfo.nTotal) * 1000) / 10;
+
+    return {
+      valueColumnRow: valueKey,
+      rowStats: {
+        total: rowInfo.nTotal,
+        cruce_80: rowInfo.nCruce,
+        pct_base: rowPct,
+        top_valor: rowRecords[0][valueKey],
+        top_pct: rowRecords[0]['% del total'],
+      },
+      groupColumnsLabel: this.selectedGroupColumns.join(' + ') || 'grupo',
+      valueColumnGroup: summaryValueKey,
+      groupStats: {
+        total: groupInfo.nTotal,
+        cruce_80: groupInfo.nCruce,
+        pct_base: groupPct,
+        top_valor: groupRecords[0][summaryValueKey],
+        top_pct: groupRecords[0]['% del total'],
+        top_grupo_nombre: topGroupLabel,
+      },
+    };
+  }
+
+  private parseParetoSentence(stdout: string | null): ParetoInfo | null {
+    const match = stdout?.match(PARETO_SENTENCE_PATTERN);
+    if (!match) {
+      return null;
+    }
+    return { nCruce: Number(match[1]), nTotal: Number(match[2]), pctCruce: Number(match[3]) };
+  }
+
   get numericColumns(): ExcelProfileColumn[] {
     return this.profile?.columns.filter((c) => c.type === 'numerica') ?? [];
   }
@@ -236,7 +355,13 @@ export class NoCodeTableComponent implements OnChanges {
       this.activeFilters = [];
       this.filterColumnToAdd = null;
       this.filterLoadError = null;
+      this.resetNarrative();
     }
+  }
+
+  private resetNarrative(): void {
+    this.narrativeText = null;
+    this.narrativeError = null;
   }
 
   toggleGroupColumn(name: string): void {
@@ -254,6 +379,7 @@ export class NoCodeTableComponent implements OnChanges {
     }
     this.summarizing = true;
     this.summaryResult = null;
+    this.resetNarrative();
     this.notebook
       .summaryTable(
         this.profile.variable,
@@ -294,6 +420,7 @@ export class NoCodeTableComponent implements OnChanges {
     }
     this.sorting = true;
     this.sortResult = null;
+    this.resetNarrative();
     this.notebook
       .sortTable(this.profile.variable, this.selectedValueColumn, this.ascending, this.filtersPayload)
       .subscribe({

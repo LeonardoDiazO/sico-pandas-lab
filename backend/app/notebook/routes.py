@@ -16,6 +16,7 @@ from app.notebook.chart_builder import (
 )
 from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
+from app.notebook.pareto_narrative import build_stats_payload, generate_pareto_narrative
 from app.notebook.table_builder import (
     build_column_values_code,
     build_sort_code,
@@ -549,3 +550,53 @@ def interpret_chart_request_route():
         return api_response(message=str(exc), success=False, status=503)
 
     return api_response(data=interpretation, message="Interpretado.")
+
+
+@notebook_bp.post("/pareto-narrative")
+def pareto_narrative_route():
+    """Story 8.x (user feedback: replaces a removed deterministic/hardcoded
+    text with a real assistant call) - generates a short narrative comparing
+    the row-level and grouped 80/20 views, once the frontend has both
+    (no-code-table.component.ts computes rowStats/groupStats from its own
+    already-displayed results - see pareto_narrative.py's own security notes
+    on why only these aggregate numbers travel to the LLM). Same per-session
+    assistant usage budget as /interpret-chart-request - one shared limit
+    across every LLM-backed feature in this app, not a separate budget per
+    feature."""
+    payload = request.get_json(silent=True) or {}
+    value_column_row = payload.get("valueColumnRow")
+    row_stats = payload.get("rowStats")
+    group_columns_label = payload.get("groupColumnsLabel")
+    value_column_group = payload.get("valueColumnGroup")
+    group_stats = payload.get("groupStats")
+
+    if not isinstance(value_column_row, str) or not value_column_row.strip():
+        return api_response(message="Falta la columna de valor de la fila.", success=False, status=400)
+    if not isinstance(row_stats, dict) or not row_stats:
+        return api_response(message="Faltan las estadísticas por fila.", success=False, status=400)
+    if not isinstance(group_columns_label, str) or not group_columns_label.strip():
+        return api_response(message="Falta la columna de agrupación.", success=False, status=400)
+    if not isinstance(value_column_group, str) or not value_column_group.strip():
+        return api_response(message="Falta la columna de valor del grupo.", success=False, status=400)
+    if not isinstance(group_stats, dict) or not group_stats:
+        return api_response(message="Faltan las estadísticas por grupo.", success=False, status=400)
+
+    manager = _manager()
+    if not manager.check_and_increment_assistant_usage(_session_id()):
+        return api_response(
+            message=(
+                f"Alcanzaste el límite de {manager.assistant_max_requests} preguntas al "
+                "asistente en esta sesión."
+            ),
+            success=False,
+            status=429,
+        )
+
+    stats = build_stats_payload(row_stats, group_stats, value_column_row, value_column_group, group_columns_label)
+    try:
+        narrative = generate_pareto_narrative(stats)
+    except InterpreterUnavailableError as exc:
+        manager.release_assistant_usage(_session_id())
+        return api_response(message=str(exc), success=False, status=503)
+
+    return api_response(data={"narrative": narrative}, message="Análisis generado.")

@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
-import { CardinalityWarning, ChartInterpretation, ChartResult, ExcelProfileColumn } from '../../models/api.models';
+import { CardinalityWarning, ChartResult, ExcelProfileColumn } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 export interface ExcelProfileState {
@@ -88,14 +88,6 @@ export class NoCodeChartComponent implements OnChanges {
   generating = false;
   chartResult: ChartResult | null = null;
   cardinalityWarning: CardinalityWarning | null = null;
-
-  // Story 6.1: natural-language assistant - only fills the selectors above,
-  // never generates or executes anything itself (NFR10). The user still
-  // presses "Generar gráfica" themselves after reviewing the filled-in
-  // selection - see Dev Notes in the story file for why.
-  naturalLanguageQuestion = '';
-  interpreting = false;
-  interpretationReason: string | null = null;
 
   constructor(
     private notebook: NotebookService,
@@ -207,11 +199,7 @@ export class NoCodeChartComponent implements OnChanges {
   }
 
   get canGenerate(): boolean {
-    // Also blocked while the assistant is thinking: it may overwrite
-    // selectedColumns/selectedValueColumn/selectedChartType any moment via
-    // applyInterpretation(), so generating from a selection that could be
-    // replaced out from under the user is unsafe - see askAssistant().
-    if (!this.profile || !this.selectedChartType || this.generating || this.interpreting) {
+    if (!this.profile || !this.selectedChartType || this.generating) {
       return false;
     }
     if (this.selectedChartType === 'histograma') {
@@ -272,51 +260,6 @@ export class NoCodeChartComponent implements OnChanges {
 
   generateAnyway(): void {
     this.generateChart(true);
-  }
-
-  askAssistant(): void {
-    if (!this.profile || !this.naturalLanguageQuestion.trim() || this.interpreting) {
-      return;
-    }
-    this.interpreting = true;
-    this.interpretationReason = null;
-    this.notebook.interpretChartRequest(this.naturalLanguageQuestion, this.profile.columns).subscribe({
-      next: (res) => {
-        this.interpreting = false;
-        this.applyInterpretation(res.data ?? null);
-      },
-      error: (err: HttpErrorResponse) => {
-        this.interpreting = false;
-        const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
-        this.interpretationReason =
-          backendMessage ?? 'No se pudo contactar el asistente. Usa los selectores manuales.';
-      },
-    });
-  }
-
-  private applyInterpretation(interpretation: ChartInterpretation | null): void {
-    if (!interpretation || !interpretation.resolved) {
-      this.interpretationReason =
-        interpretation?.reason ?? 'No pude resolver esa pregunta. Usa los selectores manuales.';
-      return;
-    }
-    // Never trust the backend answer blindly here either (third layer of
-    // defense - see the story's Dev Notes) - only apply values that are
-    // still valid against the current selector options. The assistant
-    // (Story 6.1) still resolves to a single column - wrap it as a
-    // one-element list for the checkbox-based selection (Story 7.2 AC7).
-    this.selectedColumns =
-      interpretation.column && this.groupableColumns.some((c) => c.name === interpretation.column)
-        ? [interpretation.column]
-        : [];
-    this.selectedValueColumn = this.numericColumns.some((c) => c.name === interpretation.valueColumn)
-      ? interpretation.valueColumn
-      : null;
-    this.revalidateChartType();
-    if (interpretation.chartType && this.chartTypeOptions.some((o) => o.value === interpretation.chartType)) {
-      this.selectedChartType = interpretation.chartType;
-    }
-    this.interpretationReason = null;
   }
 
   private revalidateChartType(): void {
