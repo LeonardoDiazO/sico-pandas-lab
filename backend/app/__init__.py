@@ -42,6 +42,11 @@ def create_app():
             message="ok",
         )
 
+    from app.convatec.session_store import ConvatecSessionStore
+
+    app.config["CONVATEC_SESSION_STORE"] = ConvatecSessionStore()
+
+    from app.convatec.routes import convatec_bp
     from app.data_access.routes import data_bp
     from app.guided.routes import guided_bp
     from app.notebook.routes import notebook_bp
@@ -49,5 +54,6 @@ def create_app():
     app.register_blueprint(notebook_bp)
     app.register_blueprint(data_bp)
     app.register_blueprint(guided_bp)
+    app.register_blueprint(convatec_bp)
 
     return app

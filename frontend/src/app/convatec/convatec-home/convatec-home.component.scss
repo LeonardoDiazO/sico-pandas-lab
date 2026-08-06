@@ -1,0 +1,79 @@
+.convatec-home {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+
+  h1 {
+    color: #2a2f5b;
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle {
+    color: #55557a;
+    margin-top: 0;
+  }
+}
+
+.step {
+  border: 1px solid #dfe0ff;
+  background: #f7f7ff;
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin-top: 1rem;
+
+  h2 {
+    color: #2a2f5b;
+    margin-top: 0;
+    font-size: 1.1rem;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  input[type='number'] {
+    margin-left: 0.5rem;
+    width: 6rem;
+  }
+
+  button {
+    margin-top: 0.5rem;
+  }
+}
+
+.ventas-grid {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+
+  > div {
+    flex: 1 1 200px;
+  }
+}
+
+.ok {
+  color: #2c7a3f;
+}
+
+.error {
+  color: #b3261e;
+}
+
+.no-oficial {
+  color: #b3261e;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.reiniciar {
+  margin-top: 0.5rem;
+  background: none;
+  border: 1px solid #b3261e;
+  color: #b3261e;
+}
+
+.resumen ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}

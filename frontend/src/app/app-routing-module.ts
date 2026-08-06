@@ -11,6 +11,10 @@ const routes: Routes = [
     path: 'guiado',
     loadChildren: () => import('./guided/guided-module').then((m) => m.GuidedModule),
   },
+  {
+    path: 'convatec',
+    loadChildren: () => import('./convatec/convatec-module').then((m) => m.ConvatecModule),
+  },
   { path: '**', redirectTo: 'notebook' },
 ];
 

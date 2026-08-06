@@ -148,3 +148,27 @@ export interface ChartInterpretation {
   chartType: 'torta' | 'barras' | 'linea' | 'histograma' | null;
   reason: string | null;
 }
+
+// Convatec assignment + illustrative-commission module (demo/pilot scope).
+export interface ConvatecMasterTablesResult {
+  productoRows: number;
+  representantesRows: number;
+  conveniosRows: number;
+}
+
+export interface ConvatecVentasResult {
+  tipo: string;
+  rows: number;
+  columns: string[];
+}
+
+export interface ConvatecProcesarResult {
+  totalLineas: number;
+  lineasMarcadas: number;
+  motivos: Record<string, number>;
+}
+
+export interface ConvatecComisionResult {
+  valorReferencia: number;
+  esOficial: boolean;
+}
