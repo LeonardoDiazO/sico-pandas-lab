@@ -122,15 +122,7 @@
 
       .dot {
         background: var(--ok);
-        color: transparent;
-        position: relative;
-
-        &::before {
-          content: '✓';
-          color: #fff;
-          position: absolute;
-          font-size: 0.8rem;
-        }
+        color: #fff;
       }
     }
   }
@@ -160,18 +152,7 @@
 }
 
 .card-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
   margin-bottom: 1rem;
-
-  .icon {
-    font-size: 1.4rem;
-    line-height: 1;
-    background: var(--bg);
-    border-radius: 10px;
-    padding: 0.4rem;
-  }
 
   h2 {
     margin: 0 0 0.15rem;
@@ -219,20 +200,25 @@
     border-color: var(--error);
     background: var(--error-bg);
   }
+}
 
-  .dropzone-icon {
-    font-size: 1.2rem;
-    width: 1.8rem;
-    text-align: center;
-    flex-shrink: 0;
+.status-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  flex-shrink: 0;
 
-    &.ok {
-      color: var(--ok);
-    }
+  &.ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+  }
 
-    &.error {
-      color: var(--error);
-    }
+  &.error {
+    background: var(--error-bg);
+    color: var(--error);
   }
 }
 
@@ -251,11 +237,6 @@
   text-align: center;
   gap: 0.35rem;
   padding: 1.1rem 0.8rem;
-
-  .dropzone-icon {
-    font-size: 1.6rem;
-    width: auto;
-  }
 
   .dropzone-label {
     font-weight: 600;
@@ -335,35 +316,28 @@
 /* ---------- Alerts ---------- */
 
 .alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 0.7rem 0.9rem;
   font-size: 0.85rem;
   margin: 0.8rem 0;
-
-  .alert-icon {
-    font-size: 1.1rem;
-    flex-shrink: 0;
-  }
+  border-left: 3px solid;
 }
 
 .alert-warning {
   background: var(--warn-bg);
-  border: 1px solid var(--warn-border);
+  border-left-color: var(--warn-border);
   color: #6b5518;
 }
 
 .alert-error {
   background: var(--error-bg);
-  border: 1px solid #f2c6c2;
+  border-left-color: var(--error);
   color: var(--error);
 }
 
 .alert-ok {
   background: var(--ok-bg);
-  border: 1px solid #bfe3c6;
+  border-left-color: var(--ok);
   color: var(--ok);
 }
 

@@ -5,7 +5,7 @@
       <h1>Asignación de representantes</h1>
       <p class="subtitle">Reemplaza el ejercicio manual de asignación por representante. El ejercicio de comisión al final es solo un ejemplo — la tasa oficial de Convatec todavía no existe.</p>
     </div>
-    <button type="button" class="btn-ghost" (click)="reiniciarSesion()">↺ Reiniciar sesión</button>
+    <button type="button" class="btn-ghost" (click)="reiniciarSesion()">Reiniciar sesión</button>
   </header>
 
   <ol class="stepper">
@@ -19,25 +19,21 @@
 
   <section class="card">
     <div class="card-title">
-      <span class="icon">📋</span>
-      <div>
-        <h2>Tablas maestras</h2>
-        <p>Sube el Excel con las tablas de referencia. Cada carga reemplaza por completo la anterior.</p>
-      </div>
+      <h2>Tablas maestras</h2>
+      <p>Sube el Excel con las tablas de referencia. Cada carga reemplaza por completo la anterior.</p>
     </div>
 
     <label class="dropzone" [class.filled]="maestros.rows !== null" [class.has-error]="maestros.error">
       <input type="file" accept=".xlsx,.xls" (change)="onMaestrosSelected($event)" />
       <ng-container *ngIf="maestros.rows === null && !maestros.error">
-        <span class="dropzone-icon">⬆️</span>
         <span>Haz clic para elegir el Excel de maestros</span>
       </ng-container>
       <ng-container *ngIf="maestros.rows !== null">
-        <span class="dropzone-icon ok">✓</span>
+        <span class="status-label ok">Cargado</span>
         <span><strong>{{ maestros.fileName }}</strong> — {{ maestros.rows }} filas cargadas</span>
       </ng-container>
       <ng-container *ngIf="maestros.error">
-        <span class="dropzone-icon error">✕</span>
+        <span class="status-label error">Error</span>
         <span>{{ maestros.error }}</span>
       </ng-container>
     </label>
@@ -45,34 +41,34 @@
 
   <section class="card">
     <div class="card-title">
-      <span class="icon">🧾</span>
-      <div>
-        <h2>Reportes del ciclo</h2>
-        <p>Productos y servicios del mes. Envíos nacionales es opcional.</p>
-      </div>
+      <h2>Reportes del ciclo</h2>
+      <p>Productos y servicios del mes. Envíos nacionales es opcional.</p>
     </div>
 
     <div class="ventas-grid">
       <label class="dropzone compact" [class.filled]="productos.rows !== null" [class.has-error]="productos.error">
         <input type="file" accept=".xlsx,.xls" (change)="onVentasSelected('productos', $event)" />
-        <span class="dropzone-icon" [class.ok]="productos.rows !== null" [class.error]="productos.error">{{ productos.error ? '✕' : productos.rows !== null ? '✓' : '📦' }}</span>
         <span class="dropzone-label">Productos</span>
+        <span class="status-label ok" *ngIf="productos.rows !== null">Cargado</span>
+        <span class="status-label error" *ngIf="productos.error">Error</span>
         <span class="dropzone-detail" *ngIf="productos.rows !== null">{{ productos.rows }} filas</span>
         <span class="dropzone-detail error" *ngIf="productos.error">{{ productos.error }}</span>
       </label>
 
       <label class="dropzone compact" [class.filled]="servicios.rows !== null" [class.has-error]="servicios.error">
         <input type="file" accept=".xlsx,.xls" (change)="onVentasSelected('servicios', $event)" />
-        <span class="dropzone-icon" [class.ok]="servicios.rows !== null" [class.error]="servicios.error">{{ servicios.error ? '✕' : servicios.rows !== null ? '✓' : '🩹' }}</span>
         <span class="dropzone-label">Servicios</span>
+        <span class="status-label ok" *ngIf="servicios.rows !== null">Cargado</span>
+        <span class="status-label error" *ngIf="servicios.error">Error</span>
         <span class="dropzone-detail" *ngIf="servicios.rows !== null">{{ servicios.rows }} filas</span>
         <span class="dropzone-detail error" *ngIf="servicios.error">{{ servicios.error }}</span>
       </label>
 
       <label class="dropzone compact optional" [class.filled]="enviosNacionales.rows !== null" [class.has-error]="enviosNacionales.error">
         <input type="file" accept=".xlsx,.xls" (change)="onVentasSelected('envios-nacionales', $event)" />
-        <span class="dropzone-icon" [class.ok]="enviosNacionales.rows !== null" [class.error]="enviosNacionales.error">{{ enviosNacionales.error ? '✕' : enviosNacionales.rows !== null ? '✓' : '🚚' }}</span>
         <span class="dropzone-label">Envíos nacionales <em>(opcional)</em></span>
+        <span class="status-label ok" *ngIf="enviosNacionales.rows !== null">Cargado</span>
+        <span class="status-label error" *ngIf="enviosNacionales.error">Error</span>
         <span class="dropzone-detail" *ngIf="enviosNacionales.rows !== null">{{ enviosNacionales.rows }} filas</span>
         <span class="dropzone-detail error" *ngIf="enviosNacionales.error">{{ enviosNacionales.error }}</span>
       </label>
@@ -81,11 +77,8 @@
 
   <section class="card">
     <div class="card-title">
-      <span class="icon">⚙️</span>
-      <div>
-        <h2>Procesar el ciclo</h2>
-        <p>Aplica homologación, las 3 reglas de asignación, "Repartir" y las directrices de rotación mensual.</p>
-      </div>
+      <h2>Procesar el ciclo</h2>
+      <p>Aplica homologación, las 3 reglas de asignación, "Repartir" y las directrices de rotación mensual.</p>
     </div>
 
     <div class="procesar-row">
@@ -94,7 +87,7 @@
         <input type="number" min="1" max="12" [(ngModel)]="mes" />
       </label>
       <button type="button" class="btn-primary" [disabled]="!puedeProcesar || procesando" (click)="procesarCiclo()">
-        {{ procesando ? '⏳ Procesando…' : '▶ Procesar ciclo' }}
+        {{ procesando ? 'Procesando…' : 'Procesar ciclo' }}
       </button>
     </div>
     <p *ngIf="procesarError" class="alert alert-error">{{ procesarError }}</p>
@@ -129,15 +122,11 @@
 
   <section class="card" *ngIf="resultado">
     <div class="card-title">
-      <span class="icon">💰</span>
-      <div>
-        <h2>Ejercicio ilustrativo de comisión</h2>
-        <p>Divide un valor de referencia entre los representantes ya asignados en cada sede.</p>
-      </div>
+      <h2>Ejercicio ilustrativo de comisión</h2>
+      <p>Divide un valor de referencia entre los representantes ya asignados en cada sede.</p>
     </div>
 
     <div class="alert alert-warning">
-      <span class="alert-icon">⚠</span>
       <span><strong>Valor de ejemplo — no es la tasa oficial de Convatec.</strong> Sirve para anclar la conversación sobre cómo debería calcularse la comisión real.</span>
     </div>
 
@@ -147,23 +136,20 @@
         <input type="number" [(ngModel)]="valorReferencia" placeholder="ej. 100" />
       </label>
       <button type="button" class="btn-primary" [disabled]="valorReferencia === null || calculandoComision" (click)="calcularComisionIlustrativa()">
-        {{ calculandoComision ? '⏳ Calculando…' : '✨ Calcular comisión ilustrativa' }}
+        {{ calculandoComision ? 'Calculando…' : 'Calcular comisión ilustrativa' }}
       </button>
     </div>
     <p *ngIf="comisionError" class="alert alert-error">{{ comisionError }}</p>
-    <p *ngIf="comisionCalculada" class="alert alert-ok">✓ Comisión ilustrativa calculada — se incluirá en la vista previa y en la descarga, etiquetada como no oficial.</p>
+    <p *ngIf="comisionCalculada" class="alert alert-ok">Comisión ilustrativa calculada — se incluirá en la vista previa y en la descarga, etiquetada como no oficial.</p>
   </section>
 
   <section class="card" *ngIf="resultado">
     <div class="card-title">
-      <span class="icon">👁️</span>
-      <div>
-        <h2>Vista previa del resultado</h2>
-        <p>Las mismas columnas que trae el Excel a descargar.</p>
-      </div>
+      <h2>Vista previa del resultado</h2>
+      <p>Las mismas columnas que trae el Excel a descargar.</p>
     </div>
 
-    <p *ngIf="cargandoPreview" class="loading">⏳ Cargando vista previa…</p>
+    <p *ngIf="cargandoPreview" class="loading">Cargando vista previa…</p>
     <p *ngIf="previewError" class="alert alert-error">{{ previewError }}</p>
 
     <ng-container *ngIf="preview">
@@ -197,14 +183,11 @@
 
   <section class="card" *ngIf="resultado">
     <div class="card-title">
-      <span class="icon">⬇️</span>
-      <div>
-        <h2>Descargar resultado</h2>
-        <p>Mismo formato de entrada + representante, grupo de vendedor y motivo de excepción.</p>
-      </div>
+      <h2>Descargar resultado</h2>
+      <p>Mismo formato de entrada + representante, grupo de vendedor y motivo de excepción.</p>
     </div>
     <button type="button" class="btn-primary btn-large" [disabled]="descargando" (click)="descargarResultado()">
-      {{ descargando ? '⏳ Descargando…' : '⬇ Descargar Excel' }}
+      {{ descargando ? 'Descargando…' : 'Descargar Excel' }}
     </button>
   </section>
 </div>
