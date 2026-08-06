@@ -52,12 +52,16 @@ en vivo (ver §2 y §4).
 
 ## 2. Qué archivos usar
 
-Necesitas 4 insumos. Usa los archivos reales de Convatec que ya tienes:
+De todo lo que tienes en Downloads, solo 3 archivos le sirven a este módulo:
 
-1. **Tablas maestras** — `Flujo del Proceso de Sell Out Convacare para Comisiones - Reglas.xlsx`
-2. **Productos** — el detalle de productos del ciclo (reporte SAP)
-3. **Servicios** — el detalle de servicios del ciclo
-4. **Envíos nacionales** — *(opcional; si no tienes el archivo real a mano, puedes omitir este paso y seguir con solo productos/servicios — la herramienta funciona igual)*
+1. **Tablas maestras** → `Flujo del Proceso de Sell Out Convacare para Comisiones - Reglas.xlsx`
+2. **Productos** → el detalle de productos del ciclo (reporte SAP)
+3. **Servicios** → el detalle de servicios del ciclo
+4. **Envíos nacionales** — *(opcional; si no tienes el archivo real a mano, deja este campo vacío y sigue solo con productos/servicios — la herramienta funciona igual)*
+
+**No subas estos dos, aunque los tengas a mano:**
+- El asiento contable SAP (`reportTemplate...xls`) — no hay ningún campo para él; esa validación (SAP vs Hyperion) no está construida en este módulo.
+- Cualquier reporte de "comisión por ventas" de otro cliente/sistema — no es de Convatec, ningún representante de ahí existe en las tablas maestras reales, y no hay ningún campo donde subirlo.
 
 **Importante sobre el tamaño:** un ciclo completo real tiene ~90,000 líneas.
 Procesar y descargar ese volumen completo tarda **1-2 minutos** en la
@@ -131,7 +135,16 @@ retenciones?"* (la lista completa de preguntas está en el addendum del brief,
 `_bmad-output/planning-artifacts/briefs/brief-comisiones-convatec-sico-pandas-lab-2026-08-05/addendum.md`,
 sección "Comisiones — vacío de reglas").
 
-### Paso 5 — Descargar
+### Paso 5 — Vista previa del resultado
+Antes de descargar nada, la pantalla muestra una tabla con las primeras 50
+filas del resultado — exactamente las mismas columnas que trae el Excel.
+Úsala para señalar en vivo, sin necesidad de abrir Excel: la columna
+`Representante` ya resuelta, `Motivo_Excepcion` en las líneas marcadas, y (si
+ya calculaste la comisión ilustrativa) la columna con la etiqueta "no
+oficial" incluida. Se actualiza sola después de "Procesar ciclo" y de nuevo
+después de calcular la comisión ilustrativa.
+
+### Paso 6 — Descargar
 Descarga el Excel. Es el mismo formato de entrada + representante, grupo de
 vendedor, motivo de excepción y la comisión ilustrativa (etiquetada como no
 oficial también dentro del archivo, no solo en pantalla).

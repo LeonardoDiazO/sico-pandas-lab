@@ -172,3 +172,10 @@ export interface ConvatecComisionResult {
   valorReferencia: number;
   esOficial: boolean;
 }
+
+export interface ConvatecPreviewResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  totalRows: number;
+  previewRows: number;
+}

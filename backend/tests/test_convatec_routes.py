@@ -122,6 +122,13 @@ def test_full_cycle_upload_maestros_ventas_procesar_and_descargar(client):
     assert comision_resp.status_code == 200
     assert comision_resp.get_json()["data"]["esOficial"] is False
 
+    preview_resp = client.get("/api/convatec/resultado-preview?limit=1", headers=HEADERS)
+    assert preview_resp.status_code == 200
+    preview_body = preview_resp.get_json()["data"]
+    assert preview_body["totalRows"] == 2
+    assert preview_body["previewRows"] == 1
+    assert "Comision_Ilustrativa (VALOR DE EJEMPLO - NO OFICIAL)" in preview_body["columns"]
+
     descargar_resp = client.get("/api/convatec/descargar", headers=HEADERS)
     assert descargar_resp.status_code == 200
     assert descargar_resp.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -185,6 +192,33 @@ def test_comision_ilustrativa_rejects_bool_and_non_finite_valor(client):
 def test_descargar_without_ciclo_procesado_fails_clearly(client):
     resp = client.get("/api/convatec/descargar", headers={"X-Session-Id": "sin-ciclo"})
     assert resp.status_code == 400
+
+
+def test_preview_without_ciclo_procesado_fails_clearly(client):
+    resp = client.get("/api/convatec/resultado-preview", headers={"X-Session-Id": "sin-ciclo-preview"})
+    assert resp.status_code == 400
+
+
+def test_preview_rejects_invalid_limit(client):
+    session = {"X-Session-Id": "preview-limit"}
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    client.post(
+        "/api/convatec/ventas/productos",
+        data={"file": (_productos_xlsx_bytes(), "productos.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    client.post("/api/convatec/procesar", json={"mes": 3}, headers=session)
+
+    resp = client.get("/api/convatec/resultado-preview?limit=0", headers=session)
+    assert resp.status_code == 400
+    resp2 = client.get("/api/convatec/resultado-preview?limit=abc", headers=session)
+    assert resp2.status_code == 400
 
 
 def test_upload_ventas_rejects_unknown_tipo(client):

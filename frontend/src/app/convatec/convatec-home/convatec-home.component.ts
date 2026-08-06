@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 
-import { ConvatecProcesarResult } from '../../models/api.models';
+import { ConvatecPreviewResult, ConvatecProcesarResult } from '../../models/api.models';
 import { ConvatecService, VentasTipo } from '../services/convatec.service';
 
 interface UploadState {
@@ -35,10 +35,43 @@ export class ConvatecHomeComponent {
 
   descargando = false;
 
+  preview: ConvatecPreviewResult | null = null;
+  cargandoPreview = false;
+  previewError: string | null = null;
+
   constructor(private convatec: ConvatecService) {}
 
   get puedeProcesar(): boolean {
     return this.maestros.rows !== null && (this.productos.rows !== null || this.servicios.rows !== null || this.enviosNacionales.rows !== null);
+  }
+
+  /** Drives the stepper header — 1-indexed, used to mark done/active/pending. */
+  get pasoActual(): number {
+    if (this.descargando) return 6;
+    if (this.resultado) return this.comisionCalculada ? 5 : 4;
+    if (this.maestros.rows !== null) return this.puedeProcesar ? 3 : 2;
+    return 1;
+  }
+
+  get porcentajeResuelto(): number {
+    if (!this.resultado || this.resultado.totalLineas === 0) return 0;
+    const resueltas = this.resultado.totalLineas - this.resultado.lineasMarcadas;
+    return Math.round((resueltas / this.resultado.totalLineas) * 100);
+  }
+
+  motivoClase(motivo: string): string {
+    const key = motivo.toLowerCase();
+    if (key.includes('duplicado')) return 'badge-duplicado';
+    if (key.includes('convenio')) return 'badge-convenio';
+    if (key.includes('ciudad')) return 'badge-ciudad';
+    if (key.includes('homolog')) return 'badge-producto';
+    return 'badge-generico';
+  }
+
+  iniciales(nombre: unknown): string {
+    if (typeof nombre !== 'string' || !nombre.trim()) return '?';
+    const partes = nombre.trim().split(/\s+/);
+    return (partes[0][0] + (partes[1]?.[0] ?? '')).toUpperCase();
   }
 
   onMaestrosSelected(event: Event): void {
@@ -73,6 +106,7 @@ export class ConvatecHomeComponent {
       this.resultado = null;
       this.comisionCalculada = false;
       this.valorReferencia = null;
+      this.preview = null;
     });
   }
 
@@ -81,10 +115,12 @@ export class ConvatecHomeComponent {
     this.procesarError = null;
     this.resultado = null;
     this.comisionCalculada = false;
+    this.preview = null;
     this.convatec.procesarCiclo(this.mes).subscribe({
       next: (res) => {
         this.resultado = res.data;
         this.procesando = false;
+        this.cargarPreview();
       },
       error: (err) => {
         this.procesarError = this.errorMessage(err);
@@ -101,10 +137,26 @@ export class ConvatecHomeComponent {
       next: () => {
         this.comisionCalculada = true;
         this.calculandoComision = false;
+        this.cargarPreview();
       },
       error: (err) => {
         this.comisionError = this.errorMessage(err);
         this.calculandoComision = false;
+      },
+    });
+  }
+
+  private cargarPreview(): void {
+    this.cargandoPreview = true;
+    this.previewError = null;
+    this.convatec.previewResultado(50).subscribe({
+      next: (res) => {
+        this.preview = res.data;
+        this.cargandoPreview = false;
+      },
+      error: (err) => {
+        this.previewError = this.errorMessage(err);
+        this.cargandoPreview = false;
       },
     });
   }

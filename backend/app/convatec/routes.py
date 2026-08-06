@@ -11,7 +11,7 @@ from datetime import date
 from flask import Blueprint, current_app, request, send_file
 
 from app.convatec.column_aliases import normalize_columns
-from app.convatec.export import build_output_excel
+from app.convatec.export import build_output_excel, preview_rows
 from app.convatec.master_tables import MasterTablesError, load_master_tables
 from app.convatec.patient_columns import drop_patient_columns
 from app.convatec.pipeline import calcular_comision_ilustrativa, procesar_ciclo
@@ -160,6 +160,28 @@ def comision_ilustrativa():
         data={"valorReferencia": valor_referencia, "esOficial": False},
         message="Comisión ilustrativa calculada — valor de ejemplo, no oficial.",
     )
+
+
+@convatec_bp.get("/resultado-preview")
+def resultado_preview():
+    """Lets the UI show the exact table that /descargar would produce
+    (same columns/labels) before committing to the download -- useful to
+    eyeball the result on a large cycle before waiting for the full export."""
+    resultado = _store().get_resultado(_session_id())
+    if resultado is None:
+        return api_response(
+            message="No hay ningún ciclo procesado para previsualizar.", success=False, status=400
+        )
+
+    limit_raw = request.args.get("limit", "50")
+    try:
+        limit = int(limit_raw)
+    except ValueError:
+        return api_response(message="limit debe ser un número entero.", success=False, status=400)
+    if limit <= 0 or limit > 500:
+        return api_response(message="limit debe estar entre 1 y 500.", success=False, status=400)
+
+    return api_response(data=preview_rows(resultado, limit), message="Vista previa del resultado.")
 
 
 @convatec_bp.get("/descargar")

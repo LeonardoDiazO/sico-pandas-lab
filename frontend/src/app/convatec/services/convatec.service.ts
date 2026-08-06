@@ -7,6 +7,7 @@ import {
   ApiResponse,
   ConvatecComisionResult,
   ConvatecMasterTablesResult,
+  ConvatecPreviewResult,
   ConvatecProcesarResult,
   ConvatecVentasResult,
 } from '../../models/api.models';
@@ -47,6 +48,12 @@ export class ConvatecService {
     return this.http.post<ApiResponse<ConvatecComisionResult>>(
       `${this.base}/api/convatec/comision-ilustrativa`,
       { valorReferencia },
+    );
+  }
+
+  previewResultado(limit = 50): Observable<ApiResponse<ConvatecPreviewResult>> {
+    return this.http.get<ApiResponse<ConvatecPreviewResult>>(
+      `${this.base}/api/convatec/resultado-preview?limit=${limit}`,
     );
   }
 

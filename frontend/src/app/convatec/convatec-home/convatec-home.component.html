@@ -1,79 +1,210 @@
 <div class="convatec-home">
-  <header>
-    <h1>Convatec — Asignación de representantes</h1>
-    <p class="subtitle">Demo/piloto: reemplaza el ejercicio manual de asignación por representante. La comisión mostrada abajo es un ejercicio ilustrativo, no la tasa oficial de Convatec.</p>
-    <button type="button" class="reiniciar" (click)="reiniciarSesion()">Reiniciar sesión</button>
+  <header class="hero">
+    <div class="hero-text">
+      <p class="eyebrow">Convatec · Convacare Clinic</p>
+      <h1>Asignación de representantes</h1>
+      <p class="subtitle">Reemplaza el ejercicio manual de asignación por representante. El ejercicio de comisión al final es solo un ejemplo — la tasa oficial de Convatec todavía no existe.</p>
+    </div>
+    <button type="button" class="btn-ghost" (click)="reiniciarSesion()">↺ Reiniciar sesión</button>
   </header>
 
-  <section class="step">
-    <h2>1. Tablas maestras</h2>
-    <p>Sube el Excel con las 17 tablas maestras. Cada carga reemplaza por completo la anterior.</p>
-    <input type="file" accept=".xlsx,.xls" (change)="onMaestrosSelected($event)" />
-    <p *ngIf="maestros.rows !== null" class="ok">✓ {{ maestros.fileName }} cargado ({{ maestros.rows }} filas entre PRODUCTO y REPRESENTANTES).</p>
-    <p *ngIf="maestros.error" class="error">{{ maestros.error }}</p>
+  <ol class="stepper">
+    <li [class.done]="pasoActual > 1" [class.active]="pasoActual === 1"><span class="dot">1</span>Maestros</li>
+    <li [class.done]="pasoActual > 2" [class.active]="pasoActual === 2"><span class="dot">2</span>Ventas</li>
+    <li [class.done]="pasoActual > 3" [class.active]="pasoActual === 3"><span class="dot">3</span>Procesar</li>
+    <li [class.done]="pasoActual > 4" [class.active]="pasoActual === 4"><span class="dot">4</span>Comisión</li>
+    <li [class.done]="pasoActual > 5" [class.active]="pasoActual === 5"><span class="dot">5</span>Vista previa</li>
+    <li [class.active]="pasoActual === 6"><span class="dot">6</span>Descargar</li>
+  </ol>
+
+  <section class="card">
+    <div class="card-title">
+      <span class="icon">📋</span>
+      <div>
+        <h2>Tablas maestras</h2>
+        <p>Sube el Excel con las tablas de referencia. Cada carga reemplaza por completo la anterior.</p>
+      </div>
+    </div>
+
+    <label class="dropzone" [class.filled]="maestros.rows !== null" [class.has-error]="maestros.error">
+      <input type="file" accept=".xlsx,.xls" (change)="onMaestrosSelected($event)" />
+      <ng-container *ngIf="maestros.rows === null && !maestros.error">
+        <span class="dropzone-icon">⬆️</span>
+        <span>Haz clic para elegir el Excel de maestros</span>
+      </ng-container>
+      <ng-container *ngIf="maestros.rows !== null">
+        <span class="dropzone-icon ok">✓</span>
+        <span><strong>{{ maestros.fileName }}</strong> — {{ maestros.rows }} filas cargadas</span>
+      </ng-container>
+      <ng-container *ngIf="maestros.error">
+        <span class="dropzone-icon error">✕</span>
+        <span>{{ maestros.error }}</span>
+      </ng-container>
+    </label>
   </section>
 
-  <section class="step">
-    <h2>2. Reportes del ciclo</h2>
+  <section class="card">
+    <div class="card-title">
+      <span class="icon">🧾</span>
+      <div>
+        <h2>Reportes del ciclo</h2>
+        <p>Productos y servicios del mes. Envíos nacionales es opcional.</p>
+      </div>
+    </div>
+
     <div class="ventas-grid">
-      <div>
-        <label>Productos</label>
+      <label class="dropzone compact" [class.filled]="productos.rows !== null" [class.has-error]="productos.error">
         <input type="file" accept=".xlsx,.xls" (change)="onVentasSelected('productos', $event)" />
-        <p *ngIf="productos.rows !== null" class="ok">✓ {{ productos.rows }} filas</p>
-        <p *ngIf="productos.error" class="error">{{ productos.error }}</p>
-      </div>
-      <div>
-        <label>Servicios</label>
+        <span class="dropzone-icon" [class.ok]="productos.rows !== null" [class.error]="productos.error">{{ productos.error ? '✕' : productos.rows !== null ? '✓' : '📦' }}</span>
+        <span class="dropzone-label">Productos</span>
+        <span class="dropzone-detail" *ngIf="productos.rows !== null">{{ productos.rows }} filas</span>
+        <span class="dropzone-detail error" *ngIf="productos.error">{{ productos.error }}</span>
+      </label>
+
+      <label class="dropzone compact" [class.filled]="servicios.rows !== null" [class.has-error]="servicios.error">
         <input type="file" accept=".xlsx,.xls" (change)="onVentasSelected('servicios', $event)" />
-        <p *ngIf="servicios.rows !== null" class="ok">✓ {{ servicios.rows }} filas</p>
-        <p *ngIf="servicios.error" class="error">{{ servicios.error }}</p>
-      </div>
-      <div>
-        <label>Envíos nacionales</label>
+        <span class="dropzone-icon" [class.ok]="servicios.rows !== null" [class.error]="servicios.error">{{ servicios.error ? '✕' : servicios.rows !== null ? '✓' : '🩹' }}</span>
+        <span class="dropzone-label">Servicios</span>
+        <span class="dropzone-detail" *ngIf="servicios.rows !== null">{{ servicios.rows }} filas</span>
+        <span class="dropzone-detail error" *ngIf="servicios.error">{{ servicios.error }}</span>
+      </label>
+
+      <label class="dropzone compact optional" [class.filled]="enviosNacionales.rows !== null" [class.has-error]="enviosNacionales.error">
         <input type="file" accept=".xlsx,.xls" (change)="onVentasSelected('envios-nacionales', $event)" />
-        <p *ngIf="enviosNacionales.rows !== null" class="ok">✓ {{ enviosNacionales.rows }} filas</p>
-        <p *ngIf="enviosNacionales.error" class="error">{{ enviosNacionales.error }}</p>
+        <span class="dropzone-icon" [class.ok]="enviosNacionales.rows !== null" [class.error]="enviosNacionales.error">{{ enviosNacionales.error ? '✕' : enviosNacionales.rows !== null ? '✓' : '🚚' }}</span>
+        <span class="dropzone-label">Envíos nacionales <em>(opcional)</em></span>
+        <span class="dropzone-detail" *ngIf="enviosNacionales.rows !== null">{{ enviosNacionales.rows }} filas</span>
+        <span class="dropzone-detail error" *ngIf="enviosNacionales.error">{{ enviosNacionales.error }}</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">
+      <span class="icon">⚙️</span>
+      <div>
+        <h2>Procesar el ciclo</h2>
+        <p>Aplica homologación, las 3 reglas de asignación, "Repartir" y las directrices de rotación mensual.</p>
       </div>
     </div>
-  </section>
 
-  <section class="step">
-    <h2>3. Procesar el ciclo</h2>
-    <label>
-      Mes del ciclo (para las directrices de rotación mensual):
-      <input type="number" min="1" max="12" [(ngModel)]="mes" />
-    </label>
-    <button type="button" [disabled]="!puedeProcesar || procesando" (click)="procesarCiclo()">
-      {{ procesando ? 'Procesando…' : 'Procesar ciclo' }}
-    </button>
-    <p *ngIf="procesarError" class="error">{{ procesarError }}</p>
-    <div *ngIf="resultado" class="resumen">
-      <p><strong>{{ resultado.totalLineas }}</strong> líneas procesadas, <strong>{{ resultado.lineasMarcadas }}</strong> marcadas para revisión manual (el archivo se genera igual).</p>
-      <ul *ngIf="resultado.lineasMarcadas > 0">
-        <li *ngFor="let motivo of resultado.motivos | keyvalue">{{ motivo.key }}: {{ motivo.value }}</li>
-      </ul>
+    <div class="procesar-row">
+      <label class="mes-input">
+        Mes del ciclo
+        <input type="number" min="1" max="12" [(ngModel)]="mes" />
+      </label>
+      <button type="button" class="btn-primary" [disabled]="!puedeProcesar || procesando" (click)="procesarCiclo()">
+        {{ procesando ? '⏳ Procesando…' : '▶ Procesar ciclo' }}
+      </button>
+    </div>
+    <p *ngIf="procesarError" class="alert alert-error">{{ procesarError }}</p>
+
+    <div *ngIf="resultado" class="kpi-row">
+      <div class="kpi-card">
+        <span class="kpi-value">{{ resultado.totalLineas | number }}</span>
+        <span class="kpi-label">Líneas procesadas</span>
+      </div>
+      <div class="kpi-card ok">
+        <span class="kpi-value">{{ resultado.totalLineas - resultado.lineasMarcadas | number }}</span>
+        <span class="kpi-label">Asignadas sin problema</span>
+      </div>
+      <div class="kpi-card warn">
+        <span class="kpi-value">{{ resultado.lineasMarcadas | number }}</span>
+        <span class="kpi-label">Marcadas para revisión</span>
+      </div>
+      <div class="kpi-card progress-card">
+        <div class="progress-ring" [style.--pct]="porcentajeResuelto">
+          <span>{{ porcentajeResuelto }}%</span>
+        </div>
+        <span class="kpi-label">Resuelto sin marcas</span>
+      </div>
+    </div>
+
+    <div *ngIf="resultado && resultado.lineasMarcadas > 0" class="motivos">
+      <span class="badge" [ngClass]="motivoClase(motivo.key)" *ngFor="let motivo of resultado.motivos | keyvalue">
+        {{ motivo.key }} · {{ motivo.value }}
+      </span>
     </div>
   </section>
 
-  <section class="step" *ngIf="resultado">
-    <h2>4. Ejercicio ilustrativo de comisión</h2>
-    <p class="no-oficial">⚠ VALOR DE EJEMPLO — NO ES LA TASA OFICIAL DE CONVATEC</p>
-    <p>Indica un valor de referencia; se divide proporcionalmente entre los representantes que quedaron asignados en cada sede.</p>
-    <label>
-      Valor de referencia:
-      <input type="number" [(ngModel)]="valorReferencia" />
-    </label>
-    <button type="button" [disabled]="valorReferencia === null || calculandoComision" (click)="calcularComisionIlustrativa()">
-      {{ calculandoComision ? 'Calculando…' : 'Calcular comisión ilustrativa' }}
-    </button>
-    <p *ngIf="comisionError" class="error">{{ comisionError }}</p>
-    <p *ngIf="comisionCalculada" class="ok">✓ Comisión ilustrativa calculada — no oficial, se incluirá en la descarga.</p>
+  <section class="card" *ngIf="resultado">
+    <div class="card-title">
+      <span class="icon">💰</span>
+      <div>
+        <h2>Ejercicio ilustrativo de comisión</h2>
+        <p>Divide un valor de referencia entre los representantes ya asignados en cada sede.</p>
+      </div>
+    </div>
+
+    <div class="alert alert-warning">
+      <span class="alert-icon">⚠</span>
+      <span><strong>Valor de ejemplo — no es la tasa oficial de Convatec.</strong> Sirve para anclar la conversación sobre cómo debería calcularse la comisión real.</span>
+    </div>
+
+    <div class="procesar-row">
+      <label class="mes-input">
+        Valor de referencia
+        <input type="number" [(ngModel)]="valorReferencia" placeholder="ej. 100" />
+      </label>
+      <button type="button" class="btn-primary" [disabled]="valorReferencia === null || calculandoComision" (click)="calcularComisionIlustrativa()">
+        {{ calculandoComision ? '⏳ Calculando…' : '✨ Calcular comisión ilustrativa' }}
+      </button>
+    </div>
+    <p *ngIf="comisionError" class="alert alert-error">{{ comisionError }}</p>
+    <p *ngIf="comisionCalculada" class="alert alert-ok">✓ Comisión ilustrativa calculada — se incluirá en la vista previa y en la descarga, etiquetada como no oficial.</p>
   </section>
 
-  <section class="step" *ngIf="resultado">
-    <h2>5. Descargar resultado</h2>
-    <button type="button" [disabled]="descargando" (click)="descargarResultado()">
-      {{ descargando ? 'Descargando…' : 'Descargar Excel' }}
+  <section class="card" *ngIf="resultado">
+    <div class="card-title">
+      <span class="icon">👁️</span>
+      <div>
+        <h2>Vista previa del resultado</h2>
+        <p>Las mismas columnas que trae el Excel a descargar.</p>
+      </div>
+    </div>
+
+    <p *ngIf="cargandoPreview" class="loading">⏳ Cargando vista previa…</p>
+    <p *ngIf="previewError" class="alert alert-error">{{ previewError }}</p>
+
+    <ng-container *ngIf="preview">
+      <p class="preview-caption">
+        Mostrando <strong>{{ preview.previewRows }}</strong> de <strong>{{ preview.totalRows | number }}</strong> filas
+      </p>
+      <div class="preview-scroll">
+        <table class="preview-table">
+          <thead>
+            <tr>
+              <th *ngFor="let col of preview.columns">{{ col }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of preview.rows">
+              <td *ngFor="let col of preview.columns">
+                <span *ngIf="col === 'Representante' && row[col]" class="rep-chip">
+                  <span class="rep-avatar">{{ iniciales(row[col]) }}</span>{{ row[col] }}
+                </span>
+                <span *ngIf="col === 'Motivo_Excepcion'" class="badge" [ngClass]="row[col] ? motivoClase(row[col] + '') : 'badge-ok'">
+                  {{ row[col] || 'sin marcar' }}
+                </span>
+                <ng-container *ngIf="col !== 'Representante' && col !== 'Motivo_Excepcion'">{{ row[col] }}</ng-container>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-container>
+  </section>
+
+  <section class="card" *ngIf="resultado">
+    <div class="card-title">
+      <span class="icon">⬇️</span>
+      <div>
+        <h2>Descargar resultado</h2>
+        <p>Mismo formato de entrada + representante, grupo de vendedor y motivo de excepción.</p>
+      </div>
+    </div>
+    <button type="button" class="btn-primary btn-large" [disabled]="descargando" (click)="descargarResultado()">
+      {{ descargando ? '⏳ Descargando…' : '⬇ Descargar Excel' }}
     </button>
   </section>
 </div>
