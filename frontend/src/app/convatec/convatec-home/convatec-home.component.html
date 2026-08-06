@@ -5,7 +5,10 @@
       <h1>Asignación de representantes</h1>
       <p class="subtitle">Reemplaza el ejercicio manual de asignación por representante. El ejercicio de comisión al final es solo un ejemplo — la tasa oficial de Convatec todavía no existe.</p>
     </div>
-    <button type="button" class="btn-ghost" (click)="reiniciarSesion()">Reiniciar sesión</button>
+    <div class="hero-actions">
+      <a class="btn-ghost" routerLink="/convatec/maestros">Ver sedes / ciudades / representantes</a>
+      <button type="button" class="btn-ghost" (click)="reiniciarSesion()">Reiniciar sesión</button>
+    </div>
   </header>
 
   <ol class="stepper">
@@ -20,7 +23,7 @@
   <section class="card">
     <div class="card-title">
       <h2>Tablas maestras</h2>
-      <p>Sube el Excel con las tablas de referencia. Cada carga reemplaza por completo la anterior.</p>
+      <p>Quedan guardadas para todas las sesiones futuras — solo necesitas volver a subir el Excel si cambia algo. Cada carga reemplaza por completo la anterior.</p>
     </div>
 
     <label class="dropzone" [class.filled]="maestros.rows !== null" [class.has-error]="maestros.error">
@@ -72,6 +75,14 @@
         <span class="dropzone-detail" *ngIf="enviosNacionales.rows !== null">{{ enviosNacionales.rows }} filas</span>
         <span class="dropzone-detail error" *ngIf="enviosNacionales.error">{{ enviosNacionales.error }}</span>
       </label>
+
+      <label class="dropzone compact optional" [class.filled]="reconocimiento.rows !== null || reconocimiento.fileName" [class.has-error]="reconocimiento.error">
+        <input type="file" accept=".xls,.xlsx" (change)="onReconocimientoSelected($event)" />
+        <span class="dropzone-label">Reconocimiento de ingresos <em>(opcional, solo para validar el total)</em></span>
+        <span class="status-label ok" *ngIf="reconocimiento.fileName && !reconocimiento.error">Cargado</span>
+        <span class="status-label error" *ngIf="reconocimiento.error">Error</span>
+        <span class="dropzone-detail error" *ngIf="reconocimiento.error">{{ reconocimiento.error }}</span>
+      </label>
     </div>
   </section>
 
@@ -118,6 +129,35 @@
         {{ motivo.key }} · {{ motivo.value }}
       </span>
     </div>
+  </section>
+
+  <section class="card" *ngIf="resultado && reconocimiento.fileName && !reconocimiento.error">
+    <div class="card-title">
+      <h2>Validación de cifras</h2>
+      <p>Compara el total del ciclo procesado contra el total del reconocimiento de ingresos — el mismo chequeo SAP vs Hyperion del paso 10 del proceso original. No participa en la asignación.</p>
+    </div>
+
+    <button type="button" class="btn-primary" [disabled]="validandoCifras" (click)="validarCifras()">
+      {{ validandoCifras ? 'Validando…' : 'Validar cifras' }}
+    </button>
+    <p *ngIf="validacionError" class="alert alert-error">{{ validacionError }}</p>
+
+    <div *ngIf="validacionCifras" class="kpi-row">
+      <div class="kpi-card">
+        <span class="kpi-value">{{ validacionCifras.totalProcesado | number:'1.0-2' }}</span>
+        <span class="kpi-label">Total procesado</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-value">{{ validacionCifras.totalReconocimiento | number:'1.0-2' }}</span>
+        <span class="kpi-label">Total reconocimiento</span>
+      </div>
+      <div class="kpi-card" [class.ok]="validacionCifras.cifrasCuadran" [class.warn]="!validacionCifras.cifrasCuadran">
+        <span class="kpi-value">{{ validacionCifras.diferencia | number:'1.0-2' }}</span>
+        <span class="kpi-label">Diferencia</span>
+      </div>
+    </div>
+    <p *ngIf="validacionCifras && validacionCifras.cifrasCuadran" class="alert alert-ok">Las cifras cuadran.</p>
+    <p *ngIf="validacionCifras && !validacionCifras.cifrasCuadran" class="alert alert-warning">Las cifras no cuadran — revisa antes de la reunión.</p>
   </section>
 
   <section class="card" *ngIf="resultado">

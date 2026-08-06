@@ -12,9 +12,17 @@ from flask import Blueprint, current_app, request, send_file
 
 from app.convatec.column_aliases import normalize_columns
 from app.convatec.export import build_output_excel, preview_rows
+from app.convatec.maestros_resumen import (
+    resumen_continence,
+    resumen_envios_nacionales,
+    resumen_otras_franquicias,
+    resumen_repartir,
+)
+from app.convatec.comision_externa_referencia import ComisionExternaError, load_comision_externa
 from app.convatec.master_tables import MasterTablesError, load_master_tables
 from app.convatec.patient_columns import drop_patient_columns
 from app.convatec.pipeline import calcular_comision_ilustrativa, procesar_ciclo
+from app.convatec.reconocimiento_ingreso import ReconocimientoIngresoError, load_total_reconocimiento
 from app.convatec.session_store import ConvatecSessionStore
 from app.data_access.excel_loader import load_excel_dataframe
 from app.utils.api_response import api_response
@@ -42,9 +50,17 @@ def _valid_numero(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+def _master_tables_counts(producto_table, representantes_table, convenios_table) -> dict:
+    return {
+        "productoRows": int(producto_table.shape[0]),
+        "representantesRows": int(representantes_table.shape[0]),
+        "conveniosRows": int(convenios_table.shape[0]),
+    }
+
+
 @convatec_bp.post("/tablas-maestras")
 def upload_master_tables():
-    """Story 1.1 (FR-3): replace the whole master-tables set for this session."""
+    """Story 1.1 (FR-3): replace the whole (global, persisted) master-tables set."""
     if "file" not in request.files:
         return api_response(message="No se recibió ningún archivo.", success=False, status=400)
     try:
@@ -56,12 +72,25 @@ def upload_master_tables():
         _session_id(), tables["PRODUCTO"], tables["REPRESENTANTES"], tables["CONVENIOS"]
     )
     return api_response(
-        data={
-            "productoRows": int(tables["PRODUCTO"].shape[0]),
-            "representantesRows": int(tables["REPRESENTANTES"].shape[0]),
-            "conveniosRows": int(tables["CONVENIOS"].shape[0]),
-        },
+        data=_master_tables_counts(tables["PRODUCTO"], tables["REPRESENTANTES"], tables["CONVENIOS"]),
         message="Tablas maestras cargadas. Reemplazan cualquier versión anterior.",
+    )
+
+
+@convatec_bp.get("/tablas-maestras")
+def master_tables_status():
+    """Lets the UI show "ya cargado" on page load without re-uploading --
+    maestros are global/persisted (request 2026-08-06), so a fresh page load
+    or a brand-new session should never look like it needs a re-upload."""
+    session_id = _session_id()
+    store = _store()
+    if not store.has_master_tables(session_id):
+        return api_response(data=None, message="No hay tablas maestras cargadas todavía.")
+
+    producto_table, representantes_table, convenios_table = store.master_tables(session_id)
+    return api_response(
+        data=_master_tables_counts(producto_table, representantes_table, convenios_table),
+        message="Tablas maestras ya cargadas.",
     )
 
 
@@ -90,6 +119,54 @@ def upload_ventas(tipo):
     return api_response(
         data={"tipo": tipo, "rows": int(df.shape[0]), "columns": list(map(str, df.columns))},
         message=f"{tipo} cargado ({df.shape[0]} filas).",
+    )
+
+
+@convatec_bp.post("/reconocimiento-ingreso")
+def upload_reconocimiento_ingreso():
+    """Step 10 of John's original process ("Validación de cifras SAP
+    Hyperion"), story request 2026-08-06: NOT an assignment input -- this
+    file has no Convenio/Codigo/Departamento, so it never reaches
+    pipeline.py. Its only role is a total-vs-total check against the
+    processed cycle (see /validacion-cifras)."""
+    if "file" not in request.files:
+        return api_response(message="No se recibió ningún archivo.", success=False, status=400)
+    try:
+        total = load_total_reconocimiento(request.files["file"])
+    except ReconocimientoIngresoError as exc:
+        return api_response(message=str(exc), success=False, status=400)
+
+    _store().set_reconocimiento_total(_session_id(), total)
+    return api_response(data={"total": total}, message="Reconocimiento de ingresos cargado.")
+
+
+@convatec_bp.get("/validacion-cifras")
+def validacion_cifras():
+    """Compares the processed cycle's grand total against the uploaded
+    Reconocimiento de Ingresos total. Both must be available for this
+    session; FR-9's exact-sum guarantee means splitting "Repartir" lines
+    never changes the grand total, so this is a fair comparison."""
+    session_id = _session_id()
+    store = _store()
+    resultado = store.get_resultado(session_id)
+    reconocimiento_total = store.get_reconocimiento_total(session_id)
+    if resultado is None or reconocimiento_total is None:
+        return api_response(
+            message="Necesitas procesar un ciclo y subir el reconocimiento de ingresos primero.",
+            success=False,
+            status=400,
+        )
+
+    total_procesado = float(resultado["Valor Total"].sum())
+    diferencia = round(total_procesado - reconocimiento_total, 2)
+    return api_response(
+        data={
+            "totalProcesado": total_procesado,
+            "totalReconocimiento": reconocimiento_total,
+            "diferencia": diferencia,
+            "cifrasCuadran": abs(diferencia) < 0.01,
+        },
+        message="Validación de cifras calculada.",
     )
 
 
@@ -206,6 +283,48 @@ def descargar_resultado():
         download_name="convatec_asignacion.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+@convatec_bp.post("/comision-externa-referencia")
+def comision_externa_referencia():
+    """Explicit user decision (2026-08-06): 'COMISION POR VENTAS.xls' stays
+    OUT of the Convatec pipeline (confirmed not to be Convatec data, no
+    Convenio/Codigo/Departamento to join on) -- this endpoint only parses
+    and returns its own vendor/tasa/neto/comision table, stateless, so the
+    UI can show it as a clearly separate reference, never mixed with a
+    Convatec resultado."""
+    if "file" not in request.files:
+        return api_response(message="No se recibió ningún archivo.", success=False, status=400)
+    try:
+        filas = load_comision_externa(request.files["file"])
+    except ComisionExternaError as exc:
+        return api_response(message=str(exc), success=False, status=400)
+
+    return api_response(data={"filas": filas}, message="Referencia externa cargada — no es de Convatec.")
+
+
+@convatec_bp.get("/maestros-resumen")
+def maestros_resumen():
+    """Read-only territory directory (sede/ciudad/representante) for its own
+    screen, separate from the sell-out processing flow -- story request
+    2026-08-06. Continence/envios/Repartir come from reference_data.py and
+    are always available; "otras franquicias" needs the uploaded
+    REPRESENTANTES + CONVENIOS tables."""
+    session_id = _session_id()
+    store = _store()
+    data = {
+        "continence": resumen_continence(),
+        "enviosNacionales": resumen_envios_nacionales(),
+        "repartir": resumen_repartir(),
+        "otrasFranquicias": [],
+        "otrasFranquiciasDisponible": False,
+    }
+    if store.has_master_tables(session_id):
+        _producto, representantes_table, convenios_table = store.master_tables(session_id)
+        data["otrasFranquicias"] = resumen_otras_franquicias(representantes_table, convenios_table)
+        data["otrasFranquiciasDisponible"] = True
+
+    return api_response(data=data, message="Resumen de maestros.")
 
 
 @convatec_bp.post("/reiniciar")

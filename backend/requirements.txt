@@ -4,6 +4,7 @@ python-dotenv
 gunicorn
 pandas
 openpyxl
+xlrd
 matplotlib
 seaborn
 scipy

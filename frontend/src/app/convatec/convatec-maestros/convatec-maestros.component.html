@@ -1,0 +1,134 @@
+<div class="convatec-maestros">
+  <header class="hero">
+    <div class="hero-text">
+      <p class="eyebrow">Convatec · Convacare Clinic</p>
+      <h1>Sedes, ciudades y representantes</h1>
+      <p class="subtitle">Directorio de territorio completo — las mismas reglas que usa el motor de asignación, en un solo lugar para consultar.</p>
+    </div>
+    <a class="btn-ghost" routerLink="/convatec">Volver a procesar ventas</a>
+  </header>
+
+  <p *ngIf="cargando" class="loading">Cargando…</p>
+  <p *ngIf="error" class="alert alert-error">{{ error }}</p>
+
+  <ng-container *ngIf="resumen">
+    <section class="card">
+      <div class="card-title">
+        <h2>Regla 1 — Continence por departamento</h2>
+        <p>Aplica a toda la franquicia Continence, sin importar el convenio.</p>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Departamento</th><th>Grupo de vendedor</th><th>Representante</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of resumen.continence">
+              <td>{{ row.departamento }}</td>
+              <td>{{ row.grupoVendedor }}</td>
+              <td>
+                <span class="rep-chip"><span class="rep-avatar">{{ row.representante.charAt(0) }}</span>{{ row.representante }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <h2>Regla 3 — Envíos nacionales por departamento destino</h2>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Departamento destino</th><th>Grupo de vendedor</th><th>Representante</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of resumen.enviosNacionales">
+              <td>{{ row.departamento }}</td>
+              <td>{{ row.grupoVendedor }}</td>
+              <td>
+                <span class="rep-chip"><span class="rep-avatar">{{ row.representante.charAt(0) }}</span>{{ row.representante }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <h2>Regla 2 — Otras franquicias por convenio</h2>
+        <p>Ostomías, Heridas y CCC. Viene de las tablas maestras que subiste.</p>
+      </div>
+      <p *ngIf="!resumen.otrasFranquiciasDisponible" class="alert alert-warning">
+        Sube las tablas maestras en la pantalla de procesar ventas para ver esta sección.
+      </p>
+      <div class="table-scroll" *ngIf="resumen.otrasFranquiciasDisponible">
+        <table>
+          <thead>
+            <tr><th>Convenio</th><th>Ciudad</th><th>Grupo de vendedor</th><th>Representante</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of resumen.otrasFranquicias">
+              <td>{{ row.convenio }}</td>
+              <td>{{ row.ciudad || '—' }}</td>
+              <td>{{ row.grupoVendedor ?? '—' }}</td>
+              <td>{{ row.representante }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <h2>Casos "Repartir" — split proporcional</h2>
+        <p>Cuando una línea no tiene un único representante, se divide en partes iguales entre estos.</p>
+      </div>
+      <div class="repartir-grid">
+        <div class="repartir-card" *ngFor="let region of resumen.repartir">
+          <h3>{{ region.region }}</h3>
+          <span class="rep-chip" *ngFor="let m of region.miembros">
+            <span class="rep-avatar">{{ m.representante.charAt(0) }}</span>{{ m.representante }} · Grupo {{ m.grupoVendedor }}
+          </span>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+
+  <section class="card externa">
+    <div class="card-title">
+      <h2>Referencia externa — no es de Convatec</h2>
+      <p>Otro cliente/sistema. Se muestra aparte y nunca se mezcla con los datos de Convatec ni con el motor de asignación.</p>
+    </div>
+    <div class="alert alert-warning">
+      <span><strong>Estos vendedores y esta tasa no son de Convatec.</strong> Ningún nombre de aquí existe en las tablas maestras reales — es solo un ejemplo de formato de otro sistema.</span>
+    </div>
+
+    <label class="dropzone">
+      <input type="file" accept=".xls,.xlsx" (change)="onComisionExternaSelected($event)" />
+      <span>Haz clic para cargar el archivo de referencia</span>
+    </label>
+
+    <p *ngIf="cargandoComisionExterna" class="loading">Cargando…</p>
+    <p *ngIf="comisionExternaError" class="alert alert-error">{{ comisionExternaError }}</p>
+
+    <div class="table-scroll" *ngIf="comisionExterna">
+      <table>
+        <thead>
+          <tr><th>Vendedor (externo)</th><th>Neto</th><th>%</th><th>Comisión</th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let fila of comisionExterna">
+            <td>{{ fila.vendedor }}</td>
+            <td>{{ fila.neto | number:'1.0-2' }}</td>
+            <td>{{ fila.porcentaje }}%</td>
+            <td>{{ fila.comision | number:'1.0-2' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

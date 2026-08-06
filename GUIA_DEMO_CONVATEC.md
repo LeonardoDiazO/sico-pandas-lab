@@ -52,12 +52,28 @@ en vivo (ver §2 y §4).
 
 ## 2. Qué archivos usar
 
+**Las tablas maestras ya están cargadas — no necesitas volver a subirlas.**
+Quedan guardadas en el servidor entre sesiones (sobreviven incluso a un
+reinicio del backend), así que solo tienes que subir el Excel de maestros de
+nuevo si algo cambió (un representante, una zona) desde la última vez. Puedes
+confirmarlo en la pantalla: si dice "Ya cargadas" en el primer paso, está listo.
+
 De todo lo que tienes en Downloads, solo 3 archivos le sirven a este módulo:
 
-1. **Tablas maestras** → `Flujo del Proceso de Sell Out Convacare para Comisiones - Reglas.xlsx`
+1. **Tablas maestras** → `Flujo del Proceso de Sell Out Convacare para Comisiones - Reglas.xlsx` *(ya cargado — solo re-subir si cambió algo)*
 2. **Productos** → el detalle de productos del ciclo (reporte SAP)
 3. **Servicios** → el detalle de servicios del ciclo
 4. **Envíos nacionales** — *(opcional; si no tienes el archivo real a mano, deja este campo vacío y sigue solo con productos/servicios — la herramienta funciona igual)*
+
+**`reportTemplate...xls` (Reconocimiento de Ingreso)** — sí tiene un lugar en la app, pero solo para *validar*, no para asignar: es el chequeo "SAP vs Hyperion" del paso 10 del proceso original. Súbelo en el paso 2 (campo "Reconocimiento de ingresos", opcional) y después de procesar aparece un botón "Validar cifras" que compara el total.
+
+**`COMISION POR VENTAS.xls`** — confirmado: no es de Convatec, ningún vendedor de ahí existe en las tablas reales. Por pedido explícito, **sí se puede cargar**, pero queda en una sección aparte, en la pantalla de Maestros (`/convatec/maestros`, tarjeta "Referencia externa — no es de Convatec"), con advertencia en rojo. Nunca se mezcla con el flujo de asignación ni con la descarga — es solo para tenerlo a la vista como ejemplo de otro sistema.
+
+**Nuevo:** hay una pantalla aparte, "Ver sedes / ciudades / representantes"
+(link arriba a la derecha), que muestra todo el territorio de Convatec —
+Continence por departamento, envíos nacionales, convenios y los casos
+"Repartir" — sin necesidad de procesar ningún ciclo. Útil para abrir la
+reunión mostrando que ya tienen todo su mapa de representantes organizado.
 
 **No subas estos dos, aunque los tengas a mano:**
 - El asiento contable SAP (`reportTemplate...xls`) — no hay ningún campo para él; esa validación (SAP vs Hyperion) no está construida en este módulo.

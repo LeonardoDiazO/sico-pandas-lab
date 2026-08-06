@@ -1,6 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 
-import { ConvatecPreviewResult, ConvatecProcesarResult } from '../../models/api.models';
+import { ConvatecPreviewResult, ConvatecProcesarResult, ConvatecValidacionCifras } from '../../models/api.models';
 import { ConvatecService, VentasTipo } from '../services/convatec.service';
 
 interface UploadState {
@@ -17,7 +17,7 @@ const emptyUpload = (): UploadState => ({ fileName: null, rows: null, error: nul
   templateUrl: './convatec-home.component.html',
   styleUrl: './convatec-home.component.scss',
 })
-export class ConvatecHomeComponent {
+export class ConvatecHomeComponent implements OnInit {
   maestros: UploadState = emptyUpload();
   productos: UploadState = emptyUpload();
   servicios: UploadState = emptyUpload();
@@ -39,7 +39,28 @@ export class ConvatecHomeComponent {
   cargandoPreview = false;
   previewError: string | null = null;
 
+  reconocimiento: UploadState = emptyUpload();
+  validandoCifras = false;
+  validacionCifras: ConvatecValidacionCifras | null = null;
+  validacionError: string | null = null;
+
   constructor(private convatec: ConvatecService) {}
+
+  ngOnInit(): void {
+    // Maestros are global/persisted -- a fresh page load may already have
+    // them from a previous upload (even a previous session/restart).
+    this.convatec.estadoMasterTables().subscribe({
+      next: (res) => {
+        if (res.data) {
+          const totalRows = res.data.productoRows + res.data.representantesRows + res.data.conveniosRows;
+          this.maestros = { fileName: 'Ya cargadas', rows: totalRows, error: null };
+        }
+      },
+      error: () => {
+        // Silent: the upload dropzone still works normally if this check fails.
+      },
+    });
+  }
 
   get puedeProcesar(): boolean {
     return this.maestros.rows !== null && (this.productos.rows !== null || this.servicios.rows !== null || this.enviosNacionales.rows !== null);
@@ -97,16 +118,51 @@ export class ConvatecHomeComponent {
     });
   }
 
+  onReconocimientoSelected(event: Event): void {
+    const file = this.fileFrom(event);
+    if (!file) return;
+    this.convatec.uploadReconocimientoIngreso(file).subscribe({
+      next: () => {
+        this.reconocimiento = { fileName: file.name, rows: null, error: null };
+        this.validacionCifras = null;
+        this.validacionError = null;
+      },
+      error: (err) => {
+        this.reconocimiento = { fileName: file.name, rows: null, error: this.errorMessage(err) };
+      },
+    });
+  }
+
+  validarCifras(): void {
+    this.validandoCifras = true;
+    this.validacionError = null;
+    this.convatec.validarCifras().subscribe({
+      next: (res) => {
+        this.validacionCifras = res.data;
+        this.validandoCifras = false;
+      },
+      error: (err) => {
+        this.validacionError = this.errorMessage(err);
+        this.validandoCifras = false;
+      },
+    });
+  }
+
   reiniciarSesion(): void {
     this.convatec.reiniciarSesion().subscribe(() => {
-      this.maestros = emptyUpload();
+      // Maestros are global/persisted -- "reiniciar" clears this session's
+      // ventas/resultado only, never the territory rules (see backend
+      // ConvatecSessionStore.reset docstring). ngOnInit already re-checks
+      // this on load, so no need to re-check here again.
       this.productos = emptyUpload();
       this.servicios = emptyUpload();
       this.enviosNacionales = emptyUpload();
+      this.reconocimiento = emptyUpload();
       this.resultado = null;
       this.comisionCalculada = false;
       this.valorReferencia = null;
       this.preview = null;
+      this.validacionCifras = null;
     });
   }
 

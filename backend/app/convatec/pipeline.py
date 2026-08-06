@@ -15,11 +15,9 @@ FR-5's Convenio -> Ciudad resolution below is a DIFFERENT, verified chain
 that does not reach Departamento). Otherwise Continence lines without a
 Departamento are marked as an exception (FR-11) rather than guessed.
 """
-import re
-import unicodedata
-
 import pandas as pd
 
+from app.convatec.normalize import norm as _norm
 from app.convatec.reference_data import (
     DIRECTRICES_FIJAS_50_50,
     DIRECTRICES_ROTACION_MENSUAL,
@@ -34,19 +32,6 @@ from app.convatec.reference_data import (
 REPARTIR_PREFIX = "Repartir "
 CONTINENCE_FRANQUICIA = "CONTINENCE"
 CONTINENCE_CUNDINAMARCA_REGION = "continence_cundinamarca"
-_TRAILING_ZERO_DECIMAL = re.compile(r"\.0+$")
-
-
-def _norm(value) -> str:
-    """Normalize a lookup key: accent/case-insensitive, and tolerant of a
-    numeric Excel export turning '1004113' into '1004113.0' (SAP Code /
-    Convenio codes are sometimes numeric in one file and text in another --
-    found in code review, no test had caught it)."""
-    if pd.isna(value):
-        return ""
-    text = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
-    text = _TRAILING_ZERO_DECIMAL.sub("", text.strip())
-    return text.upper()
 
 
 def _require_columns(df: pd.DataFrame, columns, table_label: str) -> None:

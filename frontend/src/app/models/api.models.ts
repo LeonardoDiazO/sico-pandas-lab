@@ -179,3 +179,51 @@ export interface ConvatecPreviewResult {
   totalRows: number;
   previewRows: number;
 }
+
+export interface ConvatecDepartamentoRow {
+  departamento: string;
+  grupoVendedor: number | null;
+  representante: string;
+}
+
+export interface ConvatecRepartirRegion {
+  region: string;
+  miembros: { grupoVendedor: number; representante: string }[];
+}
+
+export interface ConvatecFranquiciaRow {
+  convenio: string;
+  ciudad: string | null;
+  grupoVendedor: number | null;
+  representante: string;
+}
+
+export interface ConvatecReconocimientoResult {
+  total: number;
+}
+
+export interface ConvatecValidacionCifras {
+  totalProcesado: number;
+  totalReconocimiento: number;
+  diferencia: number;
+  cifrasCuadran: boolean;
+}
+
+export interface ConvatecComisionExternaFila {
+  vendedor: string;
+  neto: number;
+  porcentaje: number;
+  comision: number;
+}
+
+export interface ConvatecComisionExternaResult {
+  filas: ConvatecComisionExternaFila[];
+}
+
+export interface ConvatecMaestrosResumen {
+  continence: ConvatecDepartamentoRow[];
+  enviosNacionales: ConvatecDepartamentoRow[];
+  repartir: ConvatecRepartirRegion[];
+  otrasFranquicias: ConvatecFranquiciaRow[];
+  otrasFranquiciasDisponible: boolean;
+}

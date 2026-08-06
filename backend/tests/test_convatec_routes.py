@@ -221,6 +221,85 @@ def test_preview_rejects_invalid_limit(client):
     assert resp2.status_code == 400
 
 
+def _reconocimiento_xlsx_bytes(total):
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for i, h in enumerate(["JE line", "GL account", "Debit amount", "Credit amount", "PK"]):
+        ws.cell(row=9, column=1 + i, value=h)
+    ws.cell(row=10, column=1, value=1)
+    ws.cell(row=10, column=4, value=total)
+    ws.cell(row=10, column=5, value=50)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def test_validacion_cifras_matches_when_totals_are_equal(client):
+    session = {"X-Session-Id": "cifras-cuadran"}
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    client.post(
+        "/api/convatec/ventas/productos",
+        data={"file": (_productos_xlsx_bytes(), "productos.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    client.post("/api/convatec/procesar", json={"mes": 3}, headers=session)
+    # _productos_xlsx_bytes() rows sum to 100.0 + 200.0 = 300.0
+    client.post(
+        "/api/convatec/reconocimiento-ingreso",
+        data={"file": (_reconocimiento_xlsx_bytes(300.0), "reconocimiento.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+
+    resp = client.get("/api/convatec/validacion-cifras", headers=session)
+    body = resp.get_json()["data"]
+    assert body["cifrasCuadran"] is True
+    assert body["totalProcesado"] == 300.0
+    assert body["totalReconocimiento"] == 300.0
+
+
+def test_validacion_cifras_flags_mismatch(client):
+    session = {"X-Session-Id": "cifras-no-cuadran"}
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    client.post(
+        "/api/convatec/ventas/productos",
+        data={"file": (_productos_xlsx_bytes(), "productos.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    client.post("/api/convatec/procesar", json={"mes": 3}, headers=session)
+    client.post(
+        "/api/convatec/reconocimiento-ingreso",
+        data={"file": (_reconocimiento_xlsx_bytes(999.0), "reconocimiento.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+
+    resp = client.get("/api/convatec/validacion-cifras", headers=session)
+    body = resp.get_json()["data"]
+    assert body["cifrasCuadran"] is False
+    assert body["diferencia"] != 0
+
+
+def test_validacion_cifras_requires_both_inputs(client):
+    resp = client.get("/api/convatec/validacion-cifras", headers={"X-Session-Id": "cifras-vacio"})
+    assert resp.status_code == 400
+
+
 def test_upload_ventas_rejects_unknown_tipo(client):
     resp = client.post(
         "/api/convatec/ventas/algo-invalido",
@@ -231,7 +310,72 @@ def test_upload_ventas_rejects_unknown_tipo(client):
     assert resp.status_code == 400
 
 
-def test_reiniciar_clears_session_state(client):
+def _comision_externa_xlsx_bytes():
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Hoja2"
+    for i, h in enumerate(["Vendedor", "Tipo", "No.Factura", "Dia", "Bod", "Gravado", "Exento", "Bruto", "I.V.A.", "Flete", "N E T O", "Com", "Comision"]):
+        ws.cell(row=7, column=1 + i, value=h)
+    ws.cell(row=8, column=1, value="VEGA BELEÑO CARLOS")
+    ws.cell(row=8, column=11, value=100.0)
+    ws.cell(row=8, column=12, value=20.0)
+    ws.cell(row=8, column=13, value=20.0)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def test_comision_externa_referencia_is_stateless_and_never_touches_convatec_data(client):
+    resp = client.post(
+        "/api/convatec/comision-externa-referencia",
+        data={"file": (_comision_externa_xlsx_bytes(), "comision.xls")},
+        content_type="multipart/form-data",
+        headers={"X-Session-Id": "referencia-externa"},
+    )
+    assert resp.status_code == 200
+    filas = resp.get_json()["data"]["filas"]
+    assert filas == [{"vendedor": "VEGA BELEÑO CARLOS", "neto": 100.0, "porcentaje": 20.0, "comision": 20.0}]
+
+    # Never stored -- procesar/descargar for this session are unaffected.
+    resp_procesar = client.post(
+        "/api/convatec/procesar", json={}, headers={"X-Session-Id": "referencia-externa"}
+    )
+    assert resp_procesar.status_code == 400
+
+
+def test_maestros_resumen_available_without_upload(client):
+    resp = client.get("/api/convatec/maestros-resumen", headers={"X-Session-Id": "resumen-sin-upload"})
+    assert resp.status_code == 200
+    body = resp.get_json()["data"]
+    assert len(body["continence"]) > 0
+    assert len(body["enviosNacionales"]) > 0
+    assert len(body["repartir"]) > 0
+    assert body["otrasFranquiciasDisponible"] is False
+    assert body["otrasFranquicias"] == []
+
+
+def test_maestros_resumen_includes_otras_franquicias_after_upload(client):
+    session = {"X-Session-Id": "resumen-con-upload"}
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
+    resp = client.get("/api/convatec/maestros-resumen", headers=session)
+    body = resp.get_json()["data"]
+    assert body["otrasFranquiciasDisponible"] is True
+    assert body["otrasFranquicias"][0]["convenio"] == "SALUD TOTAL"
+    assert body["otrasFranquicias"][0]["ciudad"] == "BOGOTA"
+
+
+def test_reiniciar_clears_ventas_but_keeps_global_maestros(client):
+    """Maestros are global and persisted -- 'reiniciar' is for a wrong
+    ciclo/ventas upload, not for clearing the territory rules (those get
+    replaced by uploading a new maestros workbook, not by reiniciar)."""
     session = {"X-Session-Id": "para-reiniciar"}
     client.post(
         "/api/convatec/tablas-maestras",
@@ -239,19 +383,88 @@ def test_reiniciar_clears_session_state(client):
         content_type="multipart/form-data",
         headers=session,
     )
+    client.post(
+        "/api/convatec/ventas/productos",
+        data={"file": (_productos_xlsx_bytes(), "productos.xlsx")},
+        content_type="multipart/form-data",
+        headers=session,
+    )
     reset_resp = client.post("/api/convatec/reiniciar", headers=session)
     assert reset_resp.status_code == 200
 
-    procesar_resp = client.post("/api/convatec/procesar", json={}, headers=session)
-    assert procesar_resp.status_code == 400  # maestros were cleared by reiniciar
+    # Ventas were cleared by reiniciar -- nothing to process now.
+    procesar_resp = client.post("/api/convatec/procesar", json={"mes": 3}, headers=session)
+    assert procesar_resp.status_code == 400
+    assert "insumo" in procesar_resp.get_json()["message"]
 
 
-def test_two_sessions_do_not_share_state(client):
+def test_master_tables_status_reflects_global_upload_from_any_session(client):
+    resp_before = client.get("/api/convatec/tablas-maestras", headers={"X-Session-Id": "estado-antes"})
+    assert resp_before.get_json()["data"] is None
+
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers={"X-Session-Id": "quien-subio"},
+    )
+
+    resp_after = client.get("/api/convatec/tablas-maestras", headers={"X-Session-Id": "otra-sesion-cualquiera"})
+    body = resp_after.get_json()["data"]
+    assert body["representantesRows"] == 1
+
+
+def test_master_tables_are_global_across_sessions(client):
+    """Request 2026-08-06: one Convatec, one set of maestros -- uploading in
+    one session must make them usable in another, unlike ventas/resultado."""
     client.post(
         "/api/convatec/tablas-maestras",
         data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
         content_type="multipart/form-data",
         headers={"X-Session-Id": "session-a"},
     )
-    resp_b = client.post("/api/convatec/procesar", json={}, headers={"X-Session-Id": "session-b"})
-    assert resp_b.status_code == 400  # session-b never uploaded maestros itself
+    client.post(
+        "/api/convatec/ventas/productos",
+        data={"file": (_productos_xlsx_bytes(), "productos.xlsx")},
+        content_type="multipart/form-data",
+        headers={"X-Session-Id": "session-b"},
+    )
+    resp_b = client.post("/api/convatec/procesar", json={"mes": 3}, headers={"X-Session-Id": "session-b"})
+    assert resp_b.status_code == 200
+
+
+def test_ventas_and_resultado_stay_isolated_per_session(client):
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers={"X-Session-Id": "session-c"},
+    )
+    client.post(
+        "/api/convatec/ventas/productos",
+        data={"file": (_productos_xlsx_bytes(), "productos.xlsx")},
+        content_type="multipart/form-data",
+        headers={"X-Session-Id": "session-c"},
+    )
+    # session-d shares the global maestros but has no ventas of its own.
+    resp_d = client.post("/api/convatec/procesar", json={"mes": 3}, headers={"X-Session-Id": "session-d"})
+    assert resp_d.status_code == 400
+
+
+def test_master_tables_persist_across_a_new_store_instance(client, tmp_path, monkeypatch):
+    """The whole point of this feature: a fresh ConvatecSessionStore (e.g.
+    after a backend restart) must pick up whatever was last uploaded, from
+    disk, with no re-upload."""
+    from app.convatec import master_tables_store
+    from app.convatec.session_store import ConvatecSessionStore
+
+    monkeypatch.setattr(master_tables_store, "DATA_DIR", tmp_path / "convatec")
+    client.post(
+        "/api/convatec/tablas-maestras",
+        data={"file": (_maestros_xlsx_bytes(), "maestros.xlsx")},
+        content_type="multipart/form-data",
+        headers={"X-Session-Id": "session-e"},
+    )
+
+    fresh_store = ConvatecSessionStore()
+    assert fresh_store.has_master_tables("cualquier-sesion-nueva") is True

@@ -50,8 +50,18 @@
   }
 }
 
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
 .btn-ghost {
   flex-shrink: 0;
+  text-decoration: none;
+  text-align: center;
+  display: inline-block;
   background: #fff;
   border: 1px solid var(--primary-light);
   color: var(--primary);
