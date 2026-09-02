@@ -7,6 +7,7 @@ inside the isolated per-session worker, so it stays fast by design instead of
 relying on the worker's resource.setrlimit timeout: the header scan is capped
 and no O(n^2) work is done over the full row count.
 """
+import datetime
 import re
 import warnings
 
@@ -175,12 +176,38 @@ def _detect_header_row(raw):
 
     header_row_index = None
     scan_end = min(boundary_start + HEADER_LOOKAHEAD_ROWS + 1, n_rows)
+
+    # A fixed "must be >=40% numeric" floor wrongly treats a file's own first
+    # real data row as a second header line whenever most of its columns are
+    # descriptive rather than numeric (fecha/vendedor/ciudad/producto + just
+    # 1-2 numeric columns) - a common shape for a business report, not an
+    # edge case (a real bug: a clean 200-row sales file with 4 text/date
+    # columns and 2 numeric ones landed at "usable_con_limpieza" with the
+    # header misdetected 10 rows into the data). Calibrate the floor instead
+    # from a sample of rows deep in THIS file's own dense block (median of
+    # the last few rows of the scan window, not a single row, so one sparse
+    # SUBTOTAL-style row in that sample can't skew it) - only ever relaxed
+    # DOWNWARD from NUMERIC_ROW_RATIO, never raised, so a file whose real
+    # data rows are already comfortably above it (e.g. the Matecol-shaped
+    # fixtures) sees no behavior change at all.
+    sample_start = max(boundary_start + 1, scan_end - 5)
+    sample_fractions = [
+        pd.to_numeric(row.dropna(), errors="coerce").notna().mean()
+        for _, row in raw.iloc[sample_start:scan_end].iterrows()
+        if row.notna().any()
+    ]
+    data_row_threshold = NUMERIC_ROW_RATIO
+    if sample_fractions:
+        typical_data_fraction = pd.Series(sample_fractions).median()
+        if 0 < typical_data_fraction < NUMERIC_ROW_RATIO:
+            data_row_threshold = typical_data_fraction
+
     for row_idx in range(boundary_start, scan_end):
         non_null = raw.iloc[row_idx].dropna()
         if len(non_null) == 0:
             continue
         numeric_fraction = pd.to_numeric(non_null, errors="coerce").notna().mean()
-        if numeric_fraction >= NUMERIC_ROW_RATIO:
+        if numeric_fraction >= data_row_threshold:
             break  # first row that looks like actual data - stop here
         header_row_index = row_idx
     # If the very first candidate row is already data-like, there was never a
@@ -237,29 +264,56 @@ def _coerce_numeric_columns(data, columns):
     return data
 
 
+_MAX_SAMPLE_VALUES = 5
+
+
+def _column_stats(full_series, non_null_series):
+    """Cheap per-column stats the semantic classifier (and any future
+    profiling UI) needs, computed once here rather than re-scanning the
+    column again downstream. `sampleValues` stringifies each value
+    (JSON-safe regardless of the cell's original Excel type - a Timestamp,
+    an int, whatever) and caps at _MAX_SAMPLE_VALUES - enough for a human or
+    an LLM to recognize the shape of the data without ever sending the whole
+    column. `uniqueRatio`/`nullRatio` expose what _looks_like_numeric_measure
+    already computes internally for its own decision, previously discarded.
+    """
+    total = len(full_series)
+    non_null = len(non_null_series)
+    unique_ratio = (non_null_series.nunique() / non_null) if non_null else 0.0
+    null_ratio = (1 - non_null / total) if total else 0.0
+    sample_values = [str(v) for v in non_null_series.unique()[:_MAX_SAMPLE_VALUES]]
+    return {
+        "sampleValues": sample_values,
+        "uniqueRatio": round(unique_ratio, 4),
+        "nullRatio": round(null_ratio, 4),
+    }
+
+
 def _infer_column_types(data):
     columns = []
     for position in range(data.shape[1]):
         name = data.columns[position]
-        series = data.iloc[:, position].dropna()
+        full_series = data.iloc[:, position]
+        series = full_series.dropna()
+        stats = _column_stats(full_series, series)
         if len(series) == 0:
-            columns.append({"name": name, "type": TYPE_DESCARTABLE})
+            columns.append({"name": name, "type": TYPE_DESCARTABLE, **stats})
             continue
 
         # Date check first: a YYYYMMDD-style date (e.g. 20260701) is also
         # valid numeric data, so numeric alone can't tell them apart - dates
         # are the more specific/useful classification for grouping/plotting.
         if _is_date_like(series):
-            columns.append({"name": name, "type": TYPE_FECHA})
+            columns.append({"name": name, "type": TYPE_FECHA, **stats})
             continue
 
         numeric = pd.to_numeric(series, errors="coerce")
         if numeric.notna().mean() >= NUMERIC_MIN_RATIO:
             column_type = TYPE_NUMERICA if _looks_like_numeric_measure(numeric) else TYPE_CATEGORICA
-            columns.append({"name": name, "type": column_type})
+            columns.append({"name": name, "type": column_type, **stats})
             continue
 
-        columns.append({"name": name, "type": TYPE_CATEGORICA})
+        columns.append({"name": name, "type": TYPE_CATEGORICA, **stats})
     return columns
 
 
@@ -287,6 +341,17 @@ def _is_date_like(series):
     dateutil-based) when values actually look date-shaped, so plain short
     codes (e.g. vendor ids like "0", "1") never trigger the slow path.
     """
+    # A real bug: a column of genuine Excel dates (openpyxl hands these back
+    # as pd.Timestamp objects, not strings) was classified "categorica" --
+    # .astype(str) renders a midnight Timestamp as "2026-05-09 00:00:00",
+    # and the trailing time-of-day component never matches
+    # DATE_SEPARATOR_PATTERN's anchored end. Checking the actual element
+    # type first sidesteps string formatting entirely (pd.Timestamp is
+    # itself a datetime.date subclass, so this one check covers date,
+    # datetime and Timestamp values alike).
+    if series.apply(lambda v: isinstance(v, datetime.date)).mean() >= DATE_MIN_RATIO:
+        return True
+
     as_str = series.astype(str).str.strip()
     yyyymmdd_ratio = as_str.str.match(DATE_YYYYMMDD_PATTERN).mean()
     if yyyymmdd_ratio >= DATE_MIN_RATIO:

@@ -238,7 +238,7 @@ def test_generate_chart_returns_an_image_for_a_bound_dataframe(client):
     assert response.status_code == 200
     assert body["success"] is True
     assert body["data"]["error"] is None
-    assert body["data"]["image_base64"]
+    assert body["data"]["chart_svg"]
 
 
 def test_generate_chart_histograma_without_value_column_is_rejected(client):
@@ -312,7 +312,7 @@ def test_generate_chart_warns_on_high_cardinality_before_generating(client):
     assert body["success"] is True
     data = body["data"]
     assert data["needsConfirmation"] is True
-    assert data["image_base64"] is None
+    assert data["chart_svg"] is None
     assert data["cardinalityWarning"]["columns"] == ["factura"]
     assert data["cardinalityWarning"]["uniqueCount"] == 20
     assert data["cardinalityWarning"]["threshold"] == 15
@@ -337,7 +337,7 @@ def test_generate_chart_with_force_generates_despite_high_cardinality(client):
     assert data["needsConfirmation"] is False
     assert data["cardinalityWarning"] is None
     assert data["error"] is None
-    assert data["image_base64"]
+    assert data["chart_svg"]
 
 
 def test_generate_chart_low_cardinality_never_warns(client):
@@ -350,7 +350,7 @@ def test_generate_chart_low_cardinality_never_warns(client):
     )
     data = response.get_json()["data"]
     assert data["needsConfirmation"] is False
-    assert data["image_base64"]
+    assert data["chart_svg"]
 
 
 def test_generate_chart_histograma_never_triggers_cardinality_warning(client):
@@ -368,7 +368,7 @@ def test_generate_chart_histograma_never_triggers_cardinality_warning(client):
     )
     data = response.get_json()["data"]
     assert data["needsConfirmation"] is False
-    assert data["image_base64"]
+    assert data["chart_svg"]
 
 
 def test_generate_chart_histograma_without_columns_key_succeeds(client):
@@ -387,7 +387,7 @@ def test_generate_chart_histograma_without_columns_key_succeeds(client):
     assert response.status_code == 200
     assert body["success"] is True
     assert body["data"]["error"] is None
-    assert body["data"]["image_base64"]
+    assert body["data"]["chart_svg"]
 
 
 # --- Story 7.2: multiple columns -----------------------------------------------
@@ -429,7 +429,7 @@ def test_generate_chart_with_multiple_categorical_columns_succeeds(client):
     assert response.status_code == 200
     assert body["success"] is True
     assert body["data"]["error"] is None
-    assert body["data"]["image_base64"]
+    assert body["data"]["chart_svg"]
 
 
 def test_generate_chart_linea_rejects_multiple_columns(client):
@@ -506,7 +506,7 @@ def test_generate_chart_accepts_linea_with_a_fecha_column_when_types_are_provide
     body = response.get_json()
     assert response.status_code == 200
     assert body["data"]["error"] is None
-    assert body["data"]["image_base64"]
+    assert body["data"]["chart_svg"]
 
 
 def test_generate_chart_rejects_torta_with_a_non_categorica_column_when_types_are_provided(client):
@@ -848,8 +848,11 @@ def test_sort_table_returns_rows_ordered_descending_by_default(client):
     data = body["data"]
     assert data["error"] is None
     assert data["result_html"] is not None
-    # descending: the highest neto (109, vendedor V0 since i=9) comes first
-    assert data["result_html"].index(">109<") < data["result_html"].index(">100<")
+    # descending: the highest neto (109, vendedor V0 since i=9) comes first.
+    # "neto" is recognized as a money column (_looks_like_money), so the
+    # table displays it with the "$ " pesos prefix (Story 8.2) -- not a
+    # plain number.
+    assert data["result_html"].index(">$ 109<") < data["result_html"].index(">$ 100<")
     assert "% del total" in data["result_html"]
     assert "% acumulado" in data["result_html"]
     assert data["explanation"] is not None
@@ -866,7 +869,7 @@ def test_sort_table_ascending(client):
     )
     data = response.get_json()["data"]
     assert data["error"] is None
-    assert data["result_html"].index(">100<") < data["result_html"].index(">109<")
+    assert data["result_html"].index(">$ 100<") < data["result_html"].index(">$ 109<")
 
 
 def test_sort_table_missing_value_column_is_rejected(client):

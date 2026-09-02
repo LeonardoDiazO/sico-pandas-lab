@@ -10,6 +10,7 @@ trusted internal users, not against a determined attacker. Resource limits are
 applied via resource.setrlimit on POSIX (Render/Linux); on Windows dev
 machines the limits are skipped with no error.
 """
+import traceback
 
 
 def _install_resource_limits(mem_bytes, cpu_seconds):
@@ -41,7 +42,33 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
 
     from app.notebook.execution import build_namespace, execute_code
 
-    namespace = build_namespace()
+    try:
+        namespace = build_namespace()
+    except Exception as exc:
+        # A broken environment (e.g. a dependency listed in requirements.txt
+        # but not actually installed) must never look like "your code timed
+        # out" -- that misleads a learner into thinking their code is slow or
+        # wrong when the problem is the server's setup. Report it immediately
+        # and exit; WorkerManager._get_or_create() will see this process is
+        # dead and spin up a fresh one on the next attempt.
+        output_q.put(
+            {
+                "stdout": "",
+                "result_html": None,
+                "result_text": None,
+                "result_records": None,
+                "chart_svg": None,
+                "error": {
+                    "type": type(exc).__name__,
+                    "message": (
+                        "El entorno de ejecución no pudo iniciar (esto no es un error en "
+                        f"tu código, es un problema del servidor): {exc}"
+                    ),
+                    "traceback": traceback.format_exc(),
+                },
+            }
+        )
+        return
 
     while True:
         message = input_q.get()
@@ -63,6 +90,6 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
             # visible from the browser's network tab.
             from app.guided.challenges import run_checker
 
-            output_q.put(run_checker(message["challenge_id"], namespace))
+            output_q.put(run_checker(message["challenge_id"], namespace, message.get("context")))
         else:
             output_q.put({"error": {"type": "ProtocolError", "message": f"tipo desconocido: {kind}", "traceback": ""}})

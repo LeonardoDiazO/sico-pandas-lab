@@ -46,6 +46,32 @@ def test_barras_without_value_column():
     assert ".plot.bar(" in code
 
 
+@pytest.mark.parametrize("n_categories", [1, 2, 3, 4, 5, 6])
+def test_barras_runs_end_to_end_regardless_of_category_count(n_categories):
+    """Regression: a real bug found in production - pandas'
+    Series.plot.bar(color=...) misreads a bare Python list of EXACTLY 3 or 4
+    RGB tuples as one RGB(A) color instead of a list of colors, raising
+    ValueError('Invalid color (...)') - so any barras chart with exactly 3
+    or 4 categories crashed while 1, 2, 5, 6 worked fine. Parametrized across
+    that exact boundary so a future regression on either side is caught."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    categories = [f"Categoria{i}" for i in range(n_categories)]
+    execute_code(
+        f"import pandas as pd\ndf = pd.DataFrame({{'cat': {categories!r} * 3, 'neto': list(range({n_categories * 3}))}})",
+        namespace,
+    )
+    code = build_chart_code("barras", "df", ["cat"], "neto")
+    result = execute_code(code, namespace)
+    assert result["error"] is None, result["error"]
+    assert result["chart_svg"]
+
+
 def test_linea_converts_date_column_without_fixed_format():
     code = build_chart_code("linea", "df", ["dia"], "neto")
     _assert_valid_python(code)

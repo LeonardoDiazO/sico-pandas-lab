@@ -239,8 +239,17 @@ def build_chart_code(chart_type, variable, columns, value_column):
             ]
         else:
             lines += [
+                # np.array(...) around the color list (not the plain list
+                # tab20.colors[:n] gives) - a real bug found in production:
+                # pandas' Series.plot.bar(color=...) misreads a bare Python
+                # list of exactly 3 or 4 RGB tuples as ONE RGB(A) color
+                # instead of a list of colors ("Invalid color
+                # ((0.12,...), (0.68,...), (1.0,...))"), so any barras chart
+                # with exactly 3 or 4 categories crashed. A 2D numpy array
+                # is unambiguous to pandas' own color-detection regardless
+                # of length - confirmed empirically for 1 through 6.
                 "_ax = _chart_data.plot.bar(figsize=(10, 7), "
-                "color=plt.get_cmap('tab20').colors[:len(_chart_data)])",
+                "color=np.array(plt.get_cmap('tab20').colors[:len(_chart_data)]))",
                 # Plain thousands-separated numbers instead of matplotlib's
                 # default "1e8"-style scientific notation on the y-axis -
                 # reuses the same _fmt_valor as the title/torta legend.

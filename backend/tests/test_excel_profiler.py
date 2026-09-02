@@ -154,6 +154,58 @@ def _tied_local_width_xlsx_bytes():
     return _to_xlsx_bytes(rows)
 
 
+def _sales_report_xlsx_bytes(n_rows=200):
+    """Reproduces a real bug found manually testing the app: a plain, clean
+    sales report (header at row 0, no metadata/junk) with MORE descriptive
+    columns than numeric ones -- Fecha/Vendedor/Ciudad/Producto (4 text/date
+    columns) + Cantidad/Neto (2 numeric) -- and Fecha written as an actual
+    Excel date (not a YYYYMMDD integer, unlike _clean_xlsx_bytes() above).
+    Every real data row is only 2/6 = 33% numeric, below the old fixed 40%
+    floor, which made the profiler misdetect a data row as a second header
+    line and walk the "header" all the way to row 10."""
+    import datetime
+
+    header = ["Fecha", "Vendedor", "Ciudad", "Producto", "Cantidad", "Neto"]
+    rows = [header]
+    vendedores = ["Ana", "Luis", "Marta"]
+    ciudades = ["Bogota", "Medellin"]
+    for i in range(n_rows):
+        rows.append(
+            [
+                datetime.date(2026, 1, 1) + datetime.timedelta(days=i % 200),
+                vendedores[i % len(vendedores)],
+                ciudades[i % len(ciudades)],
+                f"Producto{i % 4}",
+                (i % 50) + 1,
+                1000.0 + i,
+            ]
+        )
+    return _to_xlsx_bytes(rows)
+
+
+def test_sales_report_with_mostly_descriptive_columns_is_usable():
+    xlsx = _sales_report_xlsx_bytes()
+    result = profile_excel(_Upload("ventas.xlsx", xlsx))
+    assert result["verdict"] == "usable"
+    assert result["header_row_index"] == 0
+    names = [c["name"] for c in result["columns"]]
+    assert names == ["Fecha", "Vendedor", "Ciudad", "Producto", "Cantidad", "Neto"]
+    assert result["dataframe"] is not None
+    assert len(result["dataframe"]) == 200
+
+
+def test_sales_report_date_column_with_real_timestamps_is_typed_fecha():
+    """Regression: openpyxl hands real Excel date cells back as pd.Timestamp
+    (midnight-time by default), which .astype(str) renders as
+    "2026-05-09 00:00:00" -- the trailing time-of-day used to make
+    DATE_SEPARATOR_PATTERN never match, so the column fell through to
+    "categorica" instead of "fecha"."""
+    xlsx = _sales_report_xlsx_bytes()
+    result = profile_excel(_Upload("ventas.xlsx", xlsx))
+    types = {c["name"]: c["type"] for c in result["columns"]}
+    assert types["Fecha"] == "fecha"
+
+
 def test_clean_excel_is_usable_with_header_at_row_zero():
     result = profile_excel(_Upload("limpio.xlsx", _clean_xlsx_bytes()))
     assert result["verdict"] == "usable"
