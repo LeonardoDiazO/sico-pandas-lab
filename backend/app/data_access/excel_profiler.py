@@ -65,7 +65,7 @@ def profile_excel(file_storage):
     """
     raw = read_excel_raw(file_storage)
 
-    header_row_index = _detect_header_row(raw)
+    first_header_row_index, header_row_index = _detect_header_row(raw)
     if header_row_index is None:
         return {
             "verdict": VERDICT_NO_USABLE,
@@ -78,7 +78,7 @@ def profile_excel(file_storage):
             "dataframe": None,
         }
 
-    header = raw.iloc[header_row_index]
+    header = _merge_header_rows(raw.iloc[first_header_row_index : header_row_index + 1])
     data = raw.iloc[header_row_index + 1 :].reset_index(drop=True)
     data.columns = _dedupe_names(
         str(value).strip() if pd.notna(value) and str(value).strip() else f"col_{i}"
@@ -126,8 +126,45 @@ def profile_excel(file_storage):
     }
 
 
+def _merge_header_rows(header_rows):
+    """When the header spans multiple rows - a broad category row stacked
+    directly above the specific field-name row, common in accounting/
+    inventory system exports - combine them into one label per column
+    instead of keeping only the last, most specific row and silently
+    dropping the context above it.
+
+    Real bug found in production: a report had THREE columns whose specific
+    row alone all said "Descripcion" (provider's name, vendor's name, item's
+    name), indistinguishable after _dedupe_names() suffixed them
+    "Descripcion"/"Descripcion_2"/"Descripcion_3" - every chart title,
+    AI-suggested classification, and generated insight sentence then talked
+    about "Descripcion_2" instead of "Vendedor". Two more columns whose
+    specific labels ("I.V.A.") were themselves ambiguous (VAT on the sale vs.
+    VAT on a return) resolved identically once merged with their own
+    category row ("Venta I.V.A." vs. "Devolucion I.V.A.").
+
+    Cells are joined top-to-bottom, skipping blanks, with a single space - a
+    column where only ONE of the rows has a value (the overwhelmingly common
+    case: a single-row header, or two header rows that happen to fall in
+    different column RANGES rather than stacking on the same columns) is
+    left with exactly that value, unchanged from before this function
+    existed.
+    """
+    n_cols = header_rows.shape[1]
+    merged = []
+    for col in range(n_cols):
+        parts = [str(v).strip() for v in header_rows.iloc[:, col] if pd.notna(v) and str(v).strip()]
+        merged.append(" ".join(parts) if parts else None)
+    return pd.Series(merged)
+
+
 def _detect_header_row(raw):
-    """Find the row carrying the real column labels.
+    """Find the row(s) carrying the real column labels.
+
+    Returns (first_header_row_index, last_header_row_index) - the same
+    single index twice for the common single-row-header case, or a range
+    when the header spans several consecutive text rows (see
+    _merge_header_rows) - or (None, None) if no header could be found.
 
     Two passes, both capped at MAX_HEADER_SCAN_ROWS/HEADER_LOOKAHEAD_ROWS for
     speed:
@@ -149,7 +186,7 @@ def _detect_header_row(raw):
     """
     n_rows = len(raw)
     if n_rows == 0:
-        return None
+        return None, None
 
     non_null_counts = raw.notna().sum(axis=1)
 
@@ -165,7 +202,7 @@ def _detect_header_row(raw):
     local_counts = non_null_counts.iloc[:sample_end]
     width_counts = local_counts.mode()
     if width_counts.empty or width_counts.max() == 0:
-        return None
+        return None, None
     # On a tie (e.g. a sparse metadata preamble and the real header+data
     # rows evenly splitting the local window), prefer the WIDER candidate:
     # real data rows fill more columns than metadata/label rows, so the
@@ -186,7 +223,7 @@ def _detect_header_row(raw):
             boundary_start = row_idx
             break
     if boundary_start is None:
-        return None
+        return None, None
 
     header_row_index = None
     scan_end = min(boundary_start + HEADER_LOOKAHEAD_ROWS + 1, n_rows)
@@ -227,7 +264,32 @@ def _detect_header_row(raw):
     # If the very first candidate row is already data-like, there was never a
     # text header to find (e.g. a raw numeric dump) - report "no header" rather
     # than silently treating a data row's values as column names.
-    return header_row_index
+    if header_row_index is None:
+        return None, None
+
+    # Not every text row between boundary_start and header_row_index belongs
+    # in the merged header - a loose metadata line above it ("Reporte
+    # generado: ...", a single filled cell in an otherwise wide sheet) must
+    # never get folded into the real column names, only an actual second
+    # header row does (comparably dense to the specific-label row itself,
+    # e.g. a category row naming "Vendedor"/"Proveedor" per group of
+    # columns). Walk backward from header_row_index and keep including rows
+    # only while they're reasonably dense - same JUNK_ROW_WIDTH_RATIO
+    # threshold the data body's own junk-row filter already uses. A fully
+    # blank spacer row (0 cells) doesn't break the chain, matching the
+    # forward walk above, which already tolerates one between two header
+    # lines.
+    width = raw.shape[1]
+    first_header_row_index = header_row_index
+    for row_idx in range(header_row_index - 1, boundary_start - 1, -1):
+        count = non_null_counts.iloc[row_idx]
+        if count == 0:
+            continue
+        if count < width * JUNK_ROW_WIDTH_RATIO:
+            break
+        first_header_row_index = row_idx
+
+    return first_header_row_index, header_row_index
 
 
 def _compute_junk_mask(data):

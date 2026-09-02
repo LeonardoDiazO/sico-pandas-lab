@@ -3,7 +3,7 @@ import io
 import pandas as pd
 import pytest
 
-from app.data_access.excel_loader import load_excel_dataframe, read_excel_raw
+from app.data_access.excel_loader import _detect_engine, load_excel_dataframe, read_excel_raw
 
 
 class _Upload:
@@ -60,6 +60,36 @@ def test_read_excel_raw_rejects_non_excel_extension():
 def test_read_excel_raw_rejects_corrupt_excel():
     with pytest.raises(ValueError):
         read_excel_raw(_Upload("roto.xlsx", io.BytesIO(b"no soy un excel")))
+
+
+def test_xls_extension_with_real_xlsx_content_still_reads_correctly():
+    """Regression: a real production file (est_proveedorvdart_admon.xls) is
+    a modern XLSX/OOXML file some ERP exported with a ".xls" extension -
+    forcing engine="openpyxl" happened to work for this exact shape, but
+    only because openpyxl was hardcoded; the point of _detect_engine is that
+    it works by looking at the actual content, not by accident of which
+    engine happened to be hardcoded."""
+    df = load_excel_dataframe(_Upload("reporte.xls", _xlsx_bytes()))
+    assert list(df.columns) == ["a", "b"]
+
+
+def test_detect_engine_picks_xlrd_for_ole2_signature():
+    """Regression: a genuine legacy Excel 97-2003 (.xls) file is an OLE2/BIFF
+    binary, NOT a zip - forcing engine="openpyxl" (OOXML-only) on one raised
+    a confusing "BadZipFile: File is not a zip file" even though xlrd (which
+    reads exactly this format) was already a project dependency, just never
+    wired in. Detecting by the file's own signature (not the extension, which
+    the test above shows can't be trusted either way) picks the engine that
+    can actually read it."""
+    ole2_like = io.BytesIO(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 100)
+    assert _detect_engine(ole2_like) == "xlrd"
+    # Must rewind after peeking at the signature, so the actual read below
+    # starts from byte 0 like every other caller expects.
+    assert ole2_like.tell() == 0
+
+
+def test_detect_engine_picks_openpyxl_for_zip_signature():
+    assert _detect_engine(_xlsx_bytes()) == "openpyxl"
 
 
 def test_load_excel_dataframe_and_read_excel_raw_can_both_read_same_upload():

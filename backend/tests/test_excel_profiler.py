@@ -3,7 +3,7 @@ import io
 import pandas as pd
 import pytest
 
-from app.data_access.excel_profiler import profile_excel
+from app.data_access.excel_profiler import _merge_header_rows, profile_excel
 
 
 class _Upload:
@@ -410,3 +410,89 @@ def test_profiling_a_representative_size_file_is_fast():
     elapsed = time.perf_counter() - start
     assert elapsed < 5
     assert result["verdict"] in ("usable", "usable_con_limpieza", "no_usable")
+
+
+# --- two-row stacked headers get merged, not silently reduced to the last row ------
+
+
+def test_merge_header_rows_combines_a_category_row_with_the_specific_row():
+    rows = pd.DataFrame(
+        [
+            ["Vendedor", None, "Cantidad"],
+            ["Descripcion", "Codigo", "Venta"],
+        ]
+    )
+    merged = _merge_header_rows(rows)
+    assert list(merged) == ["Vendedor Descripcion", "Codigo", "Cantidad Venta"]
+
+
+def test_merge_header_rows_single_row_is_unchanged():
+    rows = pd.DataFrame([["Vendedor", "Neto"]])
+    assert list(_merge_header_rows(rows)) == ["Vendedor", "Neto"]
+
+
+def test_merge_header_rows_all_blank_column_stays_none():
+    rows = pd.DataFrame([[None, "a"], [None, "b"]])
+    merged = _merge_header_rows(rows)
+    assert pd.isna(merged[0])
+    assert merged[1] == "a b"
+
+
+def _stacked_two_row_header_xlsx_bytes():
+    """Reproduces the real bug (est_proveedorvdart_admon.xls): a broad
+    category row (Proveedor/Vendedor/Articulo, some cells blank) stacked
+    directly above the specific field-name row, where three DIFFERENT
+    columns share the exact same specific label "Descripcion" - only
+    distinguishable via the category row above them, which the pre-fix
+    profiler silently discarded (keeping only the last, most-specific row),
+    leaving all three as indistinguishable "Descripcion"/"Descripcion_2"/
+    "Descripcion_3"."""
+    # A numeric column (Neto) is essential, not incidental - it is what lets
+    # the header-detection walk tell "still header" from "data starts here";
+    # without it every row here (2 header rows + 20 all-text data rows)
+    # looks equally text-like, so the walk never stops and this fixture
+    # would test something other than the two-row-header case it's meant to.
+    rows = [
+        ["Proveedor", None, "Vendedor", "Articulo", None],
+        ["Codigo", "Descripcion", "Descripcion", "Descripcion", "Neto"],
+    ]
+    for i in range(20):
+        rows.append([f"P{i:03d}", f"Proveedor {i}", f"Vendedor {i % 4}", f"Producto {i}", 1000.0 + i])
+    return _to_xlsx_bytes(rows)
+
+
+def test_loose_metadata_line_above_the_header_is_not_folded_into_column_names():
+    """Regression: the first version of the header-merge fix was too eager -
+    it combined EVERY text row between the header and the density boundary,
+    including a loose one-cell metadata line ("Reporte generado: ...") right
+    above the real header, producing a column literally named
+    "Reporte generado: vendedor". A metadata line is sparse (one filled cell
+    in an otherwise wide row) compared to the real header row beside it -
+    only a comparably dense row (an actual second header line) should ever
+    get folded in."""
+    rows = [
+        ["Reporte generado:", None, None],
+        ["vendedor", "neto", "cantidad"],
+    ]
+    for i in range(12):
+        rows.append([f"V{i % 3}", 100.0 + i, i])
+    xlsx = _to_xlsx_bytes(rows)
+
+    result = profile_excel(_Upload("sucio.xlsx", xlsx))
+
+    assert result["header_row_index"] == 1
+    names = [c["name"] for c in result["columns"]]
+    assert names == ["vendedor", "neto", "cantidad"]
+
+
+def test_stacked_two_row_header_recovers_distinct_names_for_repeated_specific_labels():
+    xlsx = _stacked_two_row_header_xlsx_bytes()
+    result = profile_excel(_Upload("reporte.xlsx", xlsx))
+    names = [c["name"] for c in result["columns"]]
+    assert names == [
+        "Proveedor Codigo",
+        "Descripcion",
+        "Vendedor Descripcion",
+        "Articulo Descripcion",
+        "Neto",
+    ]

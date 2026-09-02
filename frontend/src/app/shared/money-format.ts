@@ -42,5 +42,16 @@ export function looksLikeMoney(columnName: string | null | undefined): boolean {
     return false;
   }
   const lowered = columnName.toLowerCase().replace(/\s+/g, '');
+  // Real bug found in production: a merged two-row header column named
+  // "Cantidad Venta" (a UNIT COUNT, not a peso amount) got a "$" prefix
+  // because "venta" alone is a money keyword - "venta" is genuinely
+  // ambiguous in Spanish ("the sale" as an event/count vs. its peso value).
+  // "cantidad" (quantity) is an unambiguous negative signal that overrides
+  // any positive keyword match - same fix and same one-directional safety
+  // as backend/app/notebook/chart_builder.py's _looks_like_money() - keep
+  // both in sync.
+  if (lowered.includes('cantidad')) {
+    return false;
+  }
   return MONEY_KEYWORDS.some((keyword) => lowered.includes(keyword));
 }

@@ -488,6 +488,22 @@ def test_looks_like_money_does_not_match_plain_quantities_or_codes():
         assert _looks_like_money(name) is False
 
 
+def test_looks_like_money_excludes_a_quantity_column_even_with_a_money_keyword():
+    """Real bug found in production (est_proveedorvdart_admon.xls, seen live
+    in the auto-analysis dashboard): the merged header "Cantidad Venta" (a
+    UNIT COUNT - how many items were sold, summed to ~5000 for a vendor) got
+    a "$" prefix and displayed as "$ 5.247", read by the user as pesos - but
+    "venta" alone is ambiguous in Spanish (the sale as an event/count vs.
+    its peso value), and the report's own "Cantidad" prefix already settles
+    which one this is. "VENTA" alone (no "cantidad") must still match -
+    that's a real, common money column shape (see the accounting-terms test
+    above) - only the combination is excluded."""
+    for name in ["Cantidad Venta", "cantidad venta", "Cantidad  Venta", "Cantidad Descuento"]:
+        assert _looks_like_money(name) is False
+    assert _looks_like_money("VENTA") is True
+    assert _looks_like_money("Descuento") is True
+
+
 def test_looks_like_money_matches_space_split_headers():
     """Real bug report (file: "relacion de facturas matecol.xlsx"): its own
     value column header is a two-row split header whose specific-field row

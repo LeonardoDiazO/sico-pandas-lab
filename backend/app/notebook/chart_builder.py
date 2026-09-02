@@ -91,10 +91,28 @@ def _looks_like_money(column_name):
     trimming the ends) fixes this generically for any similarly space-split
     header, without ever creating a false match: no keyword below contains a
     space itself, so removing spaces from the candidate name can only turn a
-    previously-missed match into a correct one, never the reverse."""
+    previously-missed match into a correct one, never the reverse.
+
+    Real bug found in production (est_proveedorvdart_admon.xls, a two-row
+    header merged by _merge_header_rows): the resulting column "Cantidad
+    Venta" (a UNIT COUNT - how many items were sold, ~5000 for a whole
+    vendor) got a "$" prefix and read as pesos, because "venta" alone is a
+    money keyword - but "venta" is genuinely ambiguous in Spanish business
+    vocabulary, meaning both "the sale" (an event/count) and "the sale's
+    peso value" depending on context. The report's own category-row prefix
+    already disambiguates this: "Cantidad ..." (quantity) is never money
+    regardless of what specific word follows, while "Valor ..."/"... Neta" -
+    genuinely money - never carry that prefix. Excluding "cantidad" is a
+    negative signal that overrides every positive keyword match, not a
+    second keyword list to keep in sync - it only ever turns a previous
+    false positive into a correct negative, the same one-directional safety
+    the whitespace-stripping fix above already relies on.
+    """
     if not column_name:
         return False
     lowered = "".join(column_name.lower().split())
+    if "cantidad" in lowered:
+        return False
     return any(keyword in lowered for keyword in _MONEY_KEYWORDS)
 
 
