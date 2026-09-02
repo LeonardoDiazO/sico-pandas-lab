@@ -201,7 +201,6 @@ LESSONS = [
                     "    df_02_movimiento\n"
                     "except NameError:\n"
                     "    df_02_movimiento = pd.DataFrame({\n"
-                    "        'mov_cia': ['01', '01', '01', '01', '01'],\n"
                     "        'mov_item': ['A100', 'B200', 'A100', 'C300', 'B200'],\n"
                     "        'mov_cantidad': [3, 1, 5, 2, 4],\n"
                     "        'mov_neto': [30000, 12000, 50000, 8000, 40000],\n"
