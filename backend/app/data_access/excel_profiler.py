@@ -21,7 +21,21 @@ DATA_WIDTH_RATIO = 0.85
 WINDOW_DENSE_RATIO = 0.65
 NUMERIC_ROW_RATIO = 0.4
 JUNK_ROW_WIDTH_RATIO = 0.5
-JUNK_TEXT_PATTERN = re.compile(r"\bSUBTOTAL\b|\bTOTALES?\b|\bTOT\.", re.IGNORECASE)
+# Real bug found in production: "\bTOTALES?\b" (no grouping parens) matches
+# the literal "TOTALE" + an optional trailing "S" - i.e. only "TOTALE" or
+# "TOTALES", NEVER bare "TOTAL". A real report's "TOTAL GENERAL --> " row
+# (grand-total row, its NETO column holding the sum of the entire file, ~380
+# million vs. individual rows in the thousands) slipped through the junk
+# filter untouched because of this, landing in the cleaned DataFrame as a row
+# with an empty "Vendedor" and a wildly outlying value - corrupting any
+# grouping/Pareto by that column. "TOTAL(ES)?" (grouped) matches "TOTAL",
+# "TOTAL:", "TOTAL GENERAL", and "TOTALES" alike, without also matching a
+# word that merely CONTAINS "total" as a substring (e.g. "ROTOTAL").
+# (?:SUB)? and (?:ES)? each independently optional - covers TOTAL, TOTALES,
+# SUBTOTAL and SUBTOTALES symmetrically (an earlier version only special-cased
+# the singular SUBTOTAL, missing its own plural the same way "TOTAL" alone
+# was missing its plural before that bug was found and fixed).
+JUNK_TEXT_PATTERN = re.compile(r"\b(?:SUB)?TOTAL(?:ES)?\b|\bTOT\.", re.IGNORECASE)
 NUMERIC_MIN_RATIO = 0.9
 CARDINALITY_MEASURE_RATIO = 0.5
 DATE_MIN_RATIO = 0.9
@@ -223,10 +237,34 @@ def _compute_junk_mask(data):
     every row of the uploaded file's data body, so a Python-level per-row loop
     here would scale with file size in the request thread - stays vectorized
     (pandas/numpy C-level ops) instead.
+
+    Real bug found in production (a false positive the fix below prevents,
+    discovered right after fixing the false negative in JUNK_TEXT_PATTERN
+    itself): matching the word "total" in ANY cell of the row, unconditionally,
+    would also delete a perfectly legitimate data row whose real text just
+    happens to contain that common Spanish word - a product called "ACEITE
+    TOTAL 20W50" or a client named "SEGUROS TOTAL SA" would get wiped out
+    along with the actual summary rows. A real total/subtotal row has a
+    distinctive shape: the id/description columns are empty, ONE cell carries
+    the "TOTAL..."/"SUBTOTAL..." label in isolation, and everything else
+    filled in that row is a number - never another piece of real text. So the
+    text signal only counts when the matching cell is the row's ONLY
+    non-numeric content; if some OTHER cell in the same row has real text
+    (a vendor code, a product name), the "total" match is coincidental and
+    the row is left alone.
     """
     non_null_counts = data.notna().sum(axis=1)
     width_mask = non_null_counts < (data.shape[1] * JUNK_ROW_WIDTH_RATIO)
-    text_mask = data.astype(str).apply(lambda col: col.str.contains(JUNK_TEXT_PATTERN, na=False)).any(axis=1)
+
+    str_data = data.astype(str)
+    cell_matches = str_data.apply(lambda col: col.str.contains(JUNK_TEXT_PATTERN, na=False))
+    has_marker = cell_matches.any(axis=1)
+
+    non_null = data.notna()
+    numeric_like = data.apply(lambda col: pd.to_numeric(col, errors="coerce")).notna()
+    other_real_text = non_null & ~numeric_like & ~cell_matches
+    text_mask = has_marker & ~other_real_text.any(axis=1)
+
     return width_mask | text_mask
 
 

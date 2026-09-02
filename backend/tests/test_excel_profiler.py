@@ -322,6 +322,85 @@ def test_junk_pattern_matches_bare_tot_marker():
     assert not JUNK_TEXT_PATTERN.search("ROTOT.")
 
 
+def test_junk_pattern_matches_bare_total_not_only_totale_or_totales():
+    """Regression: a real bug in production - "\\bTOTALES?\\b" (missing
+    grouping parens around "ES?") matched the literal "TOTALE" + an optional
+    trailing "S", i.e. only "TOTALE"/"TOTALES", NEVER bare "TOTAL". A real
+    report's "TOTAL GENERAL --> " grand-total row (its own NETO column
+    holding the sum of the ENTIRE file) slipped through the junk filter
+    untouched because of this, landing in the cleaned data with an empty
+    "Vendedor" and a wildly outlying value that corrupted any grouping/Pareto
+    by that column."""
+    from app.data_access.excel_profiler import JUNK_TEXT_PATTERN
+
+    assert JUNK_TEXT_PATTERN.search("TOTAL GENERAL --> ")
+    assert JUNK_TEXT_PATTERN.search("TOTAL")
+    assert JUNK_TEXT_PATTERN.search("TOTAL:")
+    assert JUNK_TEXT_PATTERN.search("TOTALES")
+    assert not JUNK_TEXT_PATTERN.search("ROTOTAL")
+
+
+def test_junk_pattern_matches_subtotales_plural_symmetrically_with_total():
+    """SUBTOTAL had no plural form ("SUBTOTALES") while TOTAL/TOTALES did -
+    same class of bug as the bare-TOTAL fix above, just the other keyword."""
+    from app.data_access.excel_profiler import JUNK_TEXT_PATTERN
+
+    assert JUNK_TEXT_PATTERN.search("SUBTOTAL")
+    assert JUNK_TEXT_PATTERN.search("SUBTOTALES POR ZONA")
+
+
+def test_legitimate_rows_whose_real_text_contains_the_word_total_are_kept():
+    """Regression: fixing the false negative above (bare "TOTAL" never
+    matching) naively by matching "TOTAL" anywhere in any cell would
+    introduce a false POSITIVE - a real data row whose product/client name
+    happens to contain that common Spanish word (e.g. "ACEITE TOTAL 20W50",
+    "SEGUROS TOTAL SA") would get wiped out along with actual summary rows.
+    A real total/subtotal row's marker is its ONLY non-numeric content; here
+    each row also has a real, non-numeric vendor code alongside the "total"
+    text, so none of them should be dropped."""
+    header = ["vendedor", "producto", "neto"]
+    rows = [
+        header,
+        ["V1", "ACEITE TOTAL 20W50", 1000.0],
+        ["V2", "SEGUROS TOTAL SA", 2000.0],
+        ["V1", "PEGANTE NORMAL", 1500.0],
+    ]
+    xlsx = _to_xlsx_bytes(rows)
+
+    result = profile_excel(_Upload("productos.xlsx", xlsx))
+
+    assert result["dataframe"] is not None
+    assert len(result["dataframe"]) == 3
+    assert set(result["dataframe"]["producto"]) == {
+        "ACEITE TOTAL 20W50",
+        "SEGUROS TOTAL SA",
+        "PEGANTE NORMAL",
+    }
+
+
+def test_grand_total_row_with_empty_dimension_and_huge_value_is_filtered_out():
+    """End-to-end reproduction of the real bug (anonymized shape of
+    est_proveedorvdart_admon.xls): a "SUBTOTAL" row per group (already
+    filtered correctly before this fix) plus a single "TOTAL GENERAL" row at
+    the very end of the file, in the same description column, holding the
+    grand total of the whole report - orders of magnitude larger than any
+    individual row. Must never survive into the cleaned DataFrame."""
+    header = ["vendedor", "descripcion", "neto"]
+    rows = [header]
+    for i in range(20):
+        rows.append([f"V{i % 4}", f"Producto {i}", 1000.0 + i])
+        if i % 5 == 4:
+            rows.append([None, "SUBTOTAL PROVEEDOR -->", 5000.0])
+    rows.append([None, "TOTAL GENERAL --> ", 999999999.0])
+    xlsx = _to_xlsx_bytes(rows)
+
+    result = profile_excel(_Upload("reporte.xlsx", xlsx))
+
+    assert result["dataframe"] is not None
+    assert result["dataframe"]["vendedor"].isna().sum() == 0
+    assert result["dataframe"]["neto"].max() < 999999999.0
+
+
 def test_profiling_a_representative_size_file_is_fast():
     import time
 
