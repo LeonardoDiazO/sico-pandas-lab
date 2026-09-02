@@ -3,7 +3,7 @@ import { AfterViewInit, Component, HostListener, OnDestroy, ViewChild } from '@a
 import { NotebookDraftService } from '../../core/notebook-draft.service';
 import { Snippet, SnippetsService } from '../../core/snippets.service';
 import { TourService } from '../../core/tour.service';
-import { CellResult, ExcelProfileColumn, LoadResult } from '../../models/api.models';
+import { CellResult, LoadResult } from '../../models/api.models';
 import { DataSourcePanelComponent } from '../../shared/data-source-panel/data-source-panel.component';
 import { KnownVariable } from '../../shared/chart-helper/chart-helper.component';
 import { SnippetSaveRequest } from '../../shared/code-cell/code-cell.component';
@@ -45,11 +45,6 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   knownVariables: KnownVariable[] = [];
   snippets: Snippet[] = [];
   restoredDraft = false;
-  /** The most recently profiled Excel (Epic 4) - null until one is loaded.
-   * Table loads from sico never carry `profile` (no profiling there), so
-   * this intentionally only updates on Excel loads, not on every `loaded`
-   * event - see Story 5.1 Dev Notes for why. */
-  excelProfile: { variable: string; columns: ExcelProfileColumn[] } | null = null;
 
   constructor(
     private notebook: NotebookService,
@@ -127,7 +122,6 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
         // for this session -- clear the matching local UI state so a stale
         // "Confirmar y continuar" button can't linger after a restart.
         this.dataSourcePanel?.resetUploadState();
-        this.excelProfile = null;
       },
       error: () => this.showBanner('No se pudo reiniciar la sesión.', false),
     });
@@ -143,9 +137,6 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
     // Drop a ready-to-run cell that shows the freshly loaded DataFrame.
     this.cells.push({ code: `${result.variable}.head()`, result: null, running: false });
     this.rememberVariable(result.variable, result.columns);
-    if (result.profile) {
-      this.excelProfile = { variable: result.variable, columns: result.profile.columns };
-    }
   }
 
   insertCode(code: string): void {

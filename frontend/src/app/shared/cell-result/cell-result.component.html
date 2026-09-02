@@ -18,7 +18,18 @@
     }
 
     @if (safeHtml) {
-      <div class="result-block table-wrap" [innerHTML]="safeHtml"></div>
+      <div
+        class="expandable table-wrap"
+        role="button"
+        tabindex="0"
+        title="Ver tabla completa"
+        (click)="expand('table')"
+        (keydown.enter)="expand('table')"
+        (keydown.space)="expand('table'); $event.preventDefault()"
+      >
+        <span class="expand-hint">⤢ Ver tabla completa</span>
+        <div class="result-block" [innerHTML]="safeHtml"></div>
+      </div>
     }
 
     @if (result.result_text) {
@@ -26,7 +37,32 @@
     }
 
     @if (safeChartSvg) {
-      <div class="result-block chart" [innerHTML]="safeChartSvg"></div>
+      <div
+        class="expandable chart"
+        role="button"
+        tabindex="0"
+        title="Ver gráfica en grande"
+        (click)="expand('chart')"
+        (keydown.enter)="expand('chart')"
+        (keydown.space)="expand('chart'); $event.preventDefault()"
+      >
+        <span class="expand-hint">⤢ Ver en grande</span>
+        <div class="result-block" [innerHTML]="safeChartSvg"></div>
+      </div>
     }
   </div>
+
+  @if (expanded) {
+    <div class="lightbox-backdrop" (click)="close()">
+      <div class="lightbox" [class.is-table]="expanded === 'table'" (click)="$event.stopPropagation()">
+        <button type="button" class="lightbox-close" (click)="close()" title="Cerrar (Esc)">✕</button>
+        @if (expanded === 'table' && safeHtml) {
+          <div class="lightbox-table" [innerHTML]="safeHtml"></div>
+        }
+        @if (expanded === 'chart' && safeChartSvg) {
+          <div class="lightbox-chart" [innerHTML]="safeChartSvg"></div>
+        }
+      </div>
+    </div>
+  }
 }

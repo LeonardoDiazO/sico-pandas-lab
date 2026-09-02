@@ -141,6 +141,29 @@ export class GuidedLessonComponent implements OnInit {
     } else {
       this.knownVariables = [...this.knownVariables, { name: result.variable, columns: result.columns }];
     }
+    this.refreshStepContent();
+  }
+
+  // After uploading an Excel mid-lesson, the backend can now generate example
+  // code/explanations against the learner's own columns instead of the fixed
+  // synthetic table (see WorkerManager.remember_profile / data_context.py) --
+  // refetch so the steps already on screen pick it up without a full page
+  // reload. Preserves each step's already-run `result` so re-uploading never
+  // discards output the learner already produced.
+  private refreshStepContent(): void {
+    if (!this.lesson) {
+      return;
+    }
+    this.guided.getLesson(this.lesson.id).subscribe({
+      next: (res) => {
+        this.lesson = res.data;
+        this.steps = res.data.steps.map((s, i) => ({
+          ...s,
+          result: this.steps[i]?.result ?? null,
+          running: false,
+        }));
+      },
+    });
   }
 
   get isComplete(): boolean {

@@ -56,6 +56,17 @@
   }
 }
 
+.no-code-hint {
+  font-size: 0.85rem;
+  color: #5b6272;
+  margin: 0 0 1rem;
+
+  a {
+    color: #51599b;
+    font-weight: 600;
+  }
+}
+
 .draft-banner {
   display: flex;
   align-items: center;

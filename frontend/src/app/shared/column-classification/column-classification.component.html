@@ -1,0 +1,32 @@
+<div class="classification">
+  @if (loading) {
+    <div class="loading-row">
+      <span class="spinner"></span>
+      Sugiriendo qué es cada columna…
+    </div>
+  } @else if (errorMessage) {
+    <p class="note error-text">{{ errorMessage }}</p>
+  } @else if (classifications.length > 0) {
+    <p class="note assistant-note" [class.fallback]="!usedAssistant">
+      @if (usedAssistant) {
+        <span class="dot ok"></span> Sugerencia generada por el asistente — corrige lo que haga falta.
+      } @else {
+        <span class="dot warn"></span> Asistente no disponible: sugerencia por reglas simples — revísala.
+      }
+    </p>
+    <div class="rows">
+      @for (c of classifications; track c.name) {
+        <div class="row">
+          <span class="role-dot" [attr.data-role]="c.role"></span>
+          <span class="col-name">{{ c.name }}</span>
+          <select [ngModel]="c.role" (ngModelChange)="setRole(c.name, $event)" [attr.data-role]="c.role">
+            @for (role of roleOptions; track role) {
+              <option [value]="role">{{ roleLabels[role] }}</option>
+            }
+          </select>
+        </div>
+      }
+    </div>
+    <button class="generate-btn" (click)="confirm()">Confirmar y generar análisis</button>
+  }
+</div>

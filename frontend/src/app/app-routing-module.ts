@@ -8,13 +8,16 @@ const routes: Routes = [
     loadChildren: () => import('./notebook/notebook-module').then((m) => m.NotebookModule),
   },
   {
+    path: 'sin-codigo',
+    loadChildren: () => import('./no-code/no-code-module').then((m) => m.NoCodeModule),
+  },
+  {
     path: 'guiado',
     loadChildren: () => import('./guided/guided-module').then((m) => m.GuidedModule),
   },
-  {
-    path: 'convatec',
-    loadChildren: () => import('./convatec/convatec-module').then((m) => m.ConvatecModule),
-  },
+  // Convatec (client-specific commission/assignment module) is disconnected
+  // on request -- its code stays under src/app/convatec in case the demo
+  // work with that client resumes later; just no longer routable.
   { path: '**', redirectTo: 'notebook' },
 ];
 

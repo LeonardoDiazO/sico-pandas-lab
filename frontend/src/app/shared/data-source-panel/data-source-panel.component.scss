@@ -1,9 +1,10 @@
 .data-panel {
-  background: #f0f1ff;
-  border: 1px solid #dfe0ff;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .panel-header {
@@ -14,20 +15,95 @@
   h3 {
     margin: 0;
     font-size: 0.95rem;
-    color: #2a2f5b;
+    color: var(--ink);
   }
 }
 
 .badge {
   font-size: 0.68rem;
-  background: #4a8f4a;
+  font-weight: 600;
+  background: var(--ok);
   color: #fff;
-  border-radius: 10px;
-  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  padding: 0.12rem 0.55rem;
   vertical-align: middle;
+}
 
-  &.off {
-    background: #b06a2c;
+// Styled <label> wrapping a visually-hidden real <input type=file> - same
+// interaction (click anywhere, native file picker), reads as an upload
+// target instead of a bare browser control.
+.dropzone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--brand);
+  }
+
+  &.busy {
+    cursor: default;
+    opacity: 0.75;
+  }
+
+  input[type='file'] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    overflow: hidden;
+  }
+}
+
+.dropzone-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+
+  strong {
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+}
+
+.dropzone-hint {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--brand-soft-border);
+  border-top-color: var(--brand);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -35,14 +111,15 @@
   width: 100%;
   box-sizing: border-box;
   padding: 0.4rem 0.6rem;
-  border: 1px solid #c9caee;
-  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   font-size: 0.82rem;
   margin-top: 0.5rem;
+  background: var(--surface);
 
   &:focus {
     outline: none;
-    border-color: #51599b;
+    border-color: var(--brand);
   }
 }
 
@@ -53,7 +130,7 @@
 .tables {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.3rem;
   margin: 0.6rem 0;
   max-height: 260px;
   overflow-y: auto;
@@ -63,22 +140,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border: 1px solid #e4e5fa;
-  border-radius: 5px;
-  padding: 0.3rem 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.65rem;
 }
 
 .table-name {
-  font-family: 'Consolas', monospace;
-  font-size: 0.82rem;
-  color: #2a2f5b;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink);
 }
 
 .link {
   background: none;
   border: none;
-  color: #51599b;
+  color: var(--brand-dark);
   cursor: pointer;
   text-decoration: underline;
   font-size: 0.78rem;
@@ -89,99 +166,107 @@
 }
 
 .load-btn {
-  background: #51599b;
+  background: var(--brand);
   color: #fff;
   border: none;
-  border-radius: 5px;
-  padding: 0.2rem 0.7rem;
+  border-radius: var(--radius-sm);
+  padding: 0.22rem 0.75rem;
   cursor: pointer;
   font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--brand-dark);
+  }
 
   &:disabled {
     opacity: 0.6;
+    cursor: default;
   }
 }
 
 .note {
-  font-size: 0.75rem;
-  color: #66668a;
-  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  margin: 0.4rem 0 0;
 }
 
 code {
-  background: #e2e3ff;
-  padding: 0.05rem 0.3rem;
-  border-radius: 3px;
+  background: var(--surface-alt);
+  color: var(--brand-ink);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
 }
 
 .cleanup-preview {
-  background: #fff;
-  border: 1px solid #e4e5fa;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
-  margin-top: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.75rem;
 }
 
 .cleanup-columns {
-  margin: 0.4rem 0;
+  margin: 0.5rem 0;
   padding-left: 0;
   list-style: none;
-  font-size: 0.78rem;
-  color: #2a2f5b;
+  font-size: 0.8rem;
+  color: var(--ink);
   max-height: 160px;
   overflow-y: auto;
 
   .checkbox-option {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.15rem 0;
+    gap: 0.45rem;
+    padding: 0.2rem 0;
     cursor: pointer;
   }
 }
 
 .cleanup-warning {
-  color: #8a4a1f;
+  color: var(--warn);
 }
 
 .cleanup-actions {
   display: flex;
   align-items: center;
   gap: 0.8rem;
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
 }
 
 .unusable-warning {
-  background: #fff4ec;
-  border: 1px solid #e8b98a;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
-  margin-top: 0.6rem;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.75rem;
 
   h4 {
     margin: 0 0 0.3rem;
     font-size: 0.85rem;
-    color: #8a4a1f;
+    color: var(--warn);
   }
 
   p {
     margin: 0.2rem 0;
     font-size: 0.8rem;
-    color: #6b4327;
+    color: var(--warn);
   }
 }
 
 .excel-toggle {
-  margin-top: 0.6rem;
+  margin-top: 0.75rem;
   font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
 
   summary {
     cursor: pointer;
-    color: #51599b;
-  }
-
-  input[type='file'] {
-    margin-top: 0.5rem;
-    font-size: 0.78rem;
+    color: var(--brand-dark);
+    font-weight: 500;
   }
 }

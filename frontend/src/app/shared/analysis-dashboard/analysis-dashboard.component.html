@@ -1,0 +1,55 @@
+@if (bloques.length > 0) {
+  <div class="dashboard">
+    @if (resumen) {
+      <div class="summary-strip">
+        @if (resumen.filas !== null) {
+          <div class="summary-stat">
+            <span class="summary-value">{{ resumen.filas | number: '1.0-0' }}</span>
+            <span class="summary-label">Filas analizadas</span>
+          </div>
+        }
+        <div class="summary-stat">
+          <span class="summary-value">{{ resumen.dimensiones }}</span>
+          <span class="summary-label">{{ resumen.dimensiones === 1 ? 'Dimensión' : 'Dimensiones' }}</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-value">{{ resumen.metricas }}</span>
+          <span class="summary-label">{{ resumen.metricas === 1 ? 'Métrica' : 'Métricas' }}</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-value">{{ resumen.bloques }}</span>
+          <span class="summary-label">{{ resumen.bloques === 1 ? 'Análisis generado' : 'Análisis generados' }}</span>
+        </div>
+      </div>
+    }
+
+    @for (group of groups; track group.metrica) {
+      <div class="metric-section">
+        <h4 class="metric-title">
+          <span class="metric-dot"></span>
+          {{ group.metrica }}
+        </h4>
+        <div class="grid">
+          @for (bloque of group.bloques; track bloque.titulo) {
+            <div class="block">
+              <div class="block-header">
+                <h5>{{ bloque.titulo }}</h5>
+                <span class="tag dimension">{{ bloque.dimension }}</span>
+              </div>
+
+              @if (bloque.insight) {
+                <p class="insight">{{ bloque.insight }}</p>
+              }
+
+              <app-cell-result [result]="bloque.resultado"></app-cell-result>
+
+              @if (!bloque.resultado.error && bloque.resultado.explanation) {
+                <p class="block-explanation">{{ bloque.resultado.explanation }}</p>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+  </div>
+}

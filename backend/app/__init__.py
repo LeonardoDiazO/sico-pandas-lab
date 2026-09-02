@@ -42,11 +42,16 @@ def create_app():
             message="ok",
         )
 
-    from app.convatec.session_store import ConvatecSessionStore
+    # Convatec (client-specific commission/assignment module) is disconnected
+    # on request -- unrelated to the pandas-learning product this app is
+    # otherwise focused on. Code and tests are left in place on disk in case
+    # the Convatec demo work resumes later; see test_convatec_routes.py's
+    # module-level skip for the matching test-side decision.
+    # from app.convatec.session_store import ConvatecSessionStore
+    # app.config["CONVATEC_SESSION_STORE"] = ConvatecSessionStore()
+    # from app.convatec.routes import convatec_bp
+    # app.register_blueprint(convatec_bp)
 
-    app.config["CONVATEC_SESSION_STORE"] = ConvatecSessionStore()
-
-    from app.convatec.routes import convatec_bp
     from app.data_access.routes import data_bp
     from app.guided.routes import guided_bp
     from app.notebook.routes import notebook_bp
@@ -54,6 +59,5 @@ def create_app():
     app.register_blueprint(notebook_bp)
     app.register_blueprint(data_bp)
     app.register_blueprint(guided_bp)
-    app.register_blueprint(convatec_bp)
 
     return app

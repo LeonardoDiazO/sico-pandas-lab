@@ -1,0 +1,174 @@
+.no-code {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.75rem 3rem;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand);
+  margin-bottom: 0.35rem;
+}
+
+h2 {
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+
+.intro {
+  color: var(--ink-muted);
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  max-width: 62ch;
+}
+
+.banner {
+  padding: 0.65rem 0.95rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+
+  &.ok {
+    background: var(--ok-soft);
+    color: var(--ok);
+    border: 1px solid var(--ok-border);
+  }
+
+  &.bad {
+    background: var(--bad-soft);
+    color: var(--bad);
+    border: 1px solid var(--bad-border);
+  }
+}
+
+// Numbered-step layout: a filled circle + connecting rail down the left
+// edge, same device most product onboarding flows use to signal "this is a
+// sequence, not a pile of unrelated panels" - the previous version stacked
+// every panel with no visual ordering at all.
+.step {
+  display: flex;
+  gap: 1.1rem;
+  position: relative;
+  padding-bottom: 1.75rem;
+
+  &:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 34px;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+}
+
+.step-marker {
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  color: var(--ink-muted);
+  font-weight: 700;
+  font-size: 0.88rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.step.done .step-num {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.step-body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0.2rem;
+
+  h3 {
+    font-size: 1.05rem;
+    margin-bottom: 0.7rem;
+  }
+}
+
+.generating {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--ink-muted);
+  margin-bottom: 0.9rem;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--brand);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.manual-toggle {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+
+  summary {
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--ink-muted);
+    padding: 0.75rem 1rem;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: '▸';
+      display: inline-block;
+      margin-right: 0.5rem;
+      color: var(--ink-faint);
+      transition: transform 0.15s ease;
+    }
+  }
+
+  &[open] summary::before {
+    transform: rotate(90deg);
+  }
+}
+
+.manual-panels {
+  padding: 0 1rem 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

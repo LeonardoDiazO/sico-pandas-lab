@@ -1,0 +1,69 @@
+<section class="no-code">
+  <header class="page-header">
+    <div>
+      <span class="eyebrow">Sin código</span>
+      <h2>Análisis automático de tu Excel</h2>
+      <p class="intro">
+        Sube un archivo, confirma qué es cada columna y obtén un tablero de
+        análisis — sin escribir una sola línea de código.
+      </p>
+    </div>
+  </header>
+
+  @if (banner) {
+    <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok">{{ banner.text }}</div>
+  }
+
+  <div class="step" [class.done]="!!excelProfile">
+    <div class="step-marker">
+      <span class="step-num">1</span>
+    </div>
+    <div class="step-body">
+      <h3>Sube tu archivo</h3>
+      <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+    </div>
+  </div>
+
+  @if (excelProfile) {
+    <div class="step" [class.done]="bloques.length > 0">
+      <div class="step-marker">
+        <span class="step-num">2</span>
+      </div>
+      <div class="step-body">
+        <h3>Confirma qué es cada columna</h3>
+        <app-column-classification
+          [profile]="excelProfile"
+          (confirmed)="onClassificationConfirmed($event)"
+        ></app-column-classification>
+      </div>
+    </div>
+  }
+
+  @if (generatingAnalysis || bloques.length > 0) {
+    <div class="step done">
+      <div class="step-marker">
+        <span class="step-num">3</span>
+      </div>
+      <div class="step-body">
+        <h3>Tu análisis</h3>
+        @if (generatingAnalysis) {
+          <div class="generating">
+            <span class="spinner"></span>
+            Generando análisis automático…
+          </div>
+        }
+        <app-analysis-dashboard [bloques]="bloques" [resumen]="resumen"></app-analysis-dashboard>
+      </div>
+    </div>
+  }
+
+  @if (excelProfile) {
+    <details class="manual-toggle">
+      <summary>Análisis puntual — elegir columna y tipo de gráfica a mano</summary>
+      <div class="manual-panels">
+        <app-no-code-chart [profile]="excelProfile"></app-no-code-chart>
+        <app-no-code-table [profile]="excelProfile"></app-no-code-table>
+      </div>
+    </details>
+  }
+</section>

@@ -7,6 +7,7 @@ WorkerManager stored on the Flask app.
 from flask import Blueprint, current_app, request
 
 from app.data_access.excel_profiler import profile_excel
+from app.notebook.analysis_catalog import build_catalog
 from app.notebook.chart_builder import (
     CHART_TYPES,
     HIGH_CARDINALITY_THRESHOLD,
@@ -16,6 +17,7 @@ from app.notebook.chart_builder import (
 )
 from app.notebook.chart_explanation import build_chart_explanation
 from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, interpret_chart_request
+from app.notebook.semantic_classifier import ROLES as CLASSIFICATION_ROLES, classify_columns
 from app.notebook.pareto_narrative import build_stats_payload, generate_pareto_narrative
 from app.notebook.table_builder import (
     build_column_values_code,
@@ -97,6 +99,7 @@ def upload_excel():
 
     if verdict == "usable":
         _manager().bind(_session_id(), var_name, df)
+        _manager().remember_profile(_session_id(), var_name, profile["columns"], rows=int(df.shape[0]))
         bound = True
     elif verdict == "usable_con_limpieza":
         _manager().stage_pending_upload(_session_id(), var_name, df, profile)
@@ -172,6 +175,7 @@ def confirm_excel_cleanup():
             success=False,
             status=504,
         )
+    _manager().remember_profile(_session_id(), variable, profile["columns"], rows=int(df.shape[0]))
     return api_response(
         data={
             "variable": variable,
@@ -495,6 +499,91 @@ def column_values():
         data=_table_response_data(result),
         message="Valores obtenidos." if not result.get("error") else "No se pudieron obtener los valores.",
     )
+
+
+@notebook_bp.post("/classify-columns")
+def classify_columns_route():
+    """Capa semántica: suggests a role (dimension/metrica/fecha/
+    identificador/descartar) for every column of whatever Excel this session
+    already bound, so the no-code screen can propose a starting point
+    instead of requiring the user to already know their own data's shape.
+    Always succeeds with a role for every column, even with no LLM
+    available (see semantic_classifier.py's fallback) - classification is a
+    required step of the no-code flow, not an optional assistant question,
+    so this never 503s the way /interpret-chart-request does."""
+    profile = _manager().get_known_profile(_session_id())
+    if profile is None:
+        return api_response(
+            message="Sube un Excel antes de clasificar sus columnas.", success=False, status=400
+        )
+
+    manager = _manager()
+    used_slot = manager.check_and_increment_assistant_usage(_session_id())
+    result = classify_columns(profile["columns"])
+    # Only a real LLM call should count against the session's assistant
+    # budget - refund immediately if classify_columns() ended up on its
+    # deterministic fallback (no API key, provider error, etc.), same
+    # "don't burn the budget on our own unavailability" reasoning
+    # /interpret-chart-request already applies.
+    if used_slot and not result["usedAssistant"]:
+        manager.release_assistant_usage(_session_id())
+
+    return api_response(data=result, message="Columnas clasificadas.")
+
+
+def _valid_classifications_payload(classifications, known_column_names):
+    if not isinstance(classifications, list) or not classifications:
+        return False
+    for entry in classifications:
+        if not isinstance(entry, dict):
+            return False
+        if entry.get("name") not in known_column_names:
+            return False
+        if entry.get("role") not in CLASSIFICATION_ROLES:
+            return False
+    return True
+
+
+@notebook_bp.post("/auto-analysis")
+def auto_analysis_route():
+    """Capa de orquestación (puro pandas, sin IA): runs a Pareto per
+    dimension x metrica combination the CONFIRMED classification enables -
+    see analysis_catalog.py. The user's own edits to the suggested
+    classification (from /classify-columns) are what's sent here, never
+    re-derived - confirming/correcting it is the one-click step that
+    replaces having to already know which column is "the dimension"."""
+    profile = _manager().get_known_profile(_session_id())
+    if profile is None:
+        return api_response(
+            message="Sube un Excel antes de generar el análisis automático.", success=False, status=400
+        )
+
+    payload = request.get_json(silent=True) or {}
+    classifications = payload.get("classifications")
+    known_names = {c["name"] for c in profile["columns"]}
+    if not _valid_classifications_payload(classifications, known_names):
+        return api_response(
+            message="La clasificación de columnas no es válida.", success=False, status=400
+        )
+
+    blocks = build_catalog(_session_id(), _manager(), profile["variable"], classifications)
+    # Executive-summary panel (Story: "contextualizaciones amplias") - the
+    # counts a user would want before diving into individual blocks. `rows`
+    # can be None for a session profiled before this field existed (a
+    # pre-existing in-memory session that never re-uploaded) - the frontend
+    # already treats a missing/null rows as "not shown", not an error.
+    resumen = {
+        "filas": profile.get("rows"),
+        "dimensiones": sum(1 for c in classifications if c["role"] == "dimension"),
+        "metricas": sum(1 for c in classifications if c["role"] == "metrica"),
+        "bloques": len(blocks),
+    }
+    if not blocks:
+        return api_response(
+            data={"bloques": [], "resumen": resumen},
+            message="No hay suficientes columnas de dimensión y métrica confirmadas para generar un análisis automático.",
+        )
+    return api_response(data={"bloques": blocks, "resumen": resumen}, message=f"{len(blocks)} análisis generados.")
 
 
 def _valid_columns_payload(columns):

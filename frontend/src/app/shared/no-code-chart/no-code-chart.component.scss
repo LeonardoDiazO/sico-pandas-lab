@@ -1,22 +1,22 @@
 .no-code-chart {
-  background: #f0f1ff;
-  border: 1px solid #dfe0ff;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1.25rem;
 }
 
 .panel-header {
   h3 {
     margin: 0 0 0.4rem;
     font-size: 0.95rem;
-    color: #2a2f5b;
+    color: var(--ink);
   }
 }
 
 .note {
-  font-size: 0.75rem;
-  color: #66668a;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
   margin: 0.3rem 0 0;
 }
 
@@ -24,18 +24,18 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  max-width: 280px;
-  margin-top: 0.6rem;
+  max-width: 320px;
+  margin-top: 0.7rem;
 
   &:first-of-type {
-    margin-top: 0.3rem;
+    margin-top: 0.4rem;
   }
 }
 
 .checkbox-field {
   border: none;
   padding: 0;
-  margin: 0.6rem 0 0;
+  margin: 0.7rem 0 0;
 
   &:disabled {
     opacity: 0.6;
@@ -46,43 +46,53 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.82rem;
-  color: #2a2f5b;
-  padding: 0.15rem 0;
+  font-size: 0.83rem;
+  color: var(--ink);
+  padding: 0.2rem 0;
   cursor: pointer;
 
   input[type='checkbox'] {
     cursor: pointer;
+    accent-color: var(--brand);
   }
 }
 
 .field-label {
   font-size: 0.8rem;
-  color: #2a2f5b;
+  color: var(--ink-muted);
+  font-weight: 500;
 }
 
 select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #c9caee;
-  border-radius: 5px;
-  font-size: 0.82rem;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.83rem;
+  background: var(--surface);
+  color: var(--ink);
 
   &:focus {
     outline: none;
-    border-color: #51599b;
+    border-color: var(--brand);
   }
 }
 
 .generate-btn {
   display: block;
-  margin-top: 0.7rem;
-  background: #51599b;
+  margin-top: 0.8rem;
+  background: var(--brand);
   color: #fff;
   border: none;
-  border-radius: 5px;
-  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 1rem;
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--brand-dark);
+  }
 
   &:disabled {
     opacity: 0.6;
@@ -91,46 +101,51 @@ select {
 }
 
 .cardinality-warning {
-  background: #fff4ec;
-  border: 1px solid #e8b98a;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
-  margin-top: 0.7rem;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  margin-top: 0.8rem;
 
   p {
     margin: 0.2rem 0;
     font-size: 0.8rem;
-    color: #6b4327;
+    color: var(--warn);
   }
 
   .generate-btn {
-    background: #b06a2c;
+    background: var(--warn);
+
+    &:hover {
+      background: var(--warn);
+      opacity: 0.9;
+    }
   }
 }
 
 .chart-error {
   margin-top: 0.6rem;
   font-size: 0.8rem;
-  color: #a13a3a;
+  color: var(--bad);
 }
 
 // Inline SVG (not <img>, since native <title> hover tooltips need the
 // markup in the DOM directly) - ::ng-deep to reach into the [innerHTML] content.
 .chart-image {
-  margin-top: 0.8rem;
+  margin-top: 0.9rem;
 
   ::ng-deep svg {
     display: block;
     max-width: 100%;
     height: auto;
-    border: 1px solid #dfe0ff;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
   }
 }
 
 .chart-explanation {
-  margin-top: 0.5rem;
-  font-size: 0.82rem;
-  color: #2a2f5b;
+  margin-top: 0.55rem;
+  font-size: 0.83rem;
+  color: var(--ink-muted);
   font-style: italic;
 }

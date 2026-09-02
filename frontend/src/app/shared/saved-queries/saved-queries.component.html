@@ -1,4 +1,4 @@
-<details class="saved-queries" open>
+<details class="saved-queries" [open]="snippets.length > 0">
   <summary>💾 Mis consultas guardadas ({{ snippets.length }})</summary>
 
   @if (snippets.length === 0) {

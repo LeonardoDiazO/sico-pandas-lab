@@ -1,59 +1,93 @@
 :host {
   display: block;
   min-height: 100vh;
-  background: #fbf8ff;
+  background: var(--bg);
 }
 
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: #51599b;
-  color: #fff;
-  padding: 0.8rem 1.5rem;
+  gap: 2rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.7rem 1.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 
   .brand {
-    font-weight: 700;
-    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 800;
+    font-size: 1.02rem;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+
+    &::before {
+      content: '';
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 3px;
+      background: var(--brand);
+      box-shadow: 3px 3px 0 var(--brand-soft);
+    }
   }
 
   nav {
     display: flex;
-    gap: 1.2rem;
+    gap: 0.25rem;
+    flex: 1;
 
     a {
-      color: #dfe0ff;
+      color: var(--ink-muted);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
+      font-weight: 500;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+
+      &:hover {
+        background: var(--bg);
+        color: var(--ink);
+      }
 
       &.active {
-        color: #fff;
+        color: var(--brand-dark);
         font-weight: 600;
-        border-bottom: 2px solid #fff;
+        background: var(--brand-soft);
       }
     }
   }
 
   .user-chip {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: #fff;
+    background: var(--surface-alt);
+    border: 1px solid var(--brand-soft-border);
+    color: var(--brand-ink);
     border-radius: 999px;
-    padding: 0.3rem 0.8rem;
-    font-size: 0.85rem;
+    padding: 0.32rem 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 500;
     cursor: pointer;
+    transition: border-color 0.15s ease;
+
+    &:hover {
+      border-color: var(--brand);
+    }
   }
 }
 
 .onboarding {
-  background: #fff2cc;
-  border-bottom: 1px solid #e0c780;
-  padding: 0.8rem 1.5rem;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--brand-soft-border);
+  padding: 0.75rem 1.75rem;
 
   p {
     margin: 0 0 0.5rem;
-    font-size: 0.88rem;
-    color: #6b5518;
+    font-size: 0.86rem;
+    color: var(--brand-ink);
   }
 
   .onboarding-form {
@@ -61,22 +95,34 @@
     gap: 0.6rem;
 
     input {
-      padding: 0.4rem 0.6rem;
-      border: 1px solid #e0c780;
-      border-radius: 5px;
-      font-size: 0.88rem;
+      padding: 0.42rem 0.7rem;
+      border: 1px solid var(--brand-soft-border);
+      border-radius: var(--radius-sm);
+      font-size: 0.86rem;
       max-width: 260px;
       flex: 1;
+      background: var(--surface);
+
+      &:focus {
+        outline: none;
+        border-color: var(--brand);
+      }
     }
 
     button {
-      background: #51599b;
+      background: var(--brand);
       color: #fff;
       border: none;
-      border-radius: 5px;
-      padding: 0.4rem 1rem;
-      font-size: 0.88rem;
+      border-radius: var(--radius-sm);
+      padding: 0.42rem 1.1rem;
+      font-size: 0.86rem;
+      font-weight: 600;
       cursor: pointer;
+      transition: background-color 0.15s ease;
+
+      &:hover:not(:disabled) {
+        background: var(--brand-dark);
+      }
 
       &:disabled {
         opacity: 0.5;

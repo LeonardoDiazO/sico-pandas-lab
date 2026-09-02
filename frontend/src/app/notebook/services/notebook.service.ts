@@ -5,8 +5,11 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   ApiResponse,
+  AutoAnalysisResult,
   CellResult,
   ChartResult,
+  ClassifyColumnsResult,
+  ColumnClassification,
   ColumnFilter,
   LoadResult,
   ParetoNarrativeResponse,
@@ -124,6 +127,23 @@ export class NotebookService {
       valueColumnGroup,
       groupStats,
       groupRecords,
+    });
+  }
+
+  // Capa semántica: suggests a role for every column of whatever Excel this
+  // session already bound - no payload needed, the backend already knows
+  // which DataFrame/profile belongs to this session (WorkerManager.
+  // get_known_profile, same lookup the guided module uses).
+  classifyColumns(): Observable<ApiResponse<ClassifyColumnsResult>> {
+    return this.http.post<ApiResponse<ClassifyColumnsResult>>(`${this.base}/api/notebook/classify-columns`, {});
+  }
+
+  // Catálogo automático: runs a Pareto per dimension x metrica combination
+  // the CONFIRMED (possibly user-corrected) classification enables - pure
+  // pandas, no AI in this call.
+  autoAnalysis(classifications: ColumnClassification[]): Observable<ApiResponse<AutoAnalysisResult>> {
+    return this.http.post<ApiResponse<AutoAnalysisResult>>(`${this.base}/api/notebook/auto-analysis`, {
+      classifications,
     });
   }
 

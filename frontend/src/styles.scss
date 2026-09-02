@@ -1,1 +1,94 @@
-/* You can add global styles to this file, and also import other style files */
+/* Design tokens shared by every component (CSS custom properties pierce
+   Angular's view-encapsulation boundary, so `var(--token)` works the same
+   inside any component's own .scss file as it does here). Palette is a
+   refinement of the indigo/lavender the app's screens already converged on
+   independently (#51599b / #f0f1ff), formalized into one source of truth
+   instead of each component re-declaring its own near-duplicate hex values. */
+:root {
+  /* Ink */
+  --ink: #1c2140;
+  --ink-muted: #5b6178;
+  --ink-faint: #8a90a8;
+
+  /* Brand */
+  --brand: #4a4fd6;
+  --brand-dark: #363bab;
+  --brand-ink: #2a2f6b;
+  --brand-soft: #eef0ff;
+  --brand-soft-border: #dcdff9;
+
+  /* Surfaces */
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-alt: #f0f1ff;
+  --border: #e2e4f1;
+  --border-strong: #c9caee;
+
+  /* Semantic */
+  --ok: #1a7a4c;
+  --ok-soft: #e6f6ee;
+  --ok-border: #bfe4d1;
+  --bad: #b23a2f;
+  --bad-soft: #fdeceb;
+  --bad-border: #f3c4bd;
+  --warn: #a15b12;
+  --warn-soft: #fff2e2;
+  --warn-border: #eec591;
+
+  /* Elevation & shape */
+  --shadow-sm: 0 1px 2px rgba(28, 33, 64, 0.06);
+  --shadow-md: 0 4px 16px -4px rgba(28, 33, 64, 0.14);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Type */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+// Tabular figures wherever numbers line up in a column - money/percent
+// tables read noticeably cleaner with fixed-width digits.
+table,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+a {
+  color: var(--brand-dark);
+}

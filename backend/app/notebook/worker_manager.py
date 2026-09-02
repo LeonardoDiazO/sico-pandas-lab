@@ -81,6 +81,13 @@ class WorkerManager:
         self._workers = {}
         self._pending_uploads = {}
         self._assistant_usage = {}  # session_id -> (count, last_used) - Story 6.2
+        # session_id -> (variable, columns, last_used) - the excel_profiler
+        # column profile (name/type) of whatever DataFrame this session last
+        # successfully bound, so the guided module can generate example code
+        # against the learner's own columns instead of a fixed synthetic
+        # table. Deliberately separate from _pending_uploads (that one holds
+        # an unconfirmed upload awaiting cleanup, not a bound DataFrame).
+        self._session_profiles = {}
         self._lock = threading.Lock()
         self.exec_timeout = exec_timeout
         self.mem_bytes = mem_bytes
@@ -103,10 +110,11 @@ class WorkerManager:
         for sid in stale:
             self._workers.pop(sid).terminate()
 
-        # Unlike _workers above, these two are plain (session_id -> tuple)
-        # dicts with no extra teardown beyond a pop -- share the sweep.
+        # Unlike _workers above, these are plain (session_id -> tuple) dicts
+        # with no extra teardown beyond a pop -- share the sweep.
         self._pop_stale(self._pending_uploads, now, last_active_at=lambda entry: entry[3])
         self._pop_stale(self._assistant_usage, now, last_active_at=lambda entry: entry[1])
+        self._pop_stale(self._session_profiles, now, last_active_at=lambda entry: entry[3])
 
     def _pop_stale(self, mapping, now, last_active_at):
         """Drop entries from `mapping` whose `last_active_at(entry)` predates
@@ -180,11 +188,16 @@ class WorkerManager:
                     "session_restarted": True,
                 }
 
-    def execute_challenge(self, session_id, code, challenge_id):
+    def execute_challenge(self, session_id, code, challenge_id, context=None):
         """Run a guided-lesson challenge: execute the learner's code, then --
         only if it ran without error -- check it in-place against the same
         live namespace. Returns the normal cell-result fields plus a
         ``challenge`` field ({"passed", "message"} or None if not checked).
+
+        ``context`` (optional) tells the checker which DataFrame/columns are
+        "in play" for this attempt -- see app.guided.data_context.
+        resolve_context(). None means "use the lesson's historic hardcoded
+        synthetic table", same as before this parameter existed.
         """
         worker = self._get_or_create(session_id)
         with worker.lock:
@@ -206,7 +219,9 @@ class WorkerManager:
                 return {**exec_result, "challenge": None}
 
             try:
-                challenge = worker.send({"type": "check", "challenge_id": challenge_id}, self.exec_timeout)
+                challenge = worker.send(
+                    {"type": "check", "challenge_id": challenge_id, "context": context}, self.exec_timeout
+                )
             except TimeoutError as exc:
                 self.restart(session_id)
                 challenge = {"passed": False, "message": f"Tiempo agotado al verificar ({exc})."}
@@ -217,6 +232,32 @@ class WorkerManager:
         worker = self._get_or_create(session_id)
         with worker.lock:
             return worker.send({"type": "bind", "name": name, "value": value}, self.exec_timeout)
+
+    def remember_profile(self, session_id, variable, columns, rows=None):
+        """Record the excel_profiler column profile (name/type) of the
+        DataFrame just bound as `variable` in this session, so the guided
+        module can later generate example code against the learner's own
+        columns (see app.guided.data_context) instead of a fixed synthetic
+        table. `columns` is the same [{"name", "type"}, ...] shape the
+        upload-excel/confirm-excel-cleanup responses already return.
+        `rows` (optional) is the row count, used only for the auto-analysis
+        catalog's executive-summary panel (see analysis_catalog.py) -
+        optional so a caller that doesn't have it handy yet doesn't break."""
+        with self._lock:
+            self._reap_idle()
+            self._session_profiles[session_id] = (variable, columns, rows, time.time())
+
+    def get_known_profile(self, session_id):
+        """Returns {"variable": str, "columns": [...], "rows": int|None} for
+        the last DataFrame this session bound via an Excel upload, or None if
+        it never did (or the record aged out). Never raises -- callers must
+        treat None as "fall back to the static/synthetic example"."""
+        with self._lock:
+            entry = self._session_profiles.get(session_id)
+        if entry is None:
+            return None
+        variable, columns, rows, _last_used = entry
+        return {"variable": variable, "columns": columns, "rows": rows}
 
     def stage_pending_upload(self, session_id, variable, df, profile):
         """Hold an uploaded DataFrame until the user confirms the proposed
@@ -251,6 +292,11 @@ class WorkerManager:
         with self._lock:
             worker = self._workers.pop(session_id, None)
             self._pending_uploads.pop(session_id, None)
+            # The bound DataFrame this profile describes dies with the
+            # worker below -- keeping the profile around would let the
+            # guided module keep generating example code against columns
+            # that no longer exist in the fresh namespace.
+            self._session_profiles.pop(session_id, None)
         if worker is not None:
             worker.terminate()
         return True

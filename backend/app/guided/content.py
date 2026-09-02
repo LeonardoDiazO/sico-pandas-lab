@@ -613,7 +613,18 @@ def list_lessons():
     return [{"id": l["id"], "title": l["title"], "summary": l["summary"]} for l in LESSONS]
 
 
-def get_lesson(lesson_id):
+def get_lesson(lesson_id, learner_profile=None):
+    """``learner_profile`` (optional): {"variable", "columns"} from
+    WorkerManager.get_known_profile() -- the column profile of whatever
+    Excel this session already has bound. When the lesson is in scope for
+    dynamic content (see data_context.LESSON_ROLES) and the profile has
+    enough columns, every step's example code/explanation and the
+    challenge's prompt get the learner's own variable/column names
+    substituted in, instead of the fixed synthetic sico example. None (no
+    profile, or the lesson isn't in scope, or the profile is missing a
+    needed column type) leaves the content byte-identical to before this
+    parameter existed."""
+    from app.guided import data_context
     from app.guided.challenges import get_challenge_meta
 
     for index, lesson in enumerate(LESSONS):
@@ -625,8 +636,29 @@ def get_lesson(lesson_id):
                 meta = get_challenge_meta(challenge_id)
                 if meta:
                     challenge = {"id": challenge_id, **meta}
+
+            context = data_context.resolve_context(lesson_id, learner_profile)
+            steps = lesson["steps"]
+            if context is not None:
+                steps = [
+                    {
+                        **step,
+                        "code": data_context.substitute_identifiers(step["code"], lesson_id, context),
+                        "explanation": data_context.substitute_identifiers(
+                            step["explanation"], lesson_id, context
+                        ),
+                    }
+                    for step in steps
+                ]
+                if challenge is not None:
+                    challenge = {
+                        **challenge,
+                        "prompt": data_context.substitute_identifiers(challenge["prompt"], lesson_id, context),
+                    }
+
             return {
-                **{k: v for k, v in lesson.items() if k != "challenge_id"},
+                **{k: v for k, v in lesson.items() if k not in ("challenge_id", "steps")},
+                "steps": steps,
                 "challenge": challenge,
                 "next_lesson_id": next_lesson["id"] if next_lesson else None,
                 "next_lesson_title": next_lesson["title"] if next_lesson else None,

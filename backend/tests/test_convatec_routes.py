@@ -6,6 +6,13 @@ import pytest
 
 from app import create_app
 
+# Convatec's blueprint is disconnected from create_app() on request (see
+# app/__init__.py) -- these routes no longer exist, so every test below would
+# just fail on a 404 rather than exercise anything real. Skipped, not
+# deleted: the module's code/tests stay on disk in case the demo work
+# resumes.
+pytestmark = pytest.mark.skip(reason="Convatec module is disconnected from the app (blueprint not registered)")
+
 
 @pytest.fixture
 def client():

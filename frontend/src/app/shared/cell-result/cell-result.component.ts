@@ -1,7 +1,9 @@
-import { Component, Input } from '@angular/core';
+import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
 import { CellResult } from '../../models/api.models';
+
+type ExpandedView = 'table' | 'chart' | null;
 
 @Component({
   selector: 'app-cell-result',
@@ -11,6 +13,8 @@ import { CellResult } from '../../models/api.models';
 })
 export class CellResultComponent {
   @Input() result: CellResult | null = null;
+
+  expanded: ExpandedView = null;
 
   constructor(private sanitizer: DomSanitizer) {}
 
@@ -34,5 +38,22 @@ export class CellResultComponent {
       return null;
     }
     return this.sanitizer.bypassSecurityTrustHtml(this.result.chart_svg);
+  }
+
+  // User feedback: a chart/table squeezed into a small dashboard card is
+  // hard to read - click either one to see it full-size in an overlay,
+  // same content (safeHtml/safeChartSvg), just rendered without the card's
+  // width/height constraints.
+  expand(view: ExpandedView): void {
+    this.expanded = view;
+  }
+
+  close(): void {
+    this.expanded = null;
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.close();
   }
 }
