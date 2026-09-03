@@ -28,6 +28,26 @@ LESSON_ROLES = {
 }
 
 
+def _is_degenerate_categorical(column):
+    """A categorical column whose ONLY value across every non-null row is
+    the same one - e.g. a "Devolución" (return) column that reads "0" on
+    every row of a sales report where returns never happened - has nothing
+    to group by: every row lands in the same bucket. Its uniqueRatio is at
+    (or near) the theoretical minimum, which would otherwise make it win
+    the low-cardinality sort above ahead of any genuinely useful dimension
+    (real bug found in production, right next to the provider-code one
+    above: a handful of always-"0" columns outranked "Vdor"). sampleValues
+    is capped at 5 distinct values by excel_profiler._column_stats, so
+    fewer than 2 of them unambiguously means "exactly one distinct value
+    total", never "we just didn't sample more". Profiles that predate
+    sampleValues (missing the key) can't be checked this way, so they're
+    never treated as degenerate - same fail-open stance as the missing
+    uniqueRatio case above.
+    """
+    sample_values = column.get("sampleValues")
+    return sample_values is not None and len(sample_values) < 2
+
+
 def resolve_context(lesson_id, learner_profile):
     """Returns {"table_var": str, "roles": {role: real_column_name, ...}} if
     this lesson is in scope AND the learner's profile has enough columns to
@@ -40,7 +60,24 @@ def resolve_context(lesson_id, learner_profile):
     if roles_needed is None or learner_profile is None:
         return None
 
-    categoricas = [c["name"] for c in learner_profile["columns"] if c["type"] == TYPE_CATEGORICA]
+    # Sorted by uniqueRatio ascending, not file order - a categorical column
+    # with hundreds of distinct values (e.g. a provider code) makes a
+    # confusing first "group by this" example next to one with a handful
+    # (e.g. a salesperson code): the printed table/insight sentence for the
+    # former reads as noise ("47 de 210 categorías concentran...") where the
+    # latter reads as an actual takeaway ("2 de 6..."). Real bug found in
+    # production: the file-order-first pick landed on a ~200-value provider
+    # code instead of the 6-value salesperson column sitting right next to
+    # it in the same file. Missing/older profiles without uniqueRatio sort
+    # last (worst case), never crash. Degenerate (single-value) columns are
+    # excluded entirely - see _is_degenerate_categorical - otherwise this
+    # same ascending sort would prefer them over any real dimension, since
+    # "always the same value" has the lowest possible uniqueRatio of all.
+    categoricas = [
+        c["name"]
+        for c in sorted(learner_profile["columns"], key=lambda c: c.get("uniqueRatio", 1.0))
+        if c["type"] == TYPE_CATEGORICA and not _is_degenerate_categorical(c)
+    ]
     numericas = [c["name"] for c in learner_profile["columns"] if c["type"] == TYPE_NUMERICA]
 
     resolved = {}
