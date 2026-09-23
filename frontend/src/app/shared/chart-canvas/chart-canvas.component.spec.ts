@@ -7,6 +7,8 @@ describe('ChartCanvasComponent', () => {
   let fixture: ComponentFixture<ChartCanvasComponent>;
   let component: ChartCanvasComponent;
 
+  let originalMatchMedia: typeof window.matchMedia;
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       declarations: [ChartCanvasComponent],
@@ -14,10 +16,19 @@ describe('ChartCanvasComponent', () => {
 
     fixture = TestBed.createComponent(ChartCanvasComponent);
     component = fixture.componentInstance;
+
+    // Headless Chrome (as run in CI/this test suite) reports
+    // prefers-reduced-motion as matching by default, unlike a real browser
+    // with no OS preference set - pin it to "no preference" here so every
+    // test gets the deliberate, deterministic animation duration unless it
+    // explicitly opts into the reduced-motion path below.
+    originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ matches: false, media: query }) as MediaQueryList) as typeof window.matchMedia;
   });
 
   afterEach(() => {
     fixture.destroy();
+    window.matchMedia = originalMatchMedia;
   });
 
   it('maps result_records into bar values (parsing money-formatted strings) and a % acumulado line', () => {
@@ -68,6 +79,62 @@ describe('ChartCanvasComponent', () => {
 
     const missingContext = { dataset: { type: 'bar', label: 'Promedio' }, parsed: { y: null } } as any;
     expect((component as any).formatTooltipLabel(missingContext)).toBe('Promedio: sin dato');
+  });
+
+  it('animates in under 1 second (explicit duration, not relying on Chart.js default)', () => {
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const chart = Chart.getChart(canvas);
+    const animation = chart!.options.animation as { duration?: number; easing?: string };
+    // Exact values, not just "under 1000" - a regression that widened this
+    // to e.g. 950ms would still pass a bounds-only check while defeating
+    // the story's intent of a snappy, deliberately-chosen duration.
+    expect(animation?.duration).toBe(700);
+    expect(animation?.easing).toBe('easeOutQuart');
+  });
+
+  it('reuses the same Chart instance on data changes instead of creating a duplicate', () => {
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const firstChart = Chart.getChart(canvas);
+
+    component.records = [
+      { Vendedor: 'Ana', Neto: 100, '% acumulado': 50 },
+      { Vendedor: 'Luis', Neto: 200, '% acumulado': 100 },
+    ];
+    component.ngOnChanges({});
+    fixture.detectChanges();
+
+    const secondChart = Chart.getChart(canvas);
+    expect(secondChart).toBe(firstChart);
+    expect(secondChart!.data.labels).toEqual(['Ana', 'Luis']);
+    // The story's own claim (Implementation Notes) is that the animation
+    // config applies "tanto a la creación inicial como a cada
+    // regeneración" - assert that here instead of only in the
+    // creation-only test above.
+    expect((secondChart!.options.animation as { duration?: number })?.duration).toBe(700);
+  });
+
+  it('disables animation when the OS/browser requests reduced motion', () => {
+    window.matchMedia = ((query: string) => ({ matches: true, media: query }) as MediaQueryList) as typeof window.matchMedia;
+
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const chart = Chart.getChart(canvas);
+    expect((chart!.options.animation as { duration?: number })?.duration).toBe(0);
   });
 
   it('sets an aria-label on the canvas summarizing the chart', () => {

@@ -11,6 +11,19 @@ import { looksLikeMoney, parseMoneyValue } from '../money-format';
 // tuning is 10.2-10.5).
 Chart.register(...registerables);
 
+// Story 10.3's own animation duration, named so the doc comment, the runtime
+// config, and the test asserting it all point at one source of truth.
+const ENTRY_ANIMATION_DURATION_MS = 700;
+
+// Review finding (Story 10.3): a CSS `@media (prefers-reduced-motion)` rule
+// (the pattern already used in no-code-home.component.scss and
+// column-classification.component.scss) can't reach into a Chart.js canvas
+// animation - it has to be a JS-side check, read fresh on every render() so
+// a mid-session OS setting change is honored, not just at module load.
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
 /**
  * Interactive Pareto chart (bars = raw value, line = cumulative % on a
  * second axis) for the automatic dashboard (`analysis-dashboard.component`),
@@ -21,9 +34,10 @@ Chart.register(...registerables);
  * keeps rendering `chart_svg` untouched (see `hideChart` there).
  *
  * Story 10.2 adds a combined tooltip (bar value + cumulative % together,
- * touch-tappable - Chart.js' default `events` already include touch) on
- * top of Story 10.1's base render. Colors, entry animation and the 80%
- * line stay vanilla Chart.js defaults - those are Stories 10.3-10.5.
+ * touch-tappable - Chart.js' default `events` already include touch).
+ * Story 10.3 sets an explicit sub-1s entry/update animation duration.
+ * Colors and the 80% line annotation stay vanilla Chart.js defaults for
+ * now - those are Stories 10.4-10.5.
  */
 @Component({
   selector: 'app-chart-canvas',
@@ -142,6 +156,24 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const options: ChartOptions<'bar' | 'line'> = {
       responsive: true,
       maintainAspectRatio: false,
+      // Story 10.3: explicit duration under 1s (the AC's own wording) —
+      // Chart.js's undocumented-here default (1000ms) sits right at that
+      // boundary and could change with a library upgrade. Applies to both
+      // the initial render AND every chart.update() below (Chart.js
+      // animates value transitions on update() the same way it animates
+      // the first draw) — regenerating with a different column replays
+      // this same animation into the existing Chart instance, never a
+      // second one, so nothing duplicates on screen. `easeOutQuart` is
+      // Chart.js's own current default easing - pinned explicitly for the
+      // same reason as duration (protect against a future library default
+      // change), not a new stylistic choice. Duration collapses to 0 under
+      // `prefers-reduced-motion: reduce`, matching the reduced-motion
+      // convention already used elsewhere in this app (CSS there; JS here,
+      // since a canvas animation is outside CSS's reach).
+      animation: {
+        duration: prefersReducedMotion() ? 0 : ENTRY_ANIMATION_DURATION_MS,
+        easing: 'easeOutQuart',
+      },
       // 'index' + intersect:false (Story 10.2): hovering (or tapping, on
       // touch - Chart.js' default `events` list already includes
       // touchstart/touchmove, no extra config needed for that part) a bar
