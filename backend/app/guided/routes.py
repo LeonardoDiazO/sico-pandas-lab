@@ -25,7 +25,10 @@ def _manager():
 
 @guided_bp.get("/lessons")
 def lessons():
-    return api_response(data={"lessons": content.list_lessons()}, message="Lecciones disponibles.")
+    profile = _manager().get_known_profile(_session_id())
+    return api_response(
+        data={"lessons": content.list_lessons(learner_profile=profile)}, message="Lecciones disponibles."
+    )
 
 
 @guided_bp.get("/lessons/<lesson_id>")

@@ -14,12 +14,12 @@ import { GuidedHomeComponent } from './guided-home.component';
 // stubs de sus dos dependencias.
 describe('GuidedHomeComponent - lessonsWithState', () => {
   const lessons: LessonSummary[] = [
-    { id: 'l0', title: 'Lección 0', summary: '' },
-    { id: 'l1', title: 'Lección 1', summary: '' },
-    { id: 'l2', title: 'Lección 2', summary: '' },
-    { id: 'l3', title: 'Lección 3', summary: '' },
-    { id: 'l4', title: 'Lección 4', summary: '' },
-    { id: 'l5', title: 'Lección 5', summary: '' },
+    { id: 'l0', title: 'Lección 0', summary: '', usa_datos_reales: false },
+    { id: 'l1', title: 'Lección 1', summary: '', usa_datos_reales: false },
+    { id: 'l2', title: 'Lección 2', summary: '', usa_datos_reales: false },
+    { id: 'l3', title: 'Lección 3', summary: '', usa_datos_reales: false },
+    { id: 'l4', title: 'Lección 4', summary: '', usa_datos_reales: false },
+    { id: 'l5', title: 'Lección 5', summary: '', usa_datos_reales: false },
   ];
 
   function buildComponent(completedIds: string[]): GuidedHomeComponent {
@@ -69,9 +69,9 @@ describe('GuidedHomeComponent - rendered template', () => {
   let component: GuidedHomeComponent;
 
   const lessons: LessonSummary[] = [
-    { id: 'l0', title: 'Lección 0', summary: 'resumen 0' },
-    { id: 'l1', title: 'Lección 1', summary: 'resumen 1' },
-    { id: 'l2', title: 'Lección 2', summary: 'resumen 2' },
+    { id: 'l0', title: 'Lección 0', summary: 'resumen 0', usa_datos_reales: true },
+    { id: 'l1', title: 'Lección 1', summary: 'resumen 1', usa_datos_reales: false },
+    { id: 'l2', title: 'Lección 2', summary: 'resumen 2', usa_datos_reales: false },
   ];
 
   beforeEach(async () => {
@@ -128,5 +128,15 @@ describe('GuidedHomeComponent - rendered template', () => {
   it('shows a visible lock hint on a bloqueada card, not just a hover title', () => {
     expect(nodeAt(2).querySelector('.lock-hint')).toBeTruthy();
     expect(nodeAt(0).querySelector('.lock-hint')).toBeNull();
+  });
+
+  // Story 11.3: cada tarjeta indica si esta lección va a sustituir el
+  // ejemplo sintético por los datos reales de sico ya subidos en esta
+  // sesión (item.lesson.usa_datos_reales, calculado en el backend).
+  it('shows "Con tus datos de SICO" for a lesson with usa_datos_reales true, "Ejemplo" otherwise', () => {
+    expect(nodeAt(0).querySelector('.data-source')?.textContent).toContain('Con tus datos de SICO');
+    expect(nodeAt(1).querySelector('.data-source')?.textContent).toContain('Ejemplo');
+    expect(nodeAt(1).querySelector('.data-source')?.textContent).not.toContain('Con tus datos de SICO');
+    expect(nodeAt(2).querySelector('.data-source')?.textContent).toContain('Ejemplo');
   });
 });

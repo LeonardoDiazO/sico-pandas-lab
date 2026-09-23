@@ -117,6 +117,12 @@ export interface LessonSummary {
   id: string;
   title: string;
   summary: string;
+  // Story 11.3: whether the learner's own uploaded-Excel profile is
+  // eligible and sufficient for this lesson's dynamic substitution (see
+  // backend/app/guided/data_context.py::resolve_context) - false whenever
+  // there's no profile, the lesson is out of scope, or the profile is
+  // missing a needed column type.
+  usa_datos_reales: boolean;
 }
 
 export interface LessonStep {

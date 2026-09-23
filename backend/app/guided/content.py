@@ -14,6 +14,7 @@ what to load first, since practicing on real data is the whole point.
 Available in every cell: pd (pandas), np (numpy), plt (matplotlib.pyplot),
 sns (seaborn), stats (scipy.stats). Lesson 1 explains what each one is for.
 """
+from app.guided import data_context
 
 _TRY_EXCEPT_EXPLAINER = (
     "Este patrón se repite en todas las lecciones, así que vale la pena entenderlo una vez: "
@@ -608,8 +609,21 @@ LESSONS = [
 ]
 
 
-def list_lessons():
-    return [{"id": l["id"], "title": l["title"], "summary": l["summary"]} for l in LESSONS]
+def list_lessons(learner_profile=None):
+    """``learner_profile`` (optional): same shape as ``get_lesson()``'s
+    parameter -- {"variable", "columns"} from WorkerManager.get_known_profile(),
+    or None. Exposes ``usa_datos_reales`` per lesson (Story 11.3) by reusing
+    data_context.resolve_context() -- None (no profile, an out-of-scope
+    lesson, or an insufficient profile) always yields False."""
+    return [
+        {
+            "id": l["id"],
+            "title": l["title"],
+            "summary": l["summary"],
+            "usa_datos_reales": data_context.resolve_context(l["id"], learner_profile) is not None,
+        }
+        for l in LESSONS
+    ]
 
 
 def get_lesson(lesson_id, learner_profile=None):
@@ -623,7 +637,6 @@ def get_lesson(lesson_id, learner_profile=None):
     profile, or the lesson isn't in scope, or the profile is missing a
     needed column type) leaves the content byte-identical to before this
     parameter existed."""
-    from app.guided import data_context
     from app.guided.challenges import get_challenge_meta
 
     for index, lesson in enumerate(LESSONS):

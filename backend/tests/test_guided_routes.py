@@ -150,6 +150,91 @@ def test_challenge_passes_against_the_learners_own_uploaded_data_end_to_end(clie
     assert result["challenge"]["passed"] is True
 
 
+def test_lessons_list_without_any_upload_marks_all_six_as_synthetic(client):
+    response = client.get("/api/guided/lessons")
+    lessons = response.get_json()["data"]["lessons"]
+    assert len(lessons) == 6
+    assert all(lesson["usa_datos_reales"] is False for lesson in lessons)
+
+
+def test_lessons_list_without_x_session_id_header_does_not_error(client):
+    """No X-Session-Id header -> _session_id() falls back to "anonymous",
+    an unknown session for get_known_profile() -> same as no profile at
+    all: no error, every lesson reports usa_datos_reales: false."""
+    response = client.get("/api/guided/lessons")
+    assert response.status_code == 200
+    lessons = response.get_json()["data"]["lessons"]
+    assert all(lesson["usa_datos_reales"] is False for lesson in lessons)
+
+
+def test_lessons_list_after_uploading_sufficient_profile_marks_eligible_lessons_true(client):
+    client.post(
+        "/api/notebook/upload-excel",
+        data={"file": (_own_xlsx_bytes(), "ventas.xlsx")},
+        content_type="multipart/form-data",
+    )
+
+    response = client.get("/api/guided/lessons")
+    lessons = {lesson["id"]: lesson["usa_datos_reales"] for lesson in response.get_json()["data"]["lessons"]}
+
+    # In LESSON_ROLES, sufficient profile -> True.
+    assert lessons["01-fundamentos"] is True
+    assert lessons["03-agrupar"] is True
+    assert lessons["05-graficas"] is True
+    # Never in LESSON_ROLES -> always False, even with a sufficient profile.
+    assert lessons["00-python-desde-cero"] is False
+    assert lessons["02-filtrar-ordenar"] is False
+    assert lessons["04-combinar-tablas"] is False
+
+
+def test_lessons_list_with_insufficient_profile_keeps_eligible_lessons_false(client):
+    """01-fundamentos/03-agrupar need 2 distinct numeric columns and 1
+    categorical column; a profile with only a single numeric column can't
+    fill both num1/num2 roles, so resolve_context() must return None for
+    them (05-graficas only needs one numeric column, so it stays eligible)."""
+    rows = [{"Vendedor": v, "Cantidad": c} for v, c in [("Ana", 3), ("Luis", 1), ("Ana", 5), ("Marta", 2)]]
+    buf = io.BytesIO()
+    pd.DataFrame(rows).to_excel(buf, index=False)
+    buf.seek(0)
+
+    client.post(
+        "/api/notebook/upload-excel",
+        data={"file": (buf, "ventas.xlsx")},
+        content_type="multipart/form-data",
+    )
+
+    response = client.get("/api/guided/lessons")
+    lessons = {lesson["id"]: lesson["usa_datos_reales"] for lesson in response.get_json()["data"]["lessons"]}
+
+    assert lessons["01-fundamentos"] is False
+    assert lessons["03-agrupar"] is False
+    assert lessons["05-graficas"] is True
+
+
+def test_lessons_list_with_no_categorical_column_keeps_all_eligible_lessons_false(client):
+    """01-fundamentos/03-agrupar/05-graficas all need a categorical column
+    (the `cat` role) - a profile that's all-numeric (no categorical column
+    at all) must fail resolve_context() for every one of them, not just the
+    two-numeric-columns case already covered above."""
+    rows = [{"Cantidad": c, "Neto": n} for c, n in [(3, 30000), (1, 12000), (5, 50000), (2, 8000)]]
+    buf = io.BytesIO()
+    pd.DataFrame(rows).to_excel(buf, index=False)
+    buf.seek(0)
+
+    client.post(
+        "/api/notebook/upload-excel",
+        data={"file": (buf, "ventas.xlsx")},
+        content_type="multipart/form-data",
+    )
+
+    response = client.get("/api/guided/lessons")
+    lessons = {lesson["id"]: lesson["usa_datos_reales"] for lesson in response.get_json()["data"]["lessons"]}
+
+    assert lessons["01-fundamentos"] is False
+    assert lessons["03-agrupar"] is False
+    assert lessons["05-graficas"] is False
+
+
 def test_agrupar_challenge_passes_against_the_learners_own_uploaded_data_end_to_end(client):
     client.post(
         "/api/notebook/upload-excel",

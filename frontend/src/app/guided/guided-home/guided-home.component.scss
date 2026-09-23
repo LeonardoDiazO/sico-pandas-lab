@@ -105,6 +105,23 @@
     font-size: 0.85rem;
     color: var(--ink-muted, #5b6178);
   }
+
+  // Story 11.3: indicador corto de datos reales de sico vs. ejemplo
+  // sintético, junto al resumen de cada tarjeta. Review finding: --ok ya
+  // se usa en este archivo exclusivamente para el estado "completada" — al
+  // usarlo también para "Ejemplo" (el caso sintético, no un logro) ambas
+  // ramas del indicador se veían del mismo verde, sin distinción visual
+  // real más allá del texto. "Ejemplo" ahora usa --ink-muted (neutro).
+  .data-source {
+    margin-top: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ink-muted, #5b6178);
+
+    &.real {
+      color: var(--ok, #1a7a4c);
+    }
+  }
 }
 
 .badge {

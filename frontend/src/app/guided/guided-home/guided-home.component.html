@@ -49,6 +49,20 @@
               }
             </h3>
             <p>{{ item.lesson.summary }}</p>
+            <!-- Story 11.3: expone por tarjeta si esta lección va a sustituir
+                 el ejemplo sintético por los datos reales de sico ya subidos
+                 en esta sesión (item.lesson.usa_datos_reales, calculado en
+                 el backend vía data_context.resolve_context). Emoji marcado
+                 aria-hidden (mismo patrón que .node-marker más arriba) para
+                 que un lector de pantalla no anuncie su nombre antes del
+                 texto real. -->
+            <p class="data-source" [class.real]="item.lesson.usa_datos_reales">
+              @if (item.lesson.usa_datos_reales) {
+                <span aria-hidden="true">📊</span> Con tus datos de SICO
+              } @else {
+                <span aria-hidden="true">🧪</span> Ejemplo
+              }
+            </p>
             <!-- Review finding: a title tooltip needs hover, so it never
                  surfaces on touch/mobile - this visible line is the "aviso
                  claro" the AC asks for on every input method, not just a
