@@ -42,8 +42,9 @@
           (run)="runChallenge($event)"
         ></app-code-cell>
         @if (challengeVerdict) {
-          <div class="verdict" [class.passed]="challengeVerdict.passed" [class.failed]="!challengeVerdict.passed">
-            {{ challengeVerdict.passed ? '✅' : '🤔' }} {{ challengeVerdict.message }}
+          <div class="verdict" [class.passed]="challengeVerdict.passed" [class.failed]="!challengeVerdict.passed" role="status">
+            <span class="verdict-icon" aria-hidden="true">{{ challengeVerdict.passed ? '✅' : '🤔' }}</span>
+            <span class="verdict-message">{{ challengeVerdict.message }}</span>
           </div>
         }
       </div>

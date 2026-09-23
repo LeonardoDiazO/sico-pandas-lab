@@ -61,14 +61,19 @@
   margin-bottom: 1rem;
   font-size: 0.85rem;
 
+  // Review finding (Story 11.2): migrated together with .verdict below -
+  // both live in this same file and show "success"/"error" states on the
+  // same screen, so leaving one on tokens and the other on the old hex
+  // would put two visibly different green/red tones in front of the user
+  // at once.
   &.ok {
-    background: #e8f5e8;
-    color: #2c6b2c;
+    background: var(--ok-soft, #e6f6ee);
+    color: var(--ok, #1a7a4c);
   }
 
   &.bad {
-    background: #fdecec;
-    color: #a12020;
+    background: var(--bad-soft, #fdeceb);
+    color: var(--bad, #b23a2f);
   }
 }
 
@@ -82,7 +87,7 @@
   }
 
   .done {
-    color: #2c6b2c;
+    color: var(--ok, #1a7a4c);
     font-weight: 600;
   }
 }
@@ -106,20 +111,57 @@
   }
 }
 
+// Story 11.2: only .passed gets the celebratory entrance + bigger icon -
+// .failed keeps the exact plain-notice look it already had (AC: "si el
+// código corre sin error pero no cumple el reto, veo el resultado
+// normal"). prefers-reduced-motion guard matches the pattern already used
+// in no-code-home.component.scss/column-classification.component.scss.
+@keyframes verdict-passed-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .verdict {
   border-radius: 6px;
   padding: 0.6rem 0.9rem;
   font-size: 0.88rem;
   margin-top: 0.5rem;
+  border: 1px solid transparent;
+  display: flex;
+  // Review finding: `center` mis-aligns the icon against a wrapped
+  // multi-line message (the verdict text is server-controlled, length
+  // isn't bounded) - `flex-start` keeps the icon pinned to the first line
+  // regardless of how long the message runs.
+  align-items: flex-start;
+  gap: 0.5rem;
 
   &.passed {
-    background: #e8f5e8;
-    color: #2c6b2c;
+    background: var(--ok-soft, #e6f6ee);
+    border-color: var(--ok-border, #bfe4d1);
+    color: var(--ok, #1a7a4c);
+    animation: verdict-passed-in 0.4s ease-out;
+
+    .verdict-icon {
+      font-size: 1.3rem;
+    }
   }
 
   &.failed {
-    background: #fdecec;
-    color: #a12020;
+    background: var(--bad-soft, #fdeceb);
+    border-color: var(--bad-border, #f3c4bd);
+    color: var(--bad, #b23a2f);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verdict.passed {
+    animation: none;
   }
 }
 

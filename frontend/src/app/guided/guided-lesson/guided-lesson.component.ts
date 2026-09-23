@@ -113,6 +113,12 @@ export class GuidedLessonComponent implements OnInit {
     }
     this.challengeCode = code;
     this.challengeRunning = true;
+    // Review finding (Story 11.2): without this reset, an already-passed
+    // challenge run again keeps `challengeVerdict` truthy the whole time,
+    // so the @if block in the template never leaves the DOM between
+    // attempts and the .passed entrance animation (this story's whole
+    // point) only plays on the very first pass, never on a repeat.
+    this.challengeVerdict = null;
     this.guided.checkChallenge(this.lesson.challenge.id, code).subscribe({
       next: (res) => {
         this.challengeRunning = false;
