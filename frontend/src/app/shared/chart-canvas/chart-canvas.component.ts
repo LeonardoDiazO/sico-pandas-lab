@@ -12,14 +12,22 @@ import { looksLikeMoney, parseMoneyValue } from '../money-format';
 // tuning is 10.2-10.5).
 Chart.register(...registerables, annotationPlugin);
 
-// Story 10.4's 80% reference line color, named for the same reason as the
-// animation duration constant - one source of truth instead of a literal
-// repeated in both borderColor and label.backgroundColor. TODO(Story 10.5):
-// this gray is a placeholder; white label text on it is ~3.5:1 contrast,
-// under the WCAG AA 4.5:1 minimum for text - replace with a design-token
-// color chosen (or paired with a darker label text color) to clear that bar
-// when colors get wired to --token values.
-const REFERENCE_LINE_COLOR = '#888888';
+// Story 10.5: reads a color straight off the app's shared design tokens
+// (frontend/src/styles.scss's :root custom properties) at render time,
+// instead of a hardcoded hex - if a token's value changes there, this
+// chart picks it up with no code change here, per this story's own AC.
+// Falls back to the token's current value only if getComputedStyle can't
+// resolve it (e.g. a test environment with no stylesheet loaded). Review
+// finding: these fallback hex literals duplicate styles.scss's :root
+// values as of this writing and nothing keeps them in sync automatically -
+// if a token's value changes there, update the matching fallback here too.
+function designToken(name: string, fallback: string): string {
+  if (typeof document === 'undefined') {
+    return fallback;
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
 // Story 10.3's own animation duration, named so the doc comment, the runtime
 // config, and the test asserting it all point at one source of truth.
@@ -47,8 +55,10 @@ function prefersReducedMotion(): boolean {
  * touch-tappable - Chart.js' default `events` already include touch).
  * Story 10.3 sets an explicit sub-1s entry/update animation duration.
  * Story 10.4 adds the 80% crossing reference line (chartjs-plugin-
- * annotation), migrating the SVG's own `axhline(80)`. Colors stay a fixed
- * placeholder for now - Story 10.5 wires them to the app's design tokens.
+ * annotation), migrating the SVG's own `axhline(80)`. Story 10.5 reads
+ * every chart-drawn color here (bars, cumulative line, 80% reference,
+ * legend text, tooltip, axis ticks/grid) from the app's shared design
+ * tokens (styles.scss), never a hardcoded hex.
  */
 @Component({
   selector: 'app-chart-canvas',
@@ -65,6 +75,42 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private chart: Chart | null = null;
   private viewReady = false;
+
+  // Review finding (Story 10.5): getComputedStyle was being called on every
+  // render()/update(), i.e. on every data change, even though this app has
+  // no runtime theme switching (one :root block, no [data-theme] toggle) -
+  // these values are effectively fixed per page load, so they're resolved
+  // once per component instance and reused, instead of re-reading the
+  // stylesheet on every regeneration.
+  private colors?: {
+    brand: string;
+    secondary: string;
+    referenceLine: string;
+    text: string;
+    grid: string;
+    tooltipBg: string;
+    tooltipText: string;
+  };
+
+  private resolveColors() {
+    if (!this.colors) {
+      this.colors = {
+        brand: designToken('--brand', '#4a4fd6'),
+        // Review finding (Story 10.5): --warn carries a "pay attention"/
+        // caution connotation elsewhere in this app (banners, badges in
+        // convatec-maestros, cell-result, etc.) - reusing it for a routine
+        // cumulative-% line would misrepresent it as a warning. --brand-dark
+        // reads as "secondary data series", not an alert.
+        secondary: designToken('--brand-dark', '#363bab'),
+        referenceLine: designToken('--ink-muted', '#5b6178'),
+        text: designToken('--ink-muted', '#5b6178'),
+        grid: designToken('--border', '#e2e4f1'),
+        tooltipBg: designToken('--ink', '#1c2140'),
+        tooltipText: designToken('--surface', '#ffffff'),
+      };
+    }
+    return this.colors;
+  }
 
   ngAfterViewInit(): void {
     this.viewReady = true;
@@ -144,6 +190,8 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const values = this.records.map((record) => this.toNumber(record[this.valueKey]));
     const cumulative = this.records.map((record) => this.toNumber(record['% acumulado']));
 
+    const colors = this.resolveColors();
+
     const data: ChartData<'bar' | 'line'> = {
       labels,
       datasets: [
@@ -152,6 +200,7 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
           label: this.valueKey,
           data: values,
           yAxisID: 'y',
+          backgroundColor: colors.brand,
         },
         {
           type: 'line',
@@ -160,6 +209,8 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
           yAxisID: 'y1',
           tension: 0.2,
           pointRadius: 3,
+          borderColor: colors.secondary,
+          backgroundColor: colors.secondary,
         },
       ],
     };
@@ -196,7 +247,21 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         intersect: false,
       },
       plugins: {
+        // Review finding (Story 10.5): legend text was left at Chart.js's
+        // default gray instead of a token, undercutting the "every color"
+        // claim above.
+        legend: {
+          labels: {
+            color: colors.text,
+          },
+        },
         tooltip: {
+          // Review finding (Story 10.5): same reasoning - the tooltip box
+          // was left at Chart.js's default dark-gray/white instead of the
+          // app's own ink/surface tokens.
+          backgroundColor: colors.tooltipBg,
+          titleColor: colors.tooltipText,
+          bodyColor: colors.tooltipText,
           callbacks: {
             label: (context) => this.formatTooltipLabel(context),
           },
@@ -204,9 +269,9 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         // Story 10.4: horizontal reference line at the 80% crossing on the
         // cumulative-% axis (y1) - migrates the SVG's own
         // `_ax2.axhline(80, ...)` (table_builder.py::_pareto_chart_lines),
-        // not a new visual decision. Color is a fixed placeholder for now;
-        // Story 10.5 is the one that wires every color in this component
-        // to the app's design tokens.
+        // not a new visual decision. --ink-muted (Story 10.5) also clears
+        // the WCAG AA contrast bar the earlier #888888 placeholder missed -
+        // white label text on --ink-muted is ≈6.1:1, over the 4.5:1 minimum.
         annotation: {
           annotations: {
             line80: {
@@ -214,14 +279,14 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
               yMin: 80,
               yMax: 80,
               yScaleID: 'y1',
-              borderColor: REFERENCE_LINE_COLOR,
+              borderColor: colors.referenceLine,
               borderWidth: 1,
               borderDash: [6, 4],
               label: {
                 content: '80%',
                 display: true,
                 position: 'end',
-                backgroundColor: REFERENCE_LINE_COLOR,
+                backgroundColor: colors.referenceLine,
               },
             },
           },
@@ -232,6 +297,8 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
           type: 'linear',
           position: 'left',
           beginAtZero: true,
+          ticks: { color: colors.text },
+          grid: { color: colors.grid },
         },
         y1: {
           type: 'linear',
@@ -244,9 +311,14 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
           // crowd the axis top - matched here for the same reason, not a
           // new value chosen independently.
           max: 105,
+          ticks: { color: colors.text },
           grid: {
             drawOnChartArea: false,
           },
+        },
+        x: {
+          ticks: { color: colors.text },
+          grid: { color: colors.grid },
         },
       },
     };

@@ -181,6 +181,53 @@ describe('ChartCanvasComponent', () => {
     expect(line80?.yMin).toBe(80);
   });
 
+  it('reads bar/line/reference-line colors from the app design tokens, not hardcoded hex', () => {
+    document.documentElement.style.setProperty('--brand', 'rgb(1, 2, 3)');
+    document.documentElement.style.setProperty('--brand-dark', 'rgb(4, 5, 6)');
+    document.documentElement.style.setProperty('--ink-muted', 'rgb(7, 8, 9)');
+
+    try {
+      component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+      component.categoryKey = 'Vendedor';
+      component.valueKey = 'Neto';
+      fixture.detectChanges();
+
+      const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+      const chart = Chart.getChart(canvas);
+
+      expect(chart!.data.datasets[0].backgroundColor).toBe('rgb(1, 2, 3)');
+      expect(chart!.data.datasets[1].borderColor).toBe('rgb(4, 5, 6)');
+      const line80 = getLine80Annotation(canvas);
+      expect(line80.borderColor).toBe('rgb(7, 8, 9)');
+      // Both borderColor and label.backgroundColor come from the same
+      // `colors.referenceLine` value - assert both so a future change that
+      // decoupled them (e.g. an accidental hardcoded label color) would
+      // fail here.
+      expect(line80.label?.backgroundColor).toBe('rgb(7, 8, 9)');
+    } finally {
+      document.documentElement.style.removeProperty('--brand');
+      document.documentElement.style.removeProperty('--brand-dark');
+      document.documentElement.style.removeProperty('--ink-muted');
+    }
+  });
+
+  it('falls back to the hardcoded color when a design token resolves empty', () => {
+    // getComputedStyle on a real element never returns undefined for an
+    // unset custom property, just an empty string - this is the actual
+    // fallback trigger designToken()'s own doc comment describes, not the
+    // unreachable-in-a-browser `typeof document === 'undefined'` branch.
+    document.documentElement.style.setProperty('--brand', '');
+
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const chart = Chart.getChart(canvas);
+    expect(chart!.data.datasets[0].backgroundColor).toBe('#4a4fd6');
+  });
+
   it('sets an aria-label on the canvas summarizing the chart', () => {
     component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
     component.categoryKey = 'Vendedor';
