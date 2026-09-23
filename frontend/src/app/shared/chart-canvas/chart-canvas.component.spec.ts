@@ -52,6 +52,24 @@ describe('ChartCanvasComponent', () => {
     expect(chart!.data.datasets[0].data[0]).toBeNaN();
   });
 
+  it('formats the tooltip label: money prefix for money columns, decimals kept for others, % for the line, and a placeholder for missing data', () => {
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+
+    const barContext = { dataset: { type: 'bar', label: 'Neto' }, parsed: { y: 1200 } } as any;
+    expect((component as any).formatTooltipLabel(barContext)).toBe('Neto: $ 1.200');
+
+    component.valueKey = 'Promedio';
+    const nonMoneyContext = { dataset: { type: 'bar', label: 'Promedio' }, parsed: { y: 1234.56 } } as any;
+    expect((component as any).formatTooltipLabel(nonMoneyContext)).toBe('Promedio: 1.234,56');
+
+    const lineContext = { dataset: { type: 'line', label: '% acumulado' }, parsed: { y: 82.5 } } as any;
+    expect((component as any).formatTooltipLabel(lineContext)).toBe('% acumulado: 82.5%');
+
+    const missingContext = { dataset: { type: 'bar', label: 'Promedio' }, parsed: { y: null } } as any;
+    expect((component as any).formatTooltipLabel(missingContext)).toBe('Promedio: sin dato');
+  });
+
   it('sets an aria-label on the canvas summarizing the chart', () => {
     component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
     component.categoryKey = 'Vendedor';

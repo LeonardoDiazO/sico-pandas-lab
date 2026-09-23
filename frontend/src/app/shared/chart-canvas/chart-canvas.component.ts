@@ -1,7 +1,7 @@
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
-import { Chart, ChartData, ChartOptions, registerables } from 'chart.js';
+import { Chart, ChartData, ChartOptions, registerables, TooltipItem } from 'chart.js';
 
-import { parseMoneyValue } from '../money-format';
+import { looksLikeMoney, parseMoneyValue } from '../money-format';
 
 // Chart.js 4's tree-shakeable registration requires every controller/
 // element/scale/plugin it uses to be registered before a chart is built -
@@ -20,8 +20,10 @@ Chart.register(...registerables);
  * other consumer of `cell-result.component` (free notebook, guided module)
  * keeps rendering `chart_svg` untouched (see `hideChart` there).
  *
- * Deliberately vanilla Chart.js defaults here (tooltip, colors, no entry
- * animation, no 80% line) - those are Stories 10.2-10.5, not this one.
+ * Story 10.2 adds a combined tooltip (bar value + cumulative % together,
+ * touch-tappable - Chart.js' default `events` already include touch) on
+ * top of Story 10.1's base render. Colors, entry animation and the 80%
+ * line stay vanilla Chart.js defaults - those are Stories 10.3-10.5.
  */
 @Component({
   selector: 'app-chart-canvas',
@@ -85,6 +87,28 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return NaN;
   }
 
+  // Review finding (Story 10.2): the bar dataset's raw number came from
+  // parseMoneyValue() for money columns, so the "$ " prefix is gone by the
+  // time it reaches here - re-checking looksLikeMoney(valueKey) (same
+  // shared helper) puts it back, matching the table right next to this
+  // chart instead of showing a bare number for a money metric. Non-money
+  // metrics keep up to 2 decimals instead of always rounding to an integer
+  // - "valor exacto" (this story's own AC) means not silently truncating a
+  // ratio/average's precision the way a money amount is expected to be.
+  private formatTooltipLabel(context: TooltipItem<'bar' | 'line'>): string {
+    const value = context.parsed.y;
+    if (value === null || !Number.isFinite(value)) {
+      return `${context.dataset.label}: sin dato`;
+    }
+    if (context.dataset.type === 'line') {
+      return `${context.dataset.label}: ${value.toFixed(1)}%`;
+    }
+    if (looksLikeMoney(this.valueKey)) {
+      return `${context.dataset.label}: $ ${Math.round(value).toLocaleString('es-CO')}`;
+    }
+    return `${context.dataset.label}: ${value.toLocaleString('es-CO', { maximumFractionDigits: 2 })}`;
+  }
+
   private render(): void {
     const canvas = this.canvasEl?.nativeElement;
     if (!canvas || !this.categoryKey || !this.valueKey) {
@@ -118,6 +142,23 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const options: ChartOptions<'bar' | 'line'> = {
       responsive: true,
       maintainAspectRatio: false,
+      // 'index' + intersect:false (Story 10.2): hovering (or tapping, on
+      // touch - Chart.js' default `events` list already includes
+      // touchstart/touchmove, no extra config needed for that part) a bar
+      // shows BOTH datasets at that category in one tooltip, not just the
+      // one the pointer happens to be over - the AC needs the value and
+      // the % acumulado together, not as two separate hovers.
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (context) => this.formatTooltipLabel(context),
+          },
+        },
+      },
       scales: {
         y: {
           type: 'linear',
