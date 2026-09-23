@@ -1,3 +1,4 @@
+import { NgZone } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Chart } from 'chart.js';
 import type { LineAnnotationOptions } from 'chartjs-plugin-annotation';
@@ -226,6 +227,47 @@ describe('ChartCanvasComponent', () => {
     const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
     const chart = Chart.getChart(canvas);
     expect(chart!.data.datasets[0].backgroundColor).toBe('#4a4fd6');
+  });
+
+  it('creates and updates the Chart.js instance outside Angular\'s zone', () => {
+    // Root-cause regression test for a real hang found via live testing with
+    // production Excel files: Chart.js's `responsive: true` attaches a
+    // ResizeObserver, and its animation loop uses requestAnimationFrame -
+    // zone.js patches both, so every resize/animation tick re-entered
+    // Angular's zone and ran a full change-detection cycle. Inside the
+    // dashboard's CSS Grid (auto-fit columns, percentage-width canvases),
+    // that let a sub-pixel layout change from one chart's own resize
+    // trigger ANOTHER zone-triggered CD cycle, feeding back into another
+    // resize - a self-sustaining loop that pegged a CPU core indefinitely.
+    // Confirmed via a standalone Chart.js reproduction (same options/data,
+    // no Angular) that rendered instantly with no hang - zone.js was the
+    // missing variable. This test fails if a future edit moves Chart.js
+    // creation/update back inside the Angular zone.
+    const ngZone = TestBed.inject(NgZone);
+    const runOutsideSpy = spyOn(ngZone, 'runOutsideAngular').and.callThrough();
+
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+
+    // Exact call count is an Angular/TestBed lifecycle-invocation detail
+    // (ngAfterViewInit + this harness's un-bound property assignment both
+    // end up triggering a render() pass here) - what this test protects is
+    // the invariant that matters: every render() pass goes through
+    // runOutsideAngular, and a second, independent update triggers it
+    // again (not just once ever, e.g. from a stale reference).
+    const callsAfterFirstRender = runOutsideSpy.calls.count();
+    expect(callsAfterFirstRender).toBeGreaterThan(0);
+
+    component.records = [
+      { Vendedor: 'Ana', Neto: 100, '% acumulado': 50 },
+      { Vendedor: 'Luis', Neto: 200, '% acumulado': 100 },
+    ];
+    component.ngOnChanges({});
+    fixture.detectChanges();
+
+    expect(runOutsideSpy.calls.count()).toBeGreaterThan(callsAfterFirstRender);
   });
 
   it('sets an aria-label on the canvas summarizing the chart', () => {

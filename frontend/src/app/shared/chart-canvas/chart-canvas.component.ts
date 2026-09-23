@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, NgZone, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
 import { Chart, ChartData, ChartOptions, registerables, TooltipItem } from 'chart.js';
 import annotationPlugin from 'chartjs-plugin-annotation';
 
@@ -75,6 +75,8 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private chart: Chart | null = null;
   private viewReady = false;
+
+  constructor(private ngZone: NgZone) {}
 
   // Review finding (Story 10.5): getComputedStyle was being called on every
   // render()/update(), i.e. on every data change, even though this app has
@@ -180,7 +182,26 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return `${context.dataset.label}: ${value.toLocaleString('es-CO', { maximumFractionDigits: 2 })}`;
   }
 
+  // Root-cause fix (freeze found via live testing with real production
+  // files): Chart.js's `responsive: true` attaches a ResizeObserver, and its
+  // animation loop uses requestAnimationFrame - zone.js patches both, so
+  // every resize/animation tick was re-entering Angular's zone and running a
+  // full change-detection cycle. Inside the dashboard's CSS Grid
+  // (auto-fit columns, percentage-width canvases), that let a sub-pixel
+  // layout change from one chart's own resize trigger ANOTHER
+  // zone-triggered CD cycle, which could feed back into another resize -
+  // a self-sustaining loop that pegged a CPU core indefinitely (confirmed:
+  // a standalone Chart.js reproduction outside Angular, using the exact
+  // same options/data, rendered instantly with no hang - zone.js
+  // integration was the missing variable). Running Chart.js's own
+  // creation/update entirely outside Angular's zone means its internal
+  // ResizeObserver and rAF callbacks never trigger Angular CD, breaking the
+  // loop at the source rather than papering over a symptom.
   private render(): void {
+    this.ngZone.runOutsideAngular(() => this.renderChart());
+  }
+
+  private renderChart(): void {
     const canvas = this.canvasEl?.nativeElement;
     if (!canvas || !this.categoryKey || !this.valueKey) {
       return;
