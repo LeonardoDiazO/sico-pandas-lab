@@ -55,3 +55,20 @@ export function looksLikeMoney(columnName: string | null | undefined): boolean {
   }
   return MONEY_KEYWORDS.some((keyword) => lowered.includes(keyword));
 }
+
+// A money-looking value column (see looksLikeMoney) arrives from the
+// backend already formatted for display, not as a raw number - table_
+// builder.py's _money_format_expr renders it as "$ 12.345" ("$ " prefix +
+// "." thousands separators, no decimals). Anything that consumes those
+// values numerically (e.g. chart-canvas.component.ts building a Chart.js
+// dataset) needs to undo that formatting first. Kept here rather than
+// inlined at each call site so this stays the single place money-format
+// heuristics live, in sync with the backend.
+export function parseMoneyValue(raw: string): number {
+  const cleaned = raw.replace('$', '').replace(/\./g, '').trim();
+  const parsed = Number(cleaned);
+  // NaN (not 0) when it doesn't parse - Chart.js renders a gap for a NaN
+  // data point instead of a misleading zero-height bar, and 0 would be
+  // indistinguishable from a real zero value.
+  return Number.isFinite(parsed) ? parsed : NaN;
+}

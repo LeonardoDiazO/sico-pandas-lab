@@ -41,7 +41,15 @@
                 <p class="insight">{{ bloque.insight }}</p>
               }
 
-              <app-cell-result [result]="bloque.resultado"></app-cell-result>
+              <app-cell-result [result]="bloque.resultado" [hideChart]="true"></app-cell-result>
+
+              @if (!bloque.resultado.error && bloque.resultado.result_records?.length) {
+                <app-chart-canvas
+                  [records]="bloque.resultado.result_records!"
+                  [categoryKey]="bloque.dimension"
+                  [valueKey]="bloque.metrica"
+                ></app-chart-canvas>
+              }
 
               @if (!bloque.resultado.error && bloque.resultado.explanation) {
                 <p class="block-explanation">{{ bloque.resultado.explanation }}</p>

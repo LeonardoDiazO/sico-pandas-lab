@@ -1,0 +1,153 @@
+import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
+import { Chart, ChartData, ChartOptions, registerables } from 'chart.js';
+
+import { parseMoneyValue } from '../money-format';
+
+// Chart.js 4's tree-shakeable registration requires every controller/
+// element/scale/plugin it uses to be registered before a chart is built -
+// registerables (everything the library ships) is simplest here since this
+// component isn't performance-sensitive enough to hand-pick a subset, and
+// Story 10.1's job is just getting an interactive chart on screen (fine
+// tuning is 10.2-10.5).
+Chart.register(...registerables);
+
+/**
+ * Interactive Pareto chart (bars = raw value, line = cumulative % on a
+ * second axis) for the automatic dashboard (`analysis-dashboard.component`),
+ * fed directly from `result_records` - the same rows `table_builder.py`'s
+ * `build_summary_code` already returns, no backend change needed. Replaces
+ * the static `chart_svg` matplotlib image ONLY inside that dashboard; every
+ * other consumer of `cell-result.component` (free notebook, guided module)
+ * keeps rendering `chart_svg` untouched (see `hideChart` there).
+ *
+ * Deliberately vanilla Chart.js defaults here (tooltip, colors, no entry
+ * animation, no 80% line) - those are Stories 10.2-10.5, not this one.
+ */
+@Component({
+  selector: 'app-chart-canvas',
+  standalone: false,
+  templateUrl: './chart-canvas.component.html',
+  styleUrl: './chart-canvas.component.scss',
+})
+export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy {
+  @Input() records: Record<string, unknown>[] = [];
+  @Input() categoryKey = '';
+  @Input() valueKey = '';
+
+  @ViewChild('canvasEl') private canvasEl?: ElementRef<HTMLCanvasElement>;
+
+  private chart: Chart | null = null;
+  private viewReady = false;
+
+  ngAfterViewInit(): void {
+    this.viewReady = true;
+    this.render();
+  }
+
+  ngOnChanges(_changes: SimpleChanges): void {
+    // Guards ngOnChanges firing before ngAfterViewInit (Angular calls
+    // ngOnChanges with the initial @Input values before the view - and its
+    // ViewChild canvas - exists).
+    if (this.viewReady) {
+      this.render();
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.chart?.destroy();
+  }
+
+  // The previous chart_svg image gave screen readers a native per-bar
+  // <title> tooltip (execution.py::_inject_svg_tooltips) - a bare <canvas>
+  // has no text alternative at all, so this replaces it with one summary
+  // label describing what the chart shows (not per-bar, but not silent
+  // either).
+  get chartAriaLabel(): string {
+    return `Gráfica de ${this.valueKey} por ${this.categoryKey}: ${this.records.length} categorías, con línea de % acumulado`;
+  }
+
+  // Backend value columns that "look like money" (table_builder.py's
+  // _looks_like_money/_money_format_expr) arrive pre-formatted as strings
+  // like "$ 12.345" (a "$ " prefix, "." thousands separators, no decimals)
+  // rather than raw numbers - detect the string shape here and parse it
+  // back into a real number for the chart via the shared money-format
+  // helper (kept there, not inlined, so it stays in sync with the
+  // backend's formatting). A value that's already a number (a non-money
+  // metric) is used as-is. NaN (not 0) for anything else/unparseable, so
+  // Chart.js shows a gap instead of a misleading zero-height bar.
+  private toNumber(raw: unknown): number {
+    if (typeof raw === 'number') {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      return parseMoneyValue(raw);
+    }
+    return NaN;
+  }
+
+  private render(): void {
+    const canvas = this.canvasEl?.nativeElement;
+    if (!canvas || !this.categoryKey || !this.valueKey) {
+      return;
+    }
+
+    const labels = this.records.map((record) => String(record[this.categoryKey] ?? ''));
+    const values = this.records.map((record) => this.toNumber(record[this.valueKey]));
+    const cumulative = this.records.map((record) => this.toNumber(record['% acumulado']));
+
+    const data: ChartData<'bar' | 'line'> = {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: this.valueKey,
+          data: values,
+          yAxisID: 'y',
+        },
+        {
+          type: 'line',
+          label: '% acumulado',
+          data: cumulative,
+          yAxisID: 'y1',
+          tension: 0.2,
+          pointRadius: 3,
+        },
+      ],
+    };
+
+    const options: ChartOptions<'bar' | 'line'> = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          type: 'linear',
+          position: 'left',
+          beginAtZero: true,
+        },
+        y1: {
+          type: 'linear',
+          position: 'right',
+          beginAtZero: true,
+          min: 0,
+          max: 100,
+          grid: {
+            drawOnChartArea: false,
+          },
+        },
+      },
+    };
+
+    if (this.chart) {
+      this.chart.data = data;
+      this.chart.options = options;
+      this.chart.update();
+      return;
+    }
+
+    this.chart = new Chart(canvas, {
+      type: 'bar',
+      data,
+      options,
+    });
+  }
+}

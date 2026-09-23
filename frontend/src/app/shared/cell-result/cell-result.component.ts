@@ -13,6 +13,13 @@ type ExpandedView = 'table' | 'chart' | null;
 })
 export class CellResultComponent {
   @Input() result: CellResult | null = null;
+  // Story 10.1: the automatic dashboard (analysis-dashboard.component) now
+  // renders its own Chart.js canvas (app-chart-canvas) fed from
+  // result_records instead of this component's chart_svg image, to avoid
+  // showing both. Every other caller (free notebook, guided module) never
+  // sets this, so it stays false and their chart_svg rendering is
+  // untouched - non-regression requirement UX-DR5.
+  @Input() hideChart = false;
 
   expanded: ExpandedView = null;
 
@@ -34,7 +41,7 @@ export class CellResultComponent {
   // <img>. Same trust rationale as safeHtml above - our own backend
   // (matplotlib) produced it.
   get safeChartSvg(): SafeHtml | null {
-    if (!this.result?.chart_svg) {
+    if (this.hideChart || !this.result?.chart_svg) {
       return null;
     }
     return this.sanitizer.bypassSecurityTrustHtml(this.result.chart_svg);
