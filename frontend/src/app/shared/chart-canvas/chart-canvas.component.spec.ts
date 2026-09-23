@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Chart } from 'chart.js';
+import type { LineAnnotationOptions } from 'chartjs-plugin-annotation';
 
 import { ChartCanvasComponent } from './chart-canvas.component';
 
@@ -135,6 +136,49 @@ describe('ChartCanvasComponent', () => {
     const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
     const chart = Chart.getChart(canvas);
     expect((chart!.options.animation as { duration?: number })?.duration).toBe(0);
+  });
+
+  function getLine80Annotation(canvas: HTMLCanvasElement): LineAnnotationOptions {
+    const chart = Chart.getChart(canvas);
+    const annotations = (chart!.options.plugins as { annotation?: { annotations?: Record<string, unknown> } })
+      ?.annotation?.annotations;
+    return annotations?.['line80'] as LineAnnotationOptions;
+  }
+
+  it('draws an 80% reference line annotation on the cumulative axis, with a visible label', () => {
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const line80 = getLine80Annotation(canvas);
+
+    expect(line80).toBeTruthy();
+    expect(line80.yMin).toBe(80);
+    expect(line80.yMax).toBe(80);
+    expect(line80.yScaleID).toBe('y1');
+    expect(line80.label?.display).toBe(true);
+    expect(line80.label?.content).toBe('80%');
+  });
+
+  it('keeps the 80% annotation after regenerating with different data (update path, not just creation)', () => {
+    component.records = [{ Vendedor: 'Ana', Neto: 100, '% acumulado': 100 }];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+
+    component.records = [
+      { Vendedor: 'Ana', Neto: 100, '% acumulado': 50 },
+      { Vendedor: 'Luis', Neto: 200, '% acumulado': 100 },
+    ];
+    component.ngOnChanges({});
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const line80 = getLine80Annotation(canvas);
+    expect(line80?.yMin).toBe(80);
   });
 
   it('sets an aria-label on the canvas summarizing the chart', () => {

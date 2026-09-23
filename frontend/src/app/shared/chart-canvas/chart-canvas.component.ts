@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
 import { Chart, ChartData, ChartOptions, registerables, TooltipItem } from 'chart.js';
+import annotationPlugin from 'chartjs-plugin-annotation';
 
 import { looksLikeMoney, parseMoneyValue } from '../money-format';
 
@@ -9,7 +10,16 @@ import { looksLikeMoney, parseMoneyValue } from '../money-format';
 // component isn't performance-sensitive enough to hand-pick a subset, and
 // Story 10.1's job is just getting an interactive chart on screen (fine
 // tuning is 10.2-10.5).
-Chart.register(...registerables);
+Chart.register(...registerables, annotationPlugin);
+
+// Story 10.4's 80% reference line color, named for the same reason as the
+// animation duration constant - one source of truth instead of a literal
+// repeated in both borderColor and label.backgroundColor. TODO(Story 10.5):
+// this gray is a placeholder; white label text on it is ~3.5:1 contrast,
+// under the WCAG AA 4.5:1 minimum for text - replace with a design-token
+// color chosen (or paired with a darker label text color) to clear that bar
+// when colors get wired to --token values.
+const REFERENCE_LINE_COLOR = '#888888';
 
 // Story 10.3's own animation duration, named so the doc comment, the runtime
 // config, and the test asserting it all point at one source of truth.
@@ -36,8 +46,9 @@ function prefersReducedMotion(): boolean {
  * Story 10.2 adds a combined tooltip (bar value + cumulative % together,
  * touch-tappable - Chart.js' default `events` already include touch).
  * Story 10.3 sets an explicit sub-1s entry/update animation duration.
- * Colors and the 80% line annotation stay vanilla Chart.js defaults for
- * now - those are Stories 10.4-10.5.
+ * Story 10.4 adds the 80% crossing reference line (chartjs-plugin-
+ * annotation), migrating the SVG's own `axhline(80)`. Colors stay a fixed
+ * placeholder for now - Story 10.5 wires them to the app's design tokens.
  */
 @Component({
   selector: 'app-chart-canvas',
@@ -79,7 +90,7 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // label describing what the chart shows (not per-bar, but not silent
   // either).
   get chartAriaLabel(): string {
-    return `Gráfica de ${this.valueKey} por ${this.categoryKey}: ${this.records.length} categorías, con línea de % acumulado`;
+    return `Gráfica de ${this.valueKey} por ${this.categoryKey}: ${this.records.length} categorías, con línea de % acumulado y referencia del 80%`;
   }
 
   // Backend value columns that "look like money" (table_builder.py's
@@ -190,6 +201,31 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
             label: (context) => this.formatTooltipLabel(context),
           },
         },
+        // Story 10.4: horizontal reference line at the 80% crossing on the
+        // cumulative-% axis (y1) - migrates the SVG's own
+        // `_ax2.axhline(80, ...)` (table_builder.py::_pareto_chart_lines),
+        // not a new visual decision. Color is a fixed placeholder for now;
+        // Story 10.5 is the one that wires every color in this component
+        // to the app's design tokens.
+        annotation: {
+          annotations: {
+            line80: {
+              type: 'line',
+              yMin: 80,
+              yMax: 80,
+              yScaleID: 'y1',
+              borderColor: REFERENCE_LINE_COLOR,
+              borderWidth: 1,
+              borderDash: [6, 4],
+              label: {
+                content: '80%',
+                display: true,
+                position: 'end',
+                backgroundColor: REFERENCE_LINE_COLOR,
+              },
+            },
+          },
+        },
       },
       scales: {
         y: {
@@ -202,7 +238,12 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
           position: 'right',
           beginAtZero: true,
           min: 0,
-          max: 100,
+          // Review finding (Story 10.4): the Python original left headroom
+          // above the 80 line (`_ax2.set_ylim(0, 105)`,
+          // table_builder.py::_pareto_chart_lines) so its label wouldn't
+          // crowd the axis top - matched here for the same reason, not a
+          // new value chosen independently.
+          max: 105,
           grid: {
             drawOnChartArea: false,
           },
