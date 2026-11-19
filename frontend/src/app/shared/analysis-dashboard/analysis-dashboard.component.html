@@ -1,63 +1,129 @@
 @if (bloques.length > 0) {
   <div class="dashboard">
     @if (resumen) {
-      <div class="summary-strip">
+      <dl class="summary">
         @if (resumen.filas !== null) {
-          <div class="summary-stat">
-            <span class="summary-value">{{ resumen.filas | number: '1.0-0' }}</span>
-            <span class="summary-label">Filas analizadas</span>
+          <div class="stat">
+            <dt>Filas analizadas</dt>
+            <dd class="tabular-nums">{{ resumen.filas | number: '1.0-0' }}</dd>
           </div>
         }
-        <div class="summary-stat">
-          <span class="summary-value">{{ resumen.dimensiones }}</span>
-          <span class="summary-label">{{ resumen.dimensiones === 1 ? 'Dimensión' : 'Dimensiones' }}</span>
+        @for (g of groups; track g.metrica) {
+          @if (g.total !== null) {
+            <div class="stat">
+              <dt>Total {{ g.metrica }}</dt>
+              <dd class="tabular-nums">{{ formatValue(g.total, g.metrica) }}</dd>
+            </div>
+          }
+        }
+        <div class="stat">
+          <dt>Análisis generados</dt>
+          <dd class="tabular-nums">
+            {{ resumen.bloques }}
+            <span class="stat-sub">
+              {{ resumen.dimensiones }} {{ resumen.dimensiones === 1 ? 'dimensión' : 'dimensiones' }} ×
+              {{ resumen.metricas }} {{ resumen.metricas === 1 ? 'métrica' : 'métricas' }}
+            </span>
+          </dd>
         </div>
-        <div class="summary-stat">
-          <span class="summary-value">{{ resumen.metricas }}</span>
-          <span class="summary-label">{{ resumen.metricas === 1 ? 'Métrica' : 'Métricas' }}</span>
+      </dl>
+
+      @if (omitidas.length > 0 || resumen.limiteAlcanzado) {
+        <div class="notice" role="note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16.5v.01" /></svg>
+          <div>
+            @if (demasiadas.length > 0) {
+              <p>
+                @for (o of demasiadas; track o.dimension; let last = $last) {
+                  <strong>{{ o.dimension }}</strong> ({{ o.valores | number: '1.0-0' }} valores){{ last ? '' : ', ' }}
+                }
+                {{ demasiadas.length === 1 ? 'no se graficó: tiene' : 'no se graficaron: tienen' }} demasiados valores
+                distintos para una gráfica legible. Analízalas abajo en <em>Análisis puntual</em>, con filtros.
+              </p>
+            }
+            @if (unValor.length > 0) {
+              <p>
+                @for (o of unValor; track o.dimension; let last = $last) {
+                  <strong>{{ o.dimension }}</strong>{{ last ? '' : ', ' }}
+                }
+                {{ unValor.length === 1 ? 'tiene' : 'tienen' }} un solo valor en todo el archivo, así que no hay nada que
+                comparar — {{ unValor.length === 1 ? 'se omitió' : 'se omitieron' }}.
+              </p>
+            }
+            @if (resumen.limiteAlcanzado) {
+              <p>
+                Se muestran los primeros {{ resumen.maxBloques ?? resumen.bloques }} análisis. Para ver otros,
+                marca menos columnas como dimensión o métrica y vuelve a generar.
+              </p>
+            }
+          </div>
         </div>
-        <div class="summary-stat">
-          <span class="summary-value">{{ resumen.bloques }}</span>
-          <span class="summary-label">{{ resumen.bloques === 1 ? 'Análisis generado' : 'Análisis generados' }}</span>
-        </div>
-      </div>
+      }
     }
 
-    @for (group of groups; track group.metrica) {
-      <div class="metric-section">
-        <h4 class="metric-title">
-          <span class="metric-dot"></span>
-          {{ group.metrica }}
-        </h4>
-        <div class="grid">
-          @for (bloque of group.bloques; track bloque.titulo) {
-            <div class="block">
-              <div class="block-header">
-                <h5>{{ bloque.titulo }}</h5>
-                <span class="tag dimension">{{ bloque.dimension }}</span>
-              </div>
+    <div class="controls">
+      @if (groups.length > 1) {
+        <div class="tabs" role="tablist" aria-label="Métricas">
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            [class.on]="activeMetric === ALL"
+            [attr.aria-selected]="activeMetric === ALL"
+            [attr.tabindex]="activeMetric === ALL ? 0 : -1"
+            (click)="setMetric(ALL)"
+            (keydown)="onTabKeydown($event, 0)"
+          >
+            Todas <span class="count">{{ bloques.length }}</span>
+          </button>
+          @for (g of groups; track g.metrica; let i = $index) {
+            <button
+              type="button"
+              role="tab"
+              class="tab"
+              [class.on]="activeMetric === g.metrica"
+              [attr.aria-selected]="activeMetric === g.metrica"
+              [attr.tabindex]="activeMetric === g.metrica ? 0 : -1"
+              (click)="setMetric(g.metrica)"
+              (keydown)="onTabKeydown($event, i + 1)"
+            >
+              {{ g.metrica }} <span class="count">{{ g.bloques.length }}</span>
+            </button>
+          }
+        </div>
+      }
 
-              @if (bloque.insight) {
-                <p class="insight">{{ bloque.insight }}</p>
-              }
-
-              <app-cell-result [result]="bloque.resultado" [hideChart]="true"></app-cell-result>
-
-              @if (!bloque.resultado.error && bloque.resultado.result_records?.length) {
-                <app-chart-canvas
-                  [records]="bloque.resultado.result_records!"
-                  [categoryKey]="bloque.dimension"
-                  [valueKey]="bloque.metrica"
-                ></app-chart-canvas>
-              }
-
-              @if (!bloque.resultado.error && bloque.resultado.explanation) {
-                <p class="block-explanation">{{ bloque.resultado.explanation }}</p>
-              }
-            </div>
+      <div class="view-all">
+        <span class="view-all-label" id="view-all-label">Ver todas como</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="view-all-label">
+          @for (opt of views; track opt.value) {
+            <button
+              type="button"
+              role="radio"
+              class="seg"
+              [class.on]="globalView === opt.value"
+              [attr.aria-checked]="globalView === opt.value"
+              [title]="opt.hint"
+              (click)="setGlobalView(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
           }
         </div>
       </div>
+    </div>
+
+    @for (group of visibleGroups; track group.metrica) {
+      <section class="metric-section" [attr.aria-label]="group.metrica">
+        @if (visibleGroups.length > 1) {
+          <h3 class="metric-title">{{ group.metrica }}</h3>
+        }
+        <div class="grid">
+          @for (bloque of group.bloques; track bloque.titulo) {
+            <app-analysis-block [bloque]="bloque" [defaultView]="globalView"></app-analysis-block>
+          }
+        </div>
+      </section>
     }
   </div>
 }

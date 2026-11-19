@@ -3,25 +3,15 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
-  box-shadow: var(--shadow-sm);
 }
 
-.note {
-  font-size: 0.78rem;
-  color: var(--ink-muted);
-  margin: 0;
-}
-
-.error-text {
-  color: var(--bad);
-}
-
-.loading-row {
+.loading {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   color: var(--ink-muted);
+  margin-bottom: 0.85rem;
 }
 
 .spinner {
@@ -31,6 +21,12 @@
   border: 2px solid var(--brand-soft-border);
   border-top-color: var(--brand);
   animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+
+  &.light {
+    border-color: rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+  }
 }
 
 @keyframes spin {
@@ -39,16 +35,35 @@
   }
 }
 
+.error-box {
+  p {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--bad);
+    font-weight: 550;
+  }
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+}
+
 .assistant-note {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  margin-bottom: 0.85rem;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
 }
 
 .dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 
@@ -61,55 +76,138 @@
   }
 }
 
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0.2rem 0;
+  color: var(--brand-dark);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.roles-help {
+  margin: 0.6rem 0 0.9rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+
+  summary {
+    cursor: pointer;
+    width: fit-content;
+    font-weight: 550;
+
+    &:hover {
+      color: var(--ink);
+    }
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+    gap: 0.5rem 1.25rem;
+    margin: 0.6rem 0 0;
+    padding: 0.75rem 0.85rem;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+  }
+
+  dt {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 650;
+    color: var(--ink);
+  }
+
+  dd {
+    margin: 0.1rem 0 0 1rem;
+    line-height: 1.4;
+  }
+}
+
 .rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 0.4rem 0.6rem;
 }
 
 .row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.4rem 0.6rem;
+  min-height: 46px;
+  padding: 0.4rem 0.45rem 0.4rem 0.7rem;
   border-radius: var(--radius-sm);
   background: var(--bg);
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--border);
+  }
+
+  &.changed {
+    background: var(--brand-soft);
+  }
+
+  &.sk {
+    min-height: 46px;
+  }
 }
 
-// Each of the 5 semantic roles gets its own accent color, applied both to
-// this dot and to the <select> border - lets the eye scan "which columns
-// are dimensions" at a glance instead of reading every dropdown's text.
+.sk-line {
+  display: block;
+  height: 11px;
+  width: 55%;
+  border-radius: 6px;
+  background: var(--border);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+// Each role keeps its own accent (dot, select border, summary chip) so the
+// eye can scan "which columns are dimensions" without reading every select.
+$roles: (
+  dimension: var(--brand),
+  metrica: var(--ok),
+  fecha: #8a5cd0,
+  identificador: var(--warn),
+  descartar: var(--ink-faint),
+);
+
 .role-dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
 
-  &[data-role='dimension'] {
-    background: var(--brand);
-  }
-
-  &[data-role='metrica'] {
-    background: var(--ok);
-  }
-
-  &[data-role='fecha'] {
-    background: #8a5cd0;
-  }
-
-  &[data-role='identificador'] {
-    background: var(--warn);
-  }
-
-  &[data-role='descartar'] {
-    background: var(--ink-faint);
+  @each $role, $color in $roles {
+    &[data-role='#{$role}'] {
+      background: $color;
+    }
   }
 }
 
-.col-name {
+.col {
   flex: 1;
   min-width: 0;
-  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+}
+
+.col-name {
+  font-size: 0.86rem;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -117,57 +215,152 @@
   white-space: nowrap;
 }
 
+.col-type {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
 select {
-  padding: 0.32rem 0.5rem;
+  max-width: 55%;
+  min-height: 34px;
+  padding: 0.3rem 0.5rem;
   border: 1.5px solid var(--border-strong);
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
   background: var(--surface);
   color: var(--ink);
   flex-shrink: 0;
+  cursor: pointer;
 
-  &:focus {
-    outline: none;
-    border-color: var(--brand);
-  }
-
-  &[data-role='dimension'] {
-    border-color: var(--brand);
-  }
-
-  &[data-role='metrica'] {
-    border-color: var(--ok);
-  }
-
-  &[data-role='fecha'] {
-    border-color: #8a5cd0;
-  }
-
-  &[data-role='identificador'] {
-    border-color: var(--warn);
+  @each $role, $color in $roles {
+    &[data-role='#{$role}'] {
+      border-color: $color;
+    }
   }
 }
 
-.generate-btn {
-  display: block;
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
   margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.footer-info {
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.role-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+}
+
+.chip {
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.14rem 0.55rem;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-muted);
+
+  &[data-role='dimension'] {
+    background: var(--brand-soft);
+    color: var(--brand-dark);
+  }
+
+  &[data-role='metrica'] {
+    background: var(--ok-soft);
+    color: var(--ok);
+  }
+}
+
+.missing,
+.dirty {
+  margin: 0.45rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 550;
+}
+
+.missing {
+  color: var(--warn);
+}
+
+.dirty {
+  color: var(--brand-dark);
+}
+
+.generate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
   background: var(--brand);
   color: #fff;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 0.5rem 1.1rem;
+  padding: 0.55rem 1.25rem;
   cursor: pointer;
-  font-size: 0.86rem;
+  font-size: 0.9rem;
+  font-weight: 650;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--brand-dark);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.btn-secondary {
+  margin-top: 0.7rem;
+  min-height: 36px;
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--brand-dark);
+  font-size: 0.85rem;
   font-weight: 600;
-  transition: background-color 0.15s ease;
+  cursor: pointer;
 
   &:hover {
-    background: var(--brand-dark);
+    border-color: var(--brand);
+  }
+}
+
+@media (max-width: 480px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  select {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .generate-btn {
+    width: 100%;
+    justify-content: center;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
+  .spinner,
+  .sk-line {
     animation: none;
   }
 }

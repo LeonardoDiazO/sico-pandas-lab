@@ -3,6 +3,7 @@ import { NgModule } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MonacoEditorModule } from 'ngx-monaco-editor-v2';
 
+import { AnalysisBlockComponent } from './analysis-block/analysis-block.component';
 import { AnalysisDashboardComponent } from './analysis-dashboard/analysis-dashboard.component';
 import { CellResultComponent } from './cell-result/cell-result.component';
 import { ChartCanvasComponent } from './chart-canvas/chart-canvas.component';
@@ -27,6 +28,7 @@ import { SavedQueriesComponent } from './saved-queries/saved-queries.component';
     SavedQueriesComponent,
     ColumnClassificationComponent,
     AnalysisDashboardComponent,
+    AnalysisBlockComponent,
     ChartCanvasComponent,
   ],
   imports: [CommonModule, FormsModule, MonacoEditorModule],
@@ -41,6 +43,7 @@ import { SavedQueriesComponent } from './saved-queries/saved-queries.component';
     SavedQueriesComponent,
     ColumnClassificationComponent,
     AnalysisDashboardComponent,
+    AnalysisBlockComponent,
     ChartCanvasComponent,
     CommonModule,
     FormsModule,

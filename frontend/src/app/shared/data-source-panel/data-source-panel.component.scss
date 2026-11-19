@@ -42,10 +42,24 @@
   background: var(--surface-alt);
   padding: 1rem 1.1rem;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  min-height: 76px;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
 
   &:hover {
     border-color: var(--brand);
+  }
+
+  // Keyboard users focus the hidden input - show it on the whole target.
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  &.over {
+    border-color: var(--brand);
+    border-style: solid;
+    background: var(--brand-soft);
+    transform: scale(1.005);
   }
 
   &.busy {
@@ -72,8 +86,21 @@
   border-radius: 50%;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 1.1rem;
-  font-weight: 700;
+
+  svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.file-name {
+  font-size: inherit !important;
+  overflow-wrap: anywhere;
 }
 
 .dropzone-text {

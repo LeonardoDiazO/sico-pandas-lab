@@ -7,7 +7,7 @@ WorkerManager stored on the Flask app.
 from flask import Blueprint, current_app, request
 
 from app.data_access.excel_profiler import profile_excel
-from app.notebook.analysis_catalog import build_catalog
+from app.notebook.analysis_catalog import MAX_AUTO_BLOCKS, build_catalog
 from app.notebook.chart_builder import (
     CHART_TYPES,
     HIGH_CARDINALITY_THRESHOLD,
@@ -566,7 +566,8 @@ def auto_analysis_route():
             message="La clasificación de columnas no es válida.", success=False, status=400
         )
 
-    blocks = build_catalog(_session_id(), _manager(), profile["variable"], classifications)
+    report = {}
+    blocks = build_catalog(_session_id(), _manager(), profile["variable"], classifications, report)
     # Executive-summary panel (Story: "contextualizaciones amplias") - the
     # counts a user would want before diving into individual blocks. `rows`
     # can be None for a session profiled before this field existed (a
@@ -577,6 +578,9 @@ def auto_analysis_route():
         "dimensiones": sum(1 for c in classifications if c["role"] == "dimension"),
         "metricas": sum(1 for c in classifications if c["role"] == "metrica"),
         "bloques": len(blocks),
+        "omitidas": report.get("omitidas", []),
+        "limiteAlcanzado": report.get("limite_alcanzado", False),
+        "maxBloques": MAX_AUTO_BLOCKS,
     }
     if not blocks:
         return api_response(

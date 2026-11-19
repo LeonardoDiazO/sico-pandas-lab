@@ -1,32 +1,90 @@
 <div class="classification">
   @if (loading) {
-    <div class="loading-row">
-      <span class="spinner"></span>
-      Sugiriendo qué es cada columna…
+    <div class="loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      Revisando tus columnas para sugerir qué es cada una…
+    </div>
+    <div class="rows">
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="row sk"><span class="sk-line"></span></div>
+      }
     </div>
   } @else if (errorMessage) {
-    <p class="note error-text">{{ errorMessage }}</p>
+    <div class="error-box" role="alert">
+      <p>{{ errorMessage }}</p>
+      <button type="button" class="btn-secondary" (click)="fetchSuggestion()">Reintentar</button>
+    </div>
   } @else if (classifications.length > 0) {
-    <p class="note assistant-note" [class.fallback]="!usedAssistant">
-      @if (usedAssistant) {
-        <span class="dot ok"></span> Sugerencia generada por el asistente — corrige lo que haga falta.
-      } @else {
-        <span class="dot warn"></span> Asistente no disponible: sugerencia por reglas simples — revísala.
+    <div class="top">
+      <p class="assistant-note">
+        @if (usedAssistant) {
+          <span class="dot ok" aria-hidden="true"></span> Sugerencia del asistente — cambia lo que no cuadre.
+        } @else {
+          <span class="dot warn" aria-hidden="true"></span> Asistente no disponible: sugerencia por reglas simples — revísala.
+        }
+      </p>
+      @if (modifiedFromSuggestion) {
+        <button type="button" class="link-btn" (click)="resetToSuggestion()">Volver a la sugerencia</button>
       }
-    </p>
-    <div class="rows">
+    </div>
+
+    <details class="roles-help">
+      <summary>¿Qué significa cada rol?</summary>
+      <dl>
+        <div><dt><span class="role-dot" data-role="dimension"></span>Dimensión</dt><dd>Agrupa los datos: cliente, ciudad, vendedor, producto.</dd></div>
+        <div><dt><span class="role-dot" data-role="metrica"></span>Métrica</dt><dd>Número que se suma por grupo: valor, neto, cantidad.</dd></div>
+        <div><dt><span class="role-dot" data-role="fecha"></span>Fecha</dt><dd>Cuándo ocurrió; útil para gráficas de línea en el análisis puntual.</dd></div>
+        <div><dt><span class="role-dot" data-role="identificador"></span>Identificador</dt><dd>Únicos por fila (n.º de factura, cédula): no tiene sentido agrupar.</dd></div>
+        <div><dt><span class="role-dot" data-role="descartar"></span>Descartar</dt><dd>No se usa en el tablero.</dd></div>
+      </dl>
+    </details>
+
+    <ul class="rows" aria-label="Columnas del archivo">
       @for (c of classifications; track c.name) {
-        <div class="row">
-          <span class="role-dot" [attr.data-role]="c.role"></span>
-          <span class="col-name">{{ c.name }}</span>
-          <select [ngModel]="c.role" (ngModelChange)="setRole(c.name, $event)" [attr.data-role]="c.role">
+        <li class="row" [class.changed]="isChanged(c.name)">
+          <span class="role-dot" [attr.data-role]="c.role" aria-hidden="true"></span>
+          <label class="col" [for]="'role-' + $index">
+            <span class="col-name" [title]="c.name">{{ c.name }}</span>
+            @if (typeOf(c.name); as t) {
+              <span class="col-type">{{ t }}</span>
+            }
+          </label>
+          <select
+            [id]="'role-' + $index"
+            [ngModel]="c.role"
+            (ngModelChange)="setRole(c.name, $event)"
+            [attr.data-role]="c.role"
+          >
             @for (role of roleOptions; track role) {
               <option [value]="role">{{ roleLabels[role] }}</option>
             }
           </select>
-        </div>
+        </li>
       }
+    </ul>
+
+    <div class="footer">
+      <div class="footer-info">
+        <p class="role-summary">
+          @for (r of roleSummary; track r.role; let last = $last) {
+            <span class="chip" [attr.data-role]="r.role">{{ r.text }}</span>
+          }
+        </p>
+        @if (missing) {
+          <p class="missing" role="status">{{ missing }}</p>
+        } @else if (dirty) {
+          <p class="dirty" role="status">Cambiaste la clasificación: genera de nuevo para actualizar el tablero.</p>
+        }
+      </div>
+      <button type="button" class="generate-btn" (click)="confirm()" [disabled]="!!missing || busy">
+        @if (busy) {
+          <span class="spinner light" aria-hidden="true"></span> Generando…
+        } @else if (dirty) {
+          Actualizar tablero
+        } @else {
+          Generar tablero
+        }
+      </button>
     </div>
-    <button class="generate-btn" (click)="confirm()">Confirmar y generar análisis</button>
   }
 </div>

@@ -1,5 +1,11 @@
+:host {
+  display: block;
+}
+
 .chart-canvas-wrap {
   position: relative;
   width: 100%;
-  height: 320px;
+  // Chart.js responsive mode measures this box; min-width:0 keeps a grid/
+  // flex parent from being propped open by the canvas's own width.
+  min-width: 0;
 }

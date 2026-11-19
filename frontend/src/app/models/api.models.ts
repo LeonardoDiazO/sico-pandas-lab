@@ -90,6 +90,12 @@ export interface AnalysisSummary {
   dimensiones: number;
   metricas: number;
   bloques: number;
+  // What the catálogo left out, so the dashboard can explain it instead of a
+  // dimension silently vanishing (analysis_catalog.py's `report`). Optional
+  // for responses from a backend that predates these fields.
+  omitidas?: { dimension: string; valores: number }[];
+  limiteAlcanzado?: boolean;
+  maxBloques?: number;
 }
 
 export interface AutoAnalysisResult {

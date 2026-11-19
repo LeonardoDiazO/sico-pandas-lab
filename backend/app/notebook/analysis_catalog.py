@@ -44,7 +44,7 @@ def _prioritized_metrics(metric_names):
     return money + other
 
 
-def _usable_dimensions(session_id, manager, variable, dimensions):
+def _usable_dimensions(session_id, manager, variable, dimensions, skipped=None):
     """A dimension only earns a spot in the catalog if grouping by it stays
     legible - same HIGH_CARDINALITY_THRESHOLD the manual torta/barras
     cardinality-warning flow already enforces (chart_builder.py), checked
@@ -57,12 +57,24 @@ def _usable_dimensions(session_id, manager, variable, dimensions):
             unique_count = int(check.get("result_text"))
         except (TypeError, ValueError):
             continue
-        if unique_count <= HIGH_CARDINALITY_THRESHOLD:
+        if unique_count < 2:
+            # A single value (e.g. a "Bodega" column that is always "3")
+            # yields a one-bar "1 de 1 concentra el 100%" card - no
+            # information, and it spends a slot of MAX_AUTO_BLOCKS.
+            if skipped is not None:
+                skipped.append({"dimension": dim, "valores": unique_count})
+        elif unique_count <= HIGH_CARDINALITY_THRESHOLD:
             usable.append(dim)
+        elif skipped is not None:
+            # Reported back to the user (resumen.omitidas) instead of the
+            # dimension silently vanishing from the dashboard - a real user
+            # can't tell "Cliente has 79 values" from "the tool ignored my
+            # column" otherwise.
+            skipped.append({"dimension": dim, "valores": unique_count})
     return usable
 
 
-def build_catalog(session_id, manager, variable, classifications):
+def build_catalog(session_id, manager, variable, classifications, report=None):
     """Returns a list of blocks:
     {"titulo", "dimension", "metrica", "insight", "resultado"}.
 
@@ -73,18 +85,30 @@ def build_catalog(session_id, manager, variable, classifications):
     shape /summary-table already returns, so it renders through the same
     frontend component. Its own `stdout` is cleared once `insight` has
     lifted that sentence out, so the UI never shows the same sentence twice.
+
+    `report` (optional dict) is filled with what the catalog left out, so the
+    UI can explain it: `omitidas` (dimensions over the cardinality
+    threshold, with their distinct-value count) and `limite_alcanzado`
+    (True when MAX_AUTO_BLOCKS cut the catalog short).
     """
+    if report is not None:
+        report.setdefault("omitidas", [])
+        report.setdefault("limite_alcanzado", False)
     dimensions = _names_with_role(classifications, ROLE_DIMENSION)
     metrics = _prioritized_metrics(_names_with_role(classifications, ROLE_METRICA))
     if not dimensions or not metrics:
         return []
 
-    usable_dimensions = _usable_dimensions(session_id, manager, variable, dimensions)
+    usable_dimensions = _usable_dimensions(
+        session_id, manager, variable, dimensions, report["omitidas"] if report is not None else None
+    )
 
     blocks = []
     for metric in metrics:
         for dim in usable_dimensions:
             if len(blocks) >= MAX_AUTO_BLOCKS:
+                if report is not None:
+                    report["limite_alcanzado"] = True
                 return blocks
             resultado = manager.execute(session_id, build_summary_code(variable, [dim], metric))
             insight = None

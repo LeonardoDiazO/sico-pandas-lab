@@ -1,134 +1,235 @@
 .dashboard {
-  margin-bottom: 0.5rem;
-}
-
-.summary-strip {
-  display: flex;
-  gap: 1.75rem;
-  background: var(--brand-soft);
-  border: 1px solid var(--brand-soft-border);
-  border-radius: var(--radius-lg);
-  padding: 1rem 1.4rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.summary-stat {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 1.25rem;
 }
 
-.summary-value {
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--brand-ink);
+// What was analyzed, as a plain definition list - labels small, figures in
+// the text ink, one hairline between items. Not a row of hero tiles.
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.stat {
+  flex: 1 1 11rem;
+  padding: 0.85rem 1.1rem;
+  border-right: 1px solid var(--border);
+  margin-right: -1px;
+
+  dt {
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--ink-muted);
+    overflow-wrap: anywhere;
+  }
+
+  dd {
+    margin: 0.2rem 0 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+}
+
+.stat-sub {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-muted);
+}
+
+.notice {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.95rem;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-md);
+  color: var(--warn);
+  font-size: 0.84rem;
+  line-height: 1.45;
+
+  svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+
+  p {
+    margin: 0;
+    max-width: 75ch;
+
+    & + p {
+      margin-top: 0.35rem;
+    }
+  }
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  position: sticky;
+  top: 52px;
+  z-index: 5;
+  padding: 0.55rem 0;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  max-width: 100%;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+  font-weight: 550;
+  padding: 0.45rem 0.8rem;
+  min-height: 36px;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover:not(.on) {
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  &.on {
+    background: var(--brand);
+    color: #fff;
+    font-weight: 650;
+
+    .count {
+      background: rgba(255, 255, 255, 0.22);
+      color: #fff;
+    }
+  }
+}
+
+.count {
+  font-size: 0.72rem;
+  font-weight: 650;
+  padding: 0.05rem 0.42rem;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.summary-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--brand-dark);
-  opacity: 0.75;
+.view-all {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.view-all-label {
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--ink-muted);
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.seg {
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-weight: 550;
+  padding: 0.38rem 0.7rem;
+  min-height: 32px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover:not(.on) {
+    color: var(--ink);
+  }
+
+  &.on {
+    background: var(--brand-soft);
+    color: var(--brand-dark);
+    font-weight: 650;
+  }
 }
 
 .metric-section {
-  margin-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
 
-  &:last-child {
-    margin-bottom: 0;
+  & + & {
+    margin-top: 1rem;
   }
 }
 
 .metric-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.98rem;
-  color: var(--ink);
-  margin-bottom: 0.85rem;
-}
-
-.metric-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 1.1rem;
+  // min(100%, …) so a phone never gets a column wider than the screen.
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr));
+  gap: 1rem;
+  align-items: stretch;
 }
 
-.block {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 1.1rem 1.2rem;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s ease;
-
-  &:hover {
-    box-shadow: var(--shadow-md);
+@media (max-width: 640px) {
+  .controls {
+    position: static;
   }
-}
 
-.block-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 0.7rem;
-
-  h5 {
-    margin: 0;
-    font-size: 0.92rem;
-    font-weight: 600;
-    color: var(--ink);
-    letter-spacing: -0.01em;
+  .view-all {
+    margin-left: 0;
   }
-}
 
-.tag {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  white-space: nowrap;
-  flex-shrink: 0;
-
-  &.dimension {
-    background: var(--brand-soft);
-    color: var(--brand-dark);
+  .stat {
+    flex-basis: 50%;
+    border-bottom: 1px solid var(--border);
   }
-}
-
-// The lifted business-language sentence (from build_summary_code's own
-// stdout, e.g. "3 de 5 vendedores concentran el 82% del total.") - the
-// single most important line on the card, so it gets its own visual weight
-// instead of blending into the surrounding text.
-.insight {
-  background: var(--ok-soft);
-  border-left: 3px solid var(--ok);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: 0.55rem 0.8rem;
-  margin: 0 0 0.85rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--ok);
-}
-
-.block-explanation {
-  margin-top: 0.7rem;
-  font-size: 0.82rem;
-  color: var(--ink-muted);
-  font-style: italic;
 }

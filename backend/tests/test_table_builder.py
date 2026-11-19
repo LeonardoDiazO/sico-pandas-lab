@@ -978,3 +978,26 @@ def test_pareto_chart_bars_get_a_hover_tooltip_with_name_value_and_cumulative_pc
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert "<title>LATIN LOGISTICS: $ 1.234.567" in result["chart_svg"]
+
+
+def test_summary_cumulative_share_never_drifts_past_100():
+    """Regression (real file): cumsum of already-rounded '% del total'
+    ended at 100.1% - the cumulative share is now computed from the raw
+    running total, so the last row is exactly 100."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import pandas as pd
+
+    from app.notebook.execution import build_namespace, execute_code
+
+    namespace = build_namespace()
+    # Thirds (33.3 + 33.3 + 33.3) and a tiny remainder: rounded shares sum
+    # to something other than 100.
+    namespace["df"] = pd.DataFrame(
+        {"vendedor": ["A", "B", "C", "D"], "cantidad": [3333.0, 3333.0, 3333.0, 6.0]}
+    )
+    result = execute_code(build_summary_code("df", ["vendedor"], "cantidad"), namespace)
+    assert result["error"] is None
+    assert result["result_records"][-1]["% acumulado"] == 100.0
+    assert all(r["% acumulado"] <= 100.0 for r in result["result_records"])

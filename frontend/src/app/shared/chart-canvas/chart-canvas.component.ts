@@ -1,26 +1,39 @@
-import { AfterViewInit, Component, ElementRef, Input, NgZone, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
-import { Chart, ChartData, ChartOptions, registerables, TooltipItem } from 'chart.js';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  NgZone,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+  ViewChild,
+} from '@angular/core';
+import { ActiveElement, Chart, ChartConfiguration, ChartEvent, Plugin, registerables, TooltipItem } from 'chart.js';
 import annotationPlugin from 'chartjs-plugin-annotation';
 
-import { looksLikeMoney, parseMoneyValue } from '../money-format';
+import { looksLikeMoney } from '../money-format';
+import { buildParetoRows, formatCompact, formatPct, formatValue, ParetoRow } from '../pareto-data';
 
-// Chart.js 4's tree-shakeable registration requires every controller/
-// element/scale/plugin it uses to be registered before a chart is built -
-// registerables (everything the library ships) is simplest here since this
-// component isn't performance-sensitive enough to hand-pick a subset, and
-// Story 10.1's job is just getting an interactive chart on screen (fine
-// tuning is 10.2-10.5).
 Chart.register(...registerables, annotationPlugin);
 
-// Story 10.5: reads a color straight off the app's shared design tokens
-// (frontend/src/styles.scss's :root custom properties) at render time,
-// instead of a hardcoded hex - if a token's value changes there, this
-// chart picks it up with no code change here, per this story's own AC.
-// Falls back to the token's current value only if getComputedStyle can't
-// resolve it (e.g. a test environment with no stylesheet loaded). Review
-// finding: these fallback hex literals duplicate styles.scss's :root
-// values as of this writing and nothing keeps them in sync automatically -
-// if a token's value changes there, update the matching fallback here too.
+/**
+ * Views the automatic dashboard can switch between for the same Pareto
+ * summary - all drawn from the same normalized ParetoRows:
+ * - pareto: bars + cumulative-% line + 80% reference (the classic diagram
+ *   users asked for "con sus ejes en porcentaje").
+ * - ranking: horizontal bars, one axis, every category name readable in
+ *   full and its share printed at the bar end - the easiest view for
+ *   someone who has never read a Pareto chart.
+ * - dona: share of the total (top 5 + "Otros"), for "how big is each slice".
+ */
+export type ChartView = 'pareto' | 'ranking' | 'dona';
+
+// Reads a color off the app's shared design tokens (styles.scss :root) at
+// render time instead of a hardcoded hex. The fallbacks duplicate the
+// current token values - keep them in sync if styles.scss changes.
 function designToken(name: string, fallback: string): string {
   if (typeof document === 'undefined') {
     return fallback;
@@ -29,36 +42,48 @@ function designToken(name: string, fallback: string): string {
   return value || fallback;
 }
 
-// Story 10.3's own animation duration, named so the doc comment, the runtime
-// config, and the test asserting it all point at one source of truth.
 const ENTRY_ANIMATION_DURATION_MS = 700;
 
-// Review finding (Story 10.3): a CSS `@media (prefers-reduced-motion)` rule
-// (the pattern already used in no-code-home.component.scss and
-// column-classification.component.scss) can't reach into a Chart.js canvas
-// animation - it has to be a JS-side check, read fresh on every render() so
-// a mid-session OS setting change is honored, not just at module load.
+// Donut slices: validated categorical order (dataviz reference palette,
+// slots 1-5 adjacent-pair CVD-safe) - "Otros" always takes the neutral.
+// Every slice also carries its name + share in the legend and table view,
+// so identity is never color-alone.
+const SLICE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'];
+const MAX_SLICES = 5;
+
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 }
 
+function withAlpha(color: string, alpha: number): string {
+  // Tokens are hex in styles.scss; rgb()/other forms (tests, overrides) are
+  // returned untouched rather than mangled.
+  const hex = color.trim();
+  if (/^#[0-9a-f]{6}$/i.test(hex)) {
+    const a = Math.round(alpha * 255)
+      .toString(16)
+      .padStart(2, '0');
+    return `${hex}${a}`;
+  }
+  return color;
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 /**
- * Interactive Pareto chart (bars = raw value, line = cumulative % on a
- * second axis) for the automatic dashboard (`analysis-dashboard.component`),
- * fed directly from `result_records` - the same rows `table_builder.py`'s
- * `build_summary_code` already returns, no backend change needed. Replaces
- * the static `chart_svg` matplotlib image ONLY inside that dashboard; every
- * other consumer of `cell-result.component` (free notebook, guided module)
- * keeps rendering `chart_svg` untouched (see `hideChart` there).
+ * Interactive canvas chart for the automatic dashboard, fed directly from
+ * `result_records` (no backend change, no static image). Hover/tap shows a
+ * combined tooltip; clicking a bar or slice selects that category
+ * (`selectedIndexChange`) so the surrounding card can show its detail and
+ * highlight it in the table view. Bars belonging to the 80% "vital few" are
+ * drawn in the brand color and the rest muted, so the 80/20 split reads
+ * without decoding the cumulative line first.
  *
- * Story 10.2 adds a combined tooltip (bar value + cumulative % together,
- * touch-tappable - Chart.js' default `events` already include touch).
- * Story 10.3 sets an explicit sub-1s entry/update animation duration.
- * Story 10.4 adds the 80% crossing reference line (chartjs-plugin-
- * annotation), migrating the SVG's own `axhline(80)`. Story 10.5 reads
- * every chart-drawn color here (bars, cumulative line, 80% reference,
- * legend text, tooltip, axis ticks/grid) from the app's shared design
- * tokens (styles.scss), never a hardcoded hex.
+ * Chart.js runs entirely outside Angular's zone: its ResizeObserver and rAF
+ * loop otherwise re-enter change detection on every tick, which inside the
+ * dashboard's CSS grid fed a real resize/CD loop that froze the browser.
  */
 @Component({
   selector: 'app-chart-canvas',
@@ -70,45 +95,50 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() records: Record<string, unknown>[] = [];
   @Input() categoryKey = '';
   @Input() valueKey = '';
+  @Input() view: ChartView = 'pareto';
+  // null = every category; otherwise only the top N (already sorted desc).
+  @Input() topN: number | null = null;
+  @Input() selectedIndex: number | null = null;
+  @Input() height = 320;
+  @Output() selectedIndexChange = new EventEmitter<number | null>();
 
   @ViewChild('canvasEl') private canvasEl?: ElementRef<HTMLCanvasElement>;
 
   private chart: Chart | null = null;
+  private chartView: ChartView | null = null;
   private viewReady = false;
+  private rows: ParetoRow[] = [];
 
   constructor(private ngZone: NgZone) {}
 
-  // Review finding (Story 10.5): getComputedStyle was being called on every
-  // render()/update(), i.e. on every data change, even though this app has
-  // no runtime theme switching (one :root block, no [data-theme] toggle) -
-  // these values are effectively fixed per page load, so they're resolved
-  // once per component instance and reused, instead of re-reading the
-  // stylesheet on every regeneration.
   private colors?: {
     brand: string;
+    muted: string;
     secondary: string;
     referenceLine: string;
     text: string;
     grid: string;
     tooltipBg: string;
     tooltipText: string;
+    surface: string;
+    ink: string;
+    other: string;
   };
 
   private resolveColors() {
     if (!this.colors) {
       this.colors = {
         brand: designToken('--brand', '#4a4fd6'),
-        // Review finding (Story 10.5): --warn carries a "pay attention"/
-        // caution connotation elsewhere in this app (banners, badges in
-        // convatec-maestros, cell-result, etc.) - reusing it for a routine
-        // cumulative-% line would misrepresent it as a warning. --brand-dark
-        // reads as "secondary data series", not an alert.
+        muted: designToken('--chart-muted', '#c3c6ec'),
         secondary: designToken('--brand-dark', '#363bab'),
         referenceLine: designToken('--ink-muted', '#5b6178'),
         text: designToken('--ink-muted', '#5b6178'),
         grid: designToken('--border', '#e2e4f1'),
         tooltipBg: designToken('--ink', '#1c2140'),
         tooltipText: designToken('--surface', '#ffffff'),
+        surface: designToken('--surface', '#ffffff'),
+        ink: designToken('--ink', '#1c2140'),
+        other: designToken('--ink-faint', '#8a90a8'),
       };
     }
     return this.colors;
@@ -120,9 +150,6 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(_changes: SimpleChanges): void {
-    // Guards ngOnChanges firing before ngAfterViewInit (Angular calls
-    // ngOnChanges with the initial @Input values before the view - and its
-    // ViewChild canvas - exists).
     if (this.viewReady) {
       this.render();
     }
@@ -130,44 +157,25 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   ngOnDestroy(): void {
     this.chart?.destroy();
+    this.chart = null;
   }
 
-  // The previous chart_svg image gave screen readers a native per-bar
-  // <title> tooltip (execution.py::_inject_svg_tooltips) - a bare <canvas>
-  // has no text alternative at all, so this replaces it with one summary
-  // label describing what the chart shows (not per-bar, but not silent
-  // either).
   get chartAriaLabel(): string {
-    return `Gráfica de ${this.valueKey} por ${this.categoryKey}: ${this.records.length} categorías, con línea de % acumulado y referencia del 80%`;
+    const viewLabel =
+      this.view === 'ranking'
+        ? 'Ranking de barras horizontales'
+        : this.view === 'dona'
+          ? 'Gráfica de participación'
+          : 'Gráfica de Pareto';
+    const vital = buildParetoRows(this.records, this.categoryKey, this.valueKey).filter((r) => r.vital).length;
+    return `${viewLabel} de ${this.valueKey} por ${this.categoryKey}: ${this.records.length} categorías; ${vital} concentran el 80% del total. Los valores exactos están en la vista Tabla.`;
   }
 
-  // Backend value columns that "look like money" (table_builder.py's
-  // _looks_like_money/_money_format_expr) arrive pre-formatted as strings
-  // like "$ 12.345" (a "$ " prefix, "." thousands separators, no decimals)
-  // rather than raw numbers - detect the string shape here and parse it
-  // back into a real number for the chart via the shared money-format
-  // helper (kept there, not inlined, so it stays in sync with the
-  // backend's formatting). A value that's already a number (a non-money
-  // metric) is used as-is. NaN (not 0) for anything else/unparseable, so
-  // Chart.js shows a gap instead of a misleading zero-height bar.
-  private toNumber(raw: unknown): number {
-    if (typeof raw === 'number') {
-      return raw;
-    }
-    if (typeof raw === 'string') {
-      return parseMoneyValue(raw);
-    }
-    return NaN;
+  /** PNG data URL of the current chart (surface-filled, not transparent). */
+  toPng(): string | null {
+    return this.chart ? this.chart.toBase64Image('image/png', 1) : null;
   }
 
-  // Review finding (Story 10.2): the bar dataset's raw number came from
-  // parseMoneyValue() for money columns, so the "$ " prefix is gone by the
-  // time it reaches here - re-checking looksLikeMoney(valueKey) (same
-  // shared helper) puts it back, matching the table right next to this
-  // chart instead of showing a bare number for a money metric. Non-money
-  // metrics keep up to 2 decimals instead of always rounding to an integer
-  // - "valor exacto" (this story's own AC) means not silently truncating a
-  // ratio/average's precision the way a money amount is expected to be.
   private formatTooltipLabel(context: TooltipItem<'bar' | 'line'>): string {
     const value = context.parsed.y;
     if (value === null || !Number.isFinite(value)) {
@@ -182,23 +190,376 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return `${context.dataset.label}: ${value.toLocaleString('es-CO', { maximumFractionDigits: 2 })}`;
   }
 
-  // Root-cause fix (freeze found via live testing with real production
-  // files): Chart.js's `responsive: true` attaches a ResizeObserver, and its
-  // animation loop uses requestAnimationFrame - zone.js patches both, so
-  // every resize/animation tick was re-entering Angular's zone and running a
-  // full change-detection cycle. Inside the dashboard's CSS Grid
-  // (auto-fit columns, percentage-width canvases), that let a sub-pixel
-  // layout change from one chart's own resize trigger ANOTHER
-  // zone-triggered CD cycle, which could feed back into another resize -
-  // a self-sustaining loop that pegged a CPU core indefinitely (confirmed:
-  // a standalone Chart.js reproduction outside Angular, using the exact
-  // same options/data, rendered instantly with no hang - zone.js
-  // integration was the missing variable). Running Chart.js's own
-  // creation/update entirely outside Angular's zone means its internal
-  // ResizeObserver and rAF callbacks never trigger Angular CD, breaking the
-  // loop at the source rather than papering over a symptom.
   private render(): void {
     this.ngZone.runOutsideAngular(() => this.renderChart());
+  }
+
+  private visibleRows(): ParetoRow[] {
+    return this.topN ? this.rows.slice(0, this.topN) : this.rows;
+  }
+
+  private barColors(rows: ParetoRow[]): string[] {
+    const c = this.resolveColors();
+    return rows.map((row, i) => {
+      const base = row.vital ? c.brand : c.muted;
+      if (this.selectedIndex === null || this.selectedIndex === i) {
+        return base;
+      }
+      return withAlpha(base, 0.35);
+    });
+  }
+
+  private onChartClick(_event: ChartEvent, elements: ActiveElement[]): void {
+    const hit = elements[0];
+    let index: number | null = hit ? hit.index : null;
+    // The donut's last slice can be the synthetic "Otros" - not a real row.
+    if (index !== null && this.view === 'dona' && index >= MAX_SLICES && this.rows.length > MAX_SLICES) {
+      index = null;
+    }
+    const next = index === this.selectedIndex ? null : index;
+    this.ngZone.run(() => this.selectedIndexChange.emit(next));
+  }
+
+  // Fills the canvas with the surface color first so a downloaded PNG isn't
+  // transparent (black in most image viewers).
+  private surfacePlugin(): Plugin {
+    return {
+      id: 'surfaceFill',
+      beforeDraw: (chart) => {
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.fillStyle = this.resolveColors().surface;
+        ctx.fillRect(0, 0, chart.width, chart.height);
+        ctx.restore();
+      },
+    };
+  }
+
+  // Ranking view: share printed at each bar's end (selective direct label -
+  // one short number per bar, in text ink, never the series color).
+  private barEndLabelsPlugin(): Plugin<'bar'> {
+    return {
+      id: 'barEndLabels',
+      afterDatasetsDraw: (chart) => {
+        if (this.chartView !== 'ranking') {
+          return;
+        }
+        const meta = chart.getDatasetMeta(0);
+        const rows = this.visibleRows();
+        const c = this.resolveColors();
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.font = '600 11px Inter, system-ui, sans-serif';
+        ctx.fillStyle = c.ink;
+        ctx.textBaseline = 'middle';
+        meta.data.forEach((bar, i) => {
+          const row = rows[i];
+          if (!row || !Number.isFinite(row.value)) {
+            return;
+          }
+          const { x, y } = bar.getProps(['x', 'y'], true) as { x: number; y: number };
+          ctx.fillText(formatPct(row.pct), x + 6, y);
+        });
+        ctx.restore();
+      },
+    };
+  }
+
+  // Donut: grand total in the hole, so the part-to-whole has its whole.
+  private centerTotalPlugin(): Plugin<'doughnut'> {
+    return {
+      id: 'centerTotal',
+      afterDraw: (chart) => {
+        if (this.chartView !== 'dona') {
+          return;
+        }
+        const meta = chart.getDatasetMeta(0);
+        const arc = meta.data[0] as unknown as { x: number; y: number; innerRadius: number } | undefined;
+        if (!arc || arc.innerRadius < 40) {
+          return;
+        }
+        const total = this.rows.reduce((sum, r) => (Number.isFinite(r.value) ? sum + r.value : sum), 0);
+        const c = this.resolveColors();
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = c.text;
+        ctx.font = '600 11px Inter, system-ui, sans-serif';
+        ctx.fillText('Total', arc.x, arc.y - 11);
+        ctx.fillStyle = c.ink;
+        ctx.font = '700 15px Inter, system-ui, sans-serif';
+        ctx.fillText(formatCompact(total, this.valueKey), arc.x, arc.y + 8);
+        ctx.restore();
+      },
+    };
+  }
+
+  private baseTooltip() {
+    const c = this.resolveColors();
+    return {
+      backgroundColor: c.tooltipBg,
+      titleColor: c.tooltipText,
+      bodyColor: c.tooltipText,
+      padding: 10,
+      cornerRadius: 8,
+      boxPadding: 4,
+      titleFont: { weight: 'bold' as const },
+    };
+  }
+
+  private paretoConfig(): ChartConfiguration<'bar' | 'line'> {
+    const c = this.resolveColors();
+    const rows = this.visibleRows();
+    return {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) => r.label),
+        datasets: [
+          {
+            type: 'bar',
+            label: this.valueKey,
+            data: rows.map((r) => r.value),
+            yAxisID: 'y',
+            backgroundColor: this.barColors(rows),
+            borderRadius: 4,
+            borderSkipped: 'bottom',
+            maxBarThickness: 56,
+          },
+          {
+            type: 'line',
+            label: '% acumulado',
+            data: rows.map((r) => r.cum),
+            yAxisID: 'y1',
+            tension: 0.25,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            borderColor: c.secondary,
+            backgroundColor: c.secondary,
+          },
+        ],
+      },
+      options: {
+        ...this.commonOptions(),
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          // Identity lives in the card's own legend line (vital / resto /
+          // % acumulado) - a second Chart.js legend just repeated it.
+          legend: { display: false },
+          tooltip: {
+            ...this.baseTooltip(),
+            callbacks: {
+              label: (context) => this.formatTooltipLabel(context),
+              afterBody: (items) => {
+                const row = rows[items[0]?.dataIndex ?? -1];
+                return row ? [`${formatPct(row.pct)} del total${row.vital ? ' · parte del 80%' : ''}`] : [];
+              },
+            },
+          },
+          annotation: {
+            annotations: {
+              line80: {
+                type: 'line',
+                yMin: 80,
+                yMax: 80,
+                yScaleID: 'y1',
+                borderColor: c.referenceLine,
+                borderWidth: 1,
+                borderDash: [6, 4],
+                label: {
+                  content: '80%',
+                  display: true,
+                  position: 'end',
+                  backgroundColor: c.referenceLine,
+                  font: { size: 10, weight: 'bold' },
+                  padding: { x: 6, y: 3 },
+                },
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            position: 'left',
+            beginAtZero: true,
+            border: { display: false },
+            ticks: { color: c.text, callback: (v) => formatCompact(Number(v), this.valueKey), maxTicksLimit: 6 },
+            grid: { color: c.grid },
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: true,
+            min: 0,
+            max: 105,
+            border: { display: false },
+            ticks: { color: c.text, stepSize: 20, callback: (v) => (Number(v) <= 100 ? `${v}%` : '') },
+            grid: { drawOnChartArea: false },
+          },
+          x: {
+            ticks: {
+              color: c.text,
+              autoSkip: true,
+              maxRotation: 45,
+              callback: (_v, i) => truncate(rows[i]?.label ?? '', 14),
+            },
+            grid: { display: false },
+          },
+        },
+      },
+    };
+  }
+
+  private rankingConfig(): ChartConfiguration<'bar'> {
+    const c = this.resolveColors();
+    const rows = this.visibleRows();
+    return {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) => r.label),
+        datasets: [
+          {
+            label: this.valueKey,
+            data: rows.map((r) => r.value),
+            backgroundColor: this.barColors(rows),
+            borderRadius: 4,
+            borderSkipped: 'start',
+            maxBarThickness: 26,
+            categoryPercentage: 0.85,
+            barPercentage: 0.9,
+          },
+        ],
+      },
+      options: {
+        ...this.commonOptions(),
+        indexAxis: 'y',
+        layout: { padding: { right: 44 } },
+        interaction: { mode: 'nearest', axis: 'y', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...this.baseTooltip(),
+            callbacks: {
+              label: (context) => `${this.valueKey}: ${formatValue(Number(context.parsed.x), this.valueKey)}`,
+              afterLabel: (context) => {
+                const row = rows[context.dataIndex];
+                return row ? `${formatPct(row.pct)} del total · acumulado ${formatPct(row.cum)}` : '';
+              },
+            },
+          },
+          annotation: { annotations: {} },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            border: { display: false },
+            ticks: { color: c.text, callback: (v) => formatCompact(Number(v), this.valueKey), maxTicksLimit: 5 },
+            grid: { color: c.grid },
+          },
+          y: {
+            border: { display: false },
+            ticks: {
+              color: c.ink,
+              autoSkip: false,
+              font: { size: 12 },
+              callback: (_v, i) => truncate(rows[i]?.label ?? '', 24),
+            },
+            grid: { display: false },
+          },
+        },
+      },
+    };
+  }
+
+  private donutConfig(): ChartConfiguration<'doughnut'> {
+    const c = this.resolveColors();
+    const named = this.rows.slice(0, MAX_SLICES);
+    const rest = this.rows.slice(MAX_SLICES);
+    const labels = named.map((r) => r.label);
+    const values = named.map((r) => (Number.isFinite(r.value) ? Math.max(r.value, 0) : 0));
+    const pcts = named.map((r) => r.pct);
+    const colors = named.map((_r, i) => SLICE_COLORS[i]);
+    if (rest.length) {
+      labels.push(`Otros (${rest.length})`);
+      values.push(rest.reduce((s, r) => (Number.isFinite(r.value) ? s + Math.max(r.value, 0) : s), 0));
+      pcts.push(rest.reduce((s, r) => s + r.pct, 0));
+      colors.push(c.other);
+    }
+    const faded = colors.map((col, i) =>
+      this.selectedIndex === null || this.selectedIndex === i ? col : withAlpha(col, 0.3),
+    );
+    return {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: this.valueKey,
+            data: values,
+            backgroundColor: faded,
+            borderColor: c.surface,
+            borderWidth: 2,
+            hoverOffset: 6,
+          },
+        ],
+      },
+      options: {
+        ...this.commonOptions(),
+        cutout: '62%',
+        layout: { padding: 6 },
+        plugins: {
+          legend: {
+            // Side legend only where there's room for it beside the ring.
+            position: (this.canvasEl?.nativeElement.parentElement?.clientWidth ?? 600) < 460 ? 'bottom' : 'right',
+            labels: {
+              color: c.ink,
+              boxWidth: 10,
+              boxHeight: 10,
+              padding: 10,
+              font: { size: 12 },
+              generateLabels: (chart) =>
+                labels.map((label, i) => ({
+                  text: `${truncate(label, 22)}  ${formatPct(pcts[i])}`,
+                  fillStyle: colors[i],
+                  strokeStyle: colors[i],
+                  fontColor: c.ink,
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                })),
+            },
+          },
+          tooltip: {
+            ...this.baseTooltip(),
+            callbacks: {
+              label: (context) =>
+                `${formatValue(Number(context.parsed), this.valueKey)} · ${formatPct(pcts[context.dataIndex])} del total`,
+            },
+          },
+          annotation: { annotations: {} },
+        },
+      },
+    };
+  }
+
+  private commonOptions() {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: {
+        duration: prefersReducedMotion() ? 0 : ENTRY_ANIMATION_DURATION_MS,
+        easing: 'easeOutQuart' as const,
+      },
+      onClick: (event: ChartEvent, elements: ActiveElement[]) => this.onChartClick(event, elements),
+      onHover: (event: ChartEvent, elements: ActiveElement[]) => {
+        const target = event.native?.target as HTMLElement | undefined;
+        if (target) {
+          target.style.cursor = elements.length ? 'pointer' : 'default';
+        }
+      },
+    };
   }
 
   private renderChart(): void {
@@ -206,155 +567,30 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!canvas || !this.categoryKey || !this.valueKey) {
       return;
     }
+    this.rows = buildParetoRows(this.records, this.categoryKey, this.valueKey);
 
-    const labels = this.records.map((record) => String(record[this.categoryKey] ?? ''));
-    const values = this.records.map((record) => this.toNumber(record[this.valueKey]));
-    const cumulative = this.records.map((record) => this.toNumber(record['% acumulado']));
+    const config =
+      this.view === 'ranking'
+        ? (this.rankingConfig() as unknown as ChartConfiguration)
+        : this.view === 'dona'
+          ? (this.donutConfig() as unknown as ChartConfiguration)
+          : (this.paretoConfig() as unknown as ChartConfiguration);
 
-    const colors = this.resolveColors();
-
-    const data: ChartData<'bar' | 'line'> = {
-      labels,
-      datasets: [
-        {
-          type: 'bar',
-          label: this.valueKey,
-          data: values,
-          yAxisID: 'y',
-          backgroundColor: colors.brand,
-        },
-        {
-          type: 'line',
-          label: '% acumulado',
-          data: cumulative,
-          yAxisID: 'y1',
-          tension: 0.2,
-          pointRadius: 3,
-          borderColor: colors.secondary,
-          backgroundColor: colors.secondary,
-        },
-      ],
-    };
-
-    const options: ChartOptions<'bar' | 'line'> = {
-      responsive: true,
-      maintainAspectRatio: false,
-      // Story 10.3: explicit duration under 1s (the AC's own wording) —
-      // Chart.js's undocumented-here default (1000ms) sits right at that
-      // boundary and could change with a library upgrade. Applies to both
-      // the initial render AND every chart.update() below (Chart.js
-      // animates value transitions on update() the same way it animates
-      // the first draw) — regenerating with a different column replays
-      // this same animation into the existing Chart instance, never a
-      // second one, so nothing duplicates on screen. `easeOutQuart` is
-      // Chart.js's own current default easing - pinned explicitly for the
-      // same reason as duration (protect against a future library default
-      // change), not a new stylistic choice. Duration collapses to 0 under
-      // `prefers-reduced-motion: reduce`, matching the reduced-motion
-      // convention already used elsewhere in this app (CSS there; JS here,
-      // since a canvas animation is outside CSS's reach).
-      animation: {
-        duration: prefersReducedMotion() ? 0 : ENTRY_ANIMATION_DURATION_MS,
-        easing: 'easeOutQuart',
-      },
-      // 'index' + intersect:false (Story 10.2): hovering (or tapping, on
-      // touch - Chart.js' default `events` list already includes
-      // touchstart/touchmove, no extra config needed for that part) a bar
-      // shows BOTH datasets at that category in one tooltip, not just the
-      // one the pointer happens to be over - the AC needs the value and
-      // the % acumulado together, not as two separate hovers.
-      interaction: {
-        mode: 'index',
-        intersect: false,
-      },
-      plugins: {
-        // Review finding (Story 10.5): legend text was left at Chart.js's
-        // default gray instead of a token, undercutting the "every color"
-        // claim above.
-        legend: {
-          labels: {
-            color: colors.text,
-          },
-        },
-        tooltip: {
-          // Review finding (Story 10.5): same reasoning - the tooltip box
-          // was left at Chart.js's default dark-gray/white instead of the
-          // app's own ink/surface tokens.
-          backgroundColor: colors.tooltipBg,
-          titleColor: colors.tooltipText,
-          bodyColor: colors.tooltipText,
-          callbacks: {
-            label: (context) => this.formatTooltipLabel(context),
-          },
-        },
-        // Story 10.4: horizontal reference line at the 80% crossing on the
-        // cumulative-% axis (y1) - migrates the SVG's own
-        // `_ax2.axhline(80, ...)` (table_builder.py::_pareto_chart_lines),
-        // not a new visual decision. --ink-muted (Story 10.5) also clears
-        // the WCAG AA contrast bar the earlier #888888 placeholder missed -
-        // white label text on --ink-muted is ≈6.1:1, over the 4.5:1 minimum.
-        annotation: {
-          annotations: {
-            line80: {
-              type: 'line',
-              yMin: 80,
-              yMax: 80,
-              yScaleID: 'y1',
-              borderColor: colors.referenceLine,
-              borderWidth: 1,
-              borderDash: [6, 4],
-              label: {
-                content: '80%',
-                display: true,
-                position: 'end',
-                backgroundColor: colors.referenceLine,
-              },
-            },
-          },
-        },
-      },
-      scales: {
-        y: {
-          type: 'linear',
-          position: 'left',
-          beginAtZero: true,
-          ticks: { color: colors.text },
-          grid: { color: colors.grid },
-        },
-        y1: {
-          type: 'linear',
-          position: 'right',
-          beginAtZero: true,
-          min: 0,
-          // Review finding (Story 10.4): the Python original left headroom
-          // above the 80 line (`_ax2.set_ylim(0, 105)`,
-          // table_builder.py::_pareto_chart_lines) so its label wouldn't
-          // crowd the axis top - matched here for the same reason, not a
-          // new value chosen independently.
-          max: 105,
-          ticks: { color: colors.text },
-          grid: {
-            drawOnChartArea: false,
-          },
-        },
-        x: {
-          ticks: { color: colors.text },
-          grid: { color: colors.grid },
-        },
-      },
-    };
-
-    if (this.chart) {
-      this.chart.data = data;
-      this.chart.options = options;
+    // Same chart type -> update in place (animated transition, one instance).
+    // A different type (bar <-> doughnut, or horizontal <-> vertical) can't
+    // be morphed by Chart.js, so the old instance is destroyed first - never
+    // two charts on one canvas.
+    if (this.chart && this.chartView === this.view) {
+      this.chart.data = config.data;
+      this.chart.options = config.options ?? {};
       this.chart.update();
       return;
     }
-
+    this.chart?.destroy();
+    this.chartView = this.view;
     this.chart = new Chart(canvas, {
-      type: 'bar',
-      data,
-      options,
+      ...config,
+      plugins: [this.surfacePlugin(), this.barEndLabelsPlugin() as Plugin, this.centerTotalPlugin() as Plugin],
     });
   }
 }

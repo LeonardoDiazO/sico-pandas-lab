@@ -3,18 +3,32 @@
     <h3>Cargar datos</h3>
   </div>
 
-  <label class="dropzone" [class.busy]="excelBusy || !!pendingCleanup">
+  <label
+    class="dropzone"
+    [class.busy]="excelBusy || !!pendingCleanup"
+    [class.over]="dragOver"
+    (dragenter)="onDragOver($event)"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
     <input type="file" accept=".xlsx,.xls" (change)="onExcel($event)" [disabled]="excelBusy || !!pendingCleanup" />
     <span class="dropzone-icon" aria-hidden="true">
       @if (excelBusy) {
         <span class="spinner"></span>
       } @else {
-        ⇧
+        <svg viewBox="0 0 24 24"><path d="M12 15V4" /><path d="m7 9 5-5 5 5" /><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></svg>
       }
     </span>
     <span class="dropzone-text">
-      <strong>{{ excelBusy ? 'Subiendo…' : 'Haz clic para elegir tu Excel' }}</strong>
-      <span class="dropzone-hint">.xlsx o .xls — se cargará como <code>df</code></span>
+      <strong>{{ excelBusy ? 'Subiendo y revisando tu archivo…' : dragOver ? 'Suelta el archivo aquí' : 'Arrastra tu Excel aquí o haz clic para elegirlo' }}</strong>
+      <span class="dropzone-hint">
+        @if (lastFileName && !excelBusy) {
+          Último archivo: <strong class="file-name">{{ lastFileName }}</strong> — sube otro para reemplazarlo.
+        } @else {
+          Formatos .xlsx o .xls — se cargará como <code>df</code>
+        }
+      </span>
     </span>
   </label>
 

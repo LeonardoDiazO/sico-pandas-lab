@@ -133,7 +133,9 @@ def build_sort_code(variable, value_column, ascending, filters=None):
             # table.
             f"_pct = (_ordenado[{value_column!r}] / _total * 100)"
             ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
-            "_acum = _pct.cumsum().round(1)",
+            # Raw running total, not a cumsum of rounded _pct (drifted past 100).
+            f"_acum = (_ordenado[{value_column!r}].cumsum() / _total * 100)"
+            ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
         ]
         assign_kwargs = "'% del total': _pct, '% acumulado': _acum"
     else:
@@ -179,7 +181,10 @@ def _pareto_marker_lines(
         # text into the table and the printed sentence below. Replace/fillna
         # degrades this degenerate case to a plain 0% instead.
         "_pct = (_t / _t.sum() * 100).round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
-        "_acum = _pct.cumsum().round(1)",
+        # Cumulative share from the raw running total, not a cumsum of the
+        # already-rounded _pct: summing rounded percentages drifted past 100
+        # (real file: last row showed "100,1%") and could move the 80% row.
+        "_acum = (_t.cumsum() / _t.sum() * 100).round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
         "_marca = pd.Series([''] * len(_acum), index=_acum.index)",
         "_cruce = _acum[_acum >= 80]",
         "if len(_cruce) > 0:",

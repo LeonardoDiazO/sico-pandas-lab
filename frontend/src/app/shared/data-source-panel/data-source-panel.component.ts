@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, OnInit, Output } from '@angular/core';
-import { retry, timer } from 'rxjs';
+import { finalize, retry, timer } from 'rxjs';
 
 import { ExcelProfile, LoadResult, TableInfo } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
@@ -33,6 +33,8 @@ export class DataSourcePanelComponent implements OnInit {
   pendingCleanup: { variable: string; profile: ExcelProfile } | null = null;
   cleanupBusy = false;
   unusableInfo: { detail: string } | null = null;
+  dragOver = false;
+  lastFileName: string | null = null;
 
   // Columns the user unchecked on the cleanup preview screen (kept by
   // default - deselecting is opt-out, not opt-in) - sent to
@@ -95,19 +97,61 @@ export class DataSourcePanelComponent implements OnInit {
       });
   }
 
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    if (!this.excelBusy && !this.pendingCleanup) {
+      this.dragOver = true;
+    }
+  }
+
+  onDragLeave(event: DragEvent): void {
+    // dragleave also fires when crossing into a child element - only reset
+    // when the pointer actually leaves the dropzone.
+    const related = event.relatedTarget as Node | null;
+    if (!related || !(event.currentTarget as HTMLElement).contains(related)) {
+      this.dragOver = false;
+    }
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver = false;
+    if (this.excelBusy || this.pendingCleanup) {
+      return;
+    }
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+      this.uploadFile(file);
+    }
+  }
+
   onExcel(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file) {
+    // Cleared right away (not only on success): previously an upload error
+    // skipped `complete`, so picking the same file again fired no change
+    // event and nothing happened.
+    input.value = '';
+    if (file) {
+      this.uploadFile(file);
+    }
+  }
+
+  private uploadFile(file: File): void {
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      this.emitMessage(`"${file.name}" no es un Excel. Sube un archivo .xlsx o .xls.`, false);
       return;
     }
+    this.lastFileName = file.name;
     this.excelBusy = true;
     this.pendingCleanup = null;
     this.unusableInfo = null;
     this.excludedColumns = new Set<string>();
-    this.notebook.uploadExcel(file, 'df').subscribe({
+    this.notebook
+      .uploadExcel(file, 'df')
+      .pipe(finalize(() => (this.excelBusy = false)))
+      .subscribe({
       next: (res) => {
-        this.excelBusy = false;
         if (!res.success || !res.data) {
           this.emitMessage(res.message, false);
           return;
@@ -126,11 +170,10 @@ export class DataSourcePanelComponent implements OnInit {
           this.unusableInfo = { detail: profile.detail };
         }
       },
-      error: () => {
-        this.excelBusy = false;
-        this.emitMessage('Ocurrió un error al cargar el Excel.', false);
+      error: (err: HttpErrorResponse) => {
+        const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
+        this.emitMessage(backendMessage ?? 'No se pudo subir el Excel. Revisa tu conexión e inténtalo otra vez.', false);
       },
-      complete: () => (input.value = ''),
     });
   }
 

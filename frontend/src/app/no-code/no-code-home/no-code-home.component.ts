@@ -1,4 +1,5 @@
-import { Component } from '@angular/core';
+import { Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
+import { Subscription } from 'rxjs';
 
 import {
   AnalysisBlock,
@@ -10,13 +11,11 @@ import {
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 /**
- * Standalone screen for the "sin código" workflow (Epics 4-8, extended with
- * the semantic-classification + auto-analysis catalog): upload an Excel,
- * confirm/correct a suggested role per column (one click, no need to
- * already know which is "the dimension"), and get a dashboard of Pareto
- * blocks generated automatically -- no code editor anywhere on this page.
- * The manual "elige columna y tipo de gráfica" panels stay below the
- * dashboard for the one-off analysis the automatic catalog didn't cover.
+ * Standalone screen for the "sin código" workflow: upload an Excel,
+ * confirm/correct a suggested role per column, and get an explorable
+ * dashboard of Pareto blocks generated automatically - no code editor on
+ * this page. The manual "elige columna y tipo de gráfica" panels stay below
+ * for the one-off analysis the automatic catalog didn't cover.
  */
 @Component({
   selector: 'app-no-code-home',
@@ -24,48 +23,92 @@ import { NotebookService } from '../../notebook/services/notebook.service';
   templateUrl: './no-code-home.component.html',
   styleUrl: './no-code-home.component.scss',
 })
-export class NoCodeHomeComponent {
+export class NoCodeHomeComponent implements OnDestroy {
+  @ViewChild('resultsAnchor') private resultsAnchor?: ElementRef<HTMLElement>;
+
   banner: { text: string; ok: boolean } | null = null;
-  excelProfile: { variable: string; columns: ExcelProfileColumn[] } | null = null;
+  excelProfile: { variable: string; columns: ExcelProfileColumn[]; rows: number } | null = null;
+  fileLabel: string | null = null;
   bloques: AnalysisBlock[] = [];
   resumen: AnalysisSummary | null = null;
   generatingAnalysis = false;
+  analysisError: string | null = null;
+  // Only the latest request may write results: re-confirming (or uploading a
+  // new file) while one is in flight used to let the older, slower response
+  // overwrite the newer one.
+  private analysisSub?: Subscription;
+  private lastClassifications: ColumnClassification[] | null = null;
 
   constructor(private notebook: NotebookService) {}
 
+  ngOnDestroy(): void {
+    this.analysisSub?.unsubscribe();
+  }
+
+  get currentStep(): 1 | 2 | 3 {
+    if (!this.excelProfile) {
+      return 1;
+    }
+    return this.bloques.length > 0 || this.generatingAnalysis ? 3 : 2;
+  }
+
   onLoaded(result: LoadResult): void {
+    this.analysisSub?.unsubscribe();
+    this.generatingAnalysis = false;
+    this.analysisError = null;
     this.bloques = [];
     this.resumen = null;
+    this.lastClassifications = null;
     if (result.profile) {
-      this.excelProfile = { variable: result.variable, columns: result.profile.columns };
+      this.excelProfile = { variable: result.variable, columns: result.profile.columns, rows: result.rows };
+      this.fileLabel = `${result.rows.toLocaleString('es-CO')} filas · ${result.profile.columns.length} columnas`;
     }
   }
 
   onClassificationConfirmed(classifications: ColumnClassification[]): void {
+    this.lastClassifications = classifications;
+    this.analysisSub?.unsubscribe();
     this.generatingAnalysis = true;
+    this.analysisError = null;
+    this.banner = null;
     this.bloques = [];
     this.resumen = null;
-    this.notebook.autoAnalysis(classifications).subscribe({
+    this.scrollToResults();
+    this.analysisSub = this.notebook.autoAnalysis(classifications).subscribe({
       next: (res) => {
         this.generatingAnalysis = false;
         this.bloques = res.data.bloques;
         this.resumen = res.data.resumen;
         if (this.bloques.length === 0) {
-          this.showBanner(res.message, false);
+          this.analysisError = res.message;
         }
       },
       error: () => {
         this.generatingAnalysis = false;
-        this.showBanner('No se pudo generar el análisis automático.', false);
+        this.analysisError = 'No se pudo generar el análisis automático. Revisa tu conexión e inténtalo otra vez.';
       },
     });
+  }
+
+  retryAnalysis(): void {
+    if (this.lastClassifications) {
+      this.onClassificationConfirmed(this.lastClassifications);
+    }
   }
 
   onMessage(message: { text: string; ok: boolean }): void {
     this.banner = message;
   }
 
-  private showBanner(text: string, ok: boolean): void {
-    this.banner = { text, ok };
+  dismissBanner(): void {
+    this.banner = null;
+  }
+
+  private scrollToResults(): void {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    // After the step-3 container renders.
+    setTimeout(() =>
+      this.resultsAnchor?.nativeElement.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }),
+    );
   }
 }

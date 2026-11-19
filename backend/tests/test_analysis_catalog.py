@@ -140,3 +140,31 @@ def test_non_numeric_cardinality_result_skips_that_dimension():
 
     blocks = build_catalog("s1", _BrokenManager(), "df", classifications)
     assert blocks == []
+
+
+def test_report_lists_omitted_high_cardinality_dimensions():
+    manager = _FakeManager(unique_counts={"Vendedor": 5, "Ciudad": 79})
+    report = {}
+    blocks = build_catalog("s1", manager, "df", CLASSIFICATIONS, report)
+    assert [b["dimension"] for b in blocks] == ["Vendedor"]
+    assert report["omitidas"] == [{"dimension": "Ciudad", "valores": 79}]
+    assert report["limite_alcanzado"] is False
+
+
+def test_report_flags_when_max_auto_blocks_cuts_the_catalog():
+    many_metrics = [{"name": "Vendedor", "role": "dimension"}] + [
+        {"name": f"M{i}", "role": "metrica"} for i in range(MAX_AUTO_BLOCKS + 2)
+    ]
+    manager = _FakeManager(unique_counts={"Vendedor": 3})
+    report = {}
+    blocks = build_catalog("s1", manager, "df", many_metrics, report)
+    assert len(blocks) == MAX_AUTO_BLOCKS
+    assert report["limite_alcanzado"] is True
+
+
+def test_single_value_dimension_is_omitted_and_reported():
+    manager = _FakeManager(unique_counts={"Vendedor": 5, "Ciudad": 1})
+    report = {}
+    blocks = build_catalog("s1", manager, "df", CLASSIFICATIONS, report)
+    assert [b["dimension"] for b in blocks] == ["Vendedor"]
+    assert report["omitidas"] == [{"dimension": "Ciudad", "valores": 1}]

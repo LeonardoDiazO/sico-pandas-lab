@@ -1,0 +1,228 @@
+<article class="block" [attr.aria-labelledby]="uid + '-title'">
+  <header class="block-head">
+    <div class="block-titles">
+      <h3 [id]="uid + '-title'">{{ bloque.titulo }}</h3>
+      @if (hasData) {
+        <p class="block-meta tabular-nums">
+          {{ rows.length }} {{ rows.length === 1 ? 'categoría' : 'categorías' }} · total
+          <strong>{{ formatValue(total, bloque.metrica) }}</strong>
+        </p>
+      }
+    </div>
+    @if (hasData) {
+      <div class="block-actions">
+        <button type="button" class="icon-btn" (click)="downloadCsv()" title="Descargar datos (CSV para Excel)" aria-label="Descargar datos en CSV">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" /><path d="M9 13h6M9 17h6" /></svg>
+        </button>
+        @if (view !== 'tabla') {
+          <button type="button" class="icon-btn" (click)="downloadPng()" title="Descargar gráfica (PNG)" aria-label="Descargar gráfica como imagen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>
+          </button>
+        }
+        <button type="button" class="icon-btn" (click)="openExpanded()" title="Ver en grande" aria-label="Ver en grande">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
+        </button>
+      </div>
+    }
+  </header>
+
+  @if (bloque.resultado.error) {
+    <app-cell-result [result]="bloque.resultado" [hideChart]="true"></app-cell-result>
+  } @else if (!hasData) {
+    <p class="empty">Este análisis no devolvió filas — revisa que la métrica tenga valores numéricos.</p>
+  } @else {
+    @if (bloque.insight) {
+      <p class="insight">
+        <span class="insight-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg>
+        </span>
+        <span>{{ bloque.insight }}</span>
+      </p>
+    }
+
+    <div class="toolbar">
+      <div class="segmented" role="radiogroup" [attr.aria-label]="'Vista de ' + bloque.titulo">
+        @for (opt of views; track opt.value; let i = $index) {
+          <button
+            type="button"
+            role="radio"
+            class="seg"
+            [class.on]="view === opt.value"
+            [attr.aria-checked]="view === opt.value"
+            [attr.tabindex]="view === opt.value ? 0 : -1"
+            [title]="opt.hint"
+            (click)="setView(opt.value)"
+            (keydown)="onViewKeydown($event, i)"
+          >
+            {{ opt.label }}
+          </button>
+        }
+      </div>
+      @if (view !== 'dona' && topNOptions.length > 1) {
+        <label class="topn">
+          <span class="sr-only">Cuántas categorías mostrar</span>
+          <select [ngModel]="topN" (ngModelChange)="topN = $event">
+            @for (opt of topNOptions; track opt.label) {
+              <option [ngValue]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </label>
+      }
+    </div>
+
+    <div class="view-area">
+      @if (view === 'tabla') {
+        <ng-container *ngTemplateOutlet="dataTable; context: { limit: topN }"></ng-container>
+      } @else {
+        <app-chart-canvas
+          #cardChart
+          [records]="records"
+          [categoryKey]="bloque.dimension"
+          [valueKey]="bloque.metrica"
+          [view]="chartView"
+          [topN]="topN"
+          [height]="view === 'ranking' ? rankingHeight(topN) : 300"
+          [selectedIndex]="selectedIndex"
+          (selectedIndexChange)="select($event)"
+        ></app-chart-canvas>
+      }
+    </div>
+
+    <div class="readout" aria-live="polite">
+      @if (selectedRow; as row) {
+        <div class="readout-sel">
+          <span class="swatch" [class.vital]="row.vital"></span>
+          <strong class="readout-name">{{ row.label }}</strong>
+          <span class="tabular-nums">{{ formatValue(row.value, bloque.metrica) }}</span>
+          <span class="readout-sep">·</span>
+          <span class="tabular-nums">{{ formatPct(row.pct) }} del total</span>
+          <span class="readout-sep">·</span>
+          <span class="tabular-nums">acumulado {{ formatPct(row.cum) }}</span>
+          @if (row.vital) {
+            <span class="pill vital">Parte del 80%</span>
+          }
+          <button type="button" class="link-btn" (click)="select(null)">Quitar selección</button>
+        </div>
+      } @else {
+        <p class="legend-line">
+          <span class="key"><span class="swatch vital"></span>{{ vitalCount }} {{ vitalCount === 1 ? 'concentra' : 'concentran' }} el 80%</span>
+          <span class="key"><span class="swatch"></span>Resto</span>
+          @if (view === 'pareto') {
+            <span class="key"><span class="line-key"></span>% acumulado</span>
+          }
+          @if (hiddenCount > 0) {
+            <span class="hidden-note">+{{ hiddenCount }} no mostradas</span>
+          }
+          <span class="tip">Toca una barra para ver su detalle</span>
+        </p>
+      }
+    </div>
+
+    @if (bloque.resultado.explanation) {
+      <details class="how">
+        <summary>¿Cómo leer este análisis?</summary>
+        <p>{{ bloque.resultado.explanation }}</p>
+      </details>
+    }
+  }
+</article>
+
+<ng-template #dataTable let-limit="limit">
+  <div class="table-scroll">
+    <table class="data-table">
+      <caption class="sr-only">{{ bloque.titulo }}</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="num rank">#</th>
+          <th scope="col">{{ bloque.dimension }}</th>
+          <th scope="col" class="num">{{ bloque.metrica }}</th>
+          <th scope="col" class="share">% del total</th>
+          <th scope="col" class="num">% acum.</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of limit ? rows.slice(0, limit) : rows; track $index; let i = $index) {
+          <tr
+            [class.vital]="row.vital"
+            [class.sel]="selectedIndex === i"
+            [class.cross]="row.vital && !rows[i + 1]?.vital"
+            tabindex="0"
+            (click)="select(i)"
+            (keydown.enter)="select(i)"
+            (keydown.space)="select(i); $event.preventDefault()"
+            [attr.aria-selected]="selectedIndex === i"
+          >
+            <td class="num rank">{{ i + 1 }}</td>
+            <td class="name" [title]="row.label">{{ row.label }}</td>
+            <td class="num">{{ formatValue(row.value, bloque.metrica) }}</td>
+            <td class="share">
+              <span class="bar-track"><span class="bar-fill" [style.width.%]="barWidth(row)"></span></span>
+              <span class="num">{{ formatPct(row.pct) }}</span>
+            </td>
+            <td class="num">{{ formatPct(row.cum) }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  @if (limit && rows.length > limit) {
+    <p class="hidden-note table-more">Mostrando {{ limit }} de {{ rows.length }} — elige "Todas" para ver el resto.</p>
+  }
+</ng-template>
+
+<dialog #dialogEl class="expand-dialog" (close)="onDialogClose()" (click)="onDialogClick($event)" [attr.aria-labelledby]="uid + '-dlg-title'">
+  @if (expanded) {
+    <div class="dlg">
+      <header class="dlg-head">
+        <div>
+          <h2 [id]="uid + '-dlg-title'">{{ bloque.titulo }}</h2>
+          @if (bloque.insight) {
+            <p class="dlg-insight">{{ bloque.insight }}</p>
+          }
+        </div>
+        <div class="dlg-tools">
+          <div class="segmented" role="radiogroup" aria-label="Vista ampliada">
+            @for (opt of views; track opt.value; let i = $index) {
+              @if (opt.value !== 'tabla') {
+                <button
+                  type="button"
+                  role="radio"
+                  class="seg"
+                  [class.on]="chartView === opt.value"
+                  [attr.aria-checked]="chartView === opt.value"
+                  (click)="setView(opt.value)"
+                >
+                  {{ opt.label }}
+                </button>
+              }
+            }
+          </div>
+          <button type="button" class="icon-btn" (click)="downloadPng()" title="Descargar gráfica (PNG)" aria-label="Descargar gráfica como imagen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>
+          </button>
+          <button type="button" class="icon-btn" (click)="closeExpanded()" title="Cerrar (Esc)" aria-label="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+      </header>
+      <div class="dlg-body">
+        <div class="dlg-chart">
+          <app-chart-canvas
+            #bigChart
+            [records]="records"
+            [categoryKey]="bloque.dimension"
+            [valueKey]="bloque.metrica"
+            [view]="chartView"
+            [topN]="null"
+            [height]="dialogChartHeight"
+            [selectedIndex]="selectedIndex"
+            (selectedIndexChange)="select($event)"
+          ></app-chart-canvas>
+        </div>
+        <div class="dlg-table">
+          <ng-container *ngTemplateOutlet="dataTable; context: { limit: null }"></ng-container>
+        </div>
+      </div>
+    </div>
+  }
+</dialog>

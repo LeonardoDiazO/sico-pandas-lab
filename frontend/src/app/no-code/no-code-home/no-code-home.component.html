@@ -1,57 +1,114 @@
 <section class="no-code">
   <header class="page-header">
-    <div>
-      <span class="eyebrow">Sin código</span>
-      <h2>Análisis automático de tu Excel</h2>
-      <p class="intro">
-        Sube un archivo, confirma qué es cada columna y obtén un tablero de
-        análisis — sin escribir una sola línea de código.
-      </p>
-    </div>
+    <h2>Análisis automático de tu Excel</h2>
+    <p class="intro">
+      Sube un archivo, confirma qué es cada columna y obtén un tablero interactivo — sin escribir una sola línea de
+      código.
+    </p>
+    <ol class="progress" aria-label="Pasos">
+      <li [class.on]="currentStep === 1" [class.done]="currentStep > 1" [attr.aria-current]="currentStep === 1 ? 'step' : null">
+        <span class="dot">
+          @if (currentStep > 1) {
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+          } @else {
+            1
+          }
+        </span>
+        Subir archivo
+      </li>
+      <li [class.on]="currentStep === 2" [class.done]="currentStep > 2" [attr.aria-current]="currentStep === 2 ? 'step' : null">
+        <span class="dot">
+          @if (currentStep > 2) {
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+          } @else {
+            2
+          }
+        </span>
+        Confirmar columnas
+      </li>
+      <li [class.on]="currentStep === 3" [attr.aria-current]="currentStep === 3 ? 'step' : null">
+        <span class="dot">3</span>
+        Explorar el tablero
+      </li>
+    </ol>
   </header>
 
   @if (banner) {
-    <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok">{{ banner.text }}</div>
+    <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok" [attr.role]="banner.ok ? 'status' : 'alert'">
+      <span>{{ banner.text }}</span>
+      <button type="button" class="banner-close" (click)="dismissBanner()" aria-label="Cerrar aviso">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+      </button>
+    </div>
   }
 
   <div class="step" [class.done]="!!excelProfile">
-    <div class="step-marker">
-      <span class="step-num">1</span>
-    </div>
+    <div class="step-marker"><span class="step-num">1</span></div>
     <div class="step-body">
-      <h3>Sube tu archivo</h3>
+      <div class="step-head">
+        <h3>Sube tu archivo</h3>
+        @if (fileLabel) {
+          <span class="step-meta tabular-nums">{{ fileLabel }}</span>
+        }
+      </div>
       <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
     </div>
   </div>
 
   @if (excelProfile) {
     <div class="step" [class.done]="bloques.length > 0">
-      <div class="step-marker">
-        <span class="step-num">2</span>
-      </div>
+      <div class="step-marker"><span class="step-num">2</span></div>
       <div class="step-body">
-        <h3>Confirma qué es cada columna</h3>
+        <div class="step-head">
+          <h3>Confirma qué es cada columna</h3>
+        </div>
         <app-column-classification
           [profile]="excelProfile"
+          [busy]="generatingAnalysis"
           (confirmed)="onClassificationConfirmed($event)"
         ></app-column-classification>
       </div>
     </div>
   }
 
-  @if (generatingAnalysis || bloques.length > 0) {
-    <div class="step done">
-      <div class="step-marker">
-        <span class="step-num">3</span>
-      </div>
+  @if (generatingAnalysis || bloques.length > 0 || analysisError) {
+    <div class="step done" #resultsAnchor>
+      <div class="step-marker"><span class="step-num">3</span></div>
       <div class="step-body">
-        <h3>Tu análisis</h3>
+        <div class="step-head">
+          <h3>Tu tablero</h3>
+        </div>
+
         @if (generatingAnalysis) {
-          <div class="generating">
-            <span class="spinner"></span>
-            Generando análisis automático…
+          <div class="skeleton" role="status" aria-live="polite">
+            <span class="sr-only">Generando el análisis automático…</span>
+            <div class="sk-summary"></div>
+            <div class="sk-grid">
+              @for (i of [1, 2]; track i) {
+                <div class="sk-card">
+                  <div class="sk-line w60"></div>
+                  <div class="sk-line w85"></div>
+                  <div class="sk-bars">
+                    @for (h of [92, 70, 48, 34, 22, 14]; track $index) {
+                      <span [style.height.%]="h"></span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+            <p class="sk-note">Calculando totales, porcentajes y el punto del 80% para cada combinación…</p>
+          </div>
+        } @else if (analysisError) {
+          <div class="empty-state">
+            <p>{{ analysisError }}</p>
+            <p class="hint">
+              Necesitas al menos una columna marcada como <strong>Dimensión</strong> (por ejemplo cliente o ciudad) y una
+              como <strong>Métrica</strong> (por ejemplo valor o cantidad).
+            </p>
+            <button type="button" class="btn-secondary" (click)="retryAnalysis()">Intentar de nuevo</button>
           </div>
         }
+
         <app-analysis-dashboard [bloques]="bloques" [resumen]="resumen"></app-analysis-dashboard>
       </div>
     </div>
@@ -59,7 +116,10 @@
 
   @if (excelProfile) {
     <details class="manual-toggle">
-      <summary>Análisis puntual — elegir columna y tipo de gráfica a mano</summary>
+      <summary>
+        <span class="summary-title">Análisis puntual</span>
+        <span class="summary-sub">Elige tú la columna, el tipo de gráfica y los filtros</span>
+      </summary>
       <div class="manual-panels">
         <app-no-code-chart [profile]="excelProfile"></app-no-code-chart>
         <app-no-code-table [profile]="excelProfile"></app-no-code-table>

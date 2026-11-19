@@ -72,9 +72,42 @@
     font-weight: 500;
     cursor: pointer;
     transition: border-color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    svg {
+      flex-shrink: 0;
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
 
     &:hover {
       border-color: var(--brand);
+    }
+  }
+
+  @media (max-width: 640px) {
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    padding: 0.6rem 1rem;
+
+    nav {
+      order: 3;
+      flex-basis: 100%;
+      overflow-x: auto;
+    }
+
+    .user-chip {
+      margin-left: auto;
     }
   }
 }

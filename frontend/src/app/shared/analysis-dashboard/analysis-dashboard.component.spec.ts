@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormsModule } from '@angular/forms';
 
 import { AnalysisBlock, AnalysisSummary } from '../../models/api.models';
+import { AnalysisBlockComponent } from '../analysis-block/analysis-block.component';
 import { CellResultComponent } from '../cell-result/cell-result.component';
 import { ChartCanvasComponent } from '../chart-canvas/chart-canvas.component';
 import { AnalysisDashboardComponent } from './analysis-dashboard.component';
@@ -35,7 +37,8 @@ describe('AnalysisDashboardComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      declarations: [AnalysisDashboardComponent, CellResultComponent, ChartCanvasComponent],
+      imports: [FormsModule],
+      declarations: [AnalysisDashboardComponent, AnalysisBlockComponent, CellResultComponent, ChartCanvasComponent],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AnalysisDashboardComponent);
@@ -52,9 +55,34 @@ describe('AnalysisDashboardComponent', () => {
     // cell-result's own chart_svg wrapper (class "chart", see
     // cell-result.component.html) must be absent - hideChart suppressed it.
     expect(compiled.querySelector('.chart')).toBeNull();
-    expect(compiled.querySelector('svg')).toBeNull();
+    // The matplotlib chart_svg (it has a <title>) must not render anywhere;
+    // the only SVGs left are the toolbar's own icons.
+    expect(compiled.querySelector('svg title')).toBeNull();
 
     // The interactive replacement must be present instead.
     expect(compiled.querySelector('app-chart-canvas canvas')).not.toBeNull();
+  });
+
+  it('shows the lifted insight and switches a card to the table view with exact values', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.insight')?.textContent).toContain('3 de 5 vendedores');
+
+    const tableButton = Array.from(compiled.querySelectorAll<HTMLButtonElement>('app-analysis-block .seg')).find(
+      (b) => b.textContent?.trim() === 'Tabla',
+    )!;
+    tableButton.click();
+    fixture.detectChanges();
+
+    const cells = Array.from(compiled.querySelectorAll('.data-table tbody td')).map((td) => td.textContent?.trim());
+    expect(cells).toContain('Ana');
+    expect(cells).toContain('$ 1.200');
+  });
+
+  it('explains dimensions the catalog left out instead of dropping them silently', () => {
+    component.resumen = { ...resumen, omitidas: [{ dimension: 'Cliente', valores: 79 }] };
+    fixture.detectChanges();
+    const notice = (fixture.nativeElement as HTMLElement).querySelector('.notice');
+    expect(notice?.textContent).toContain('Cliente');
+    expect(notice?.textContent).toContain('79');
   });
 });

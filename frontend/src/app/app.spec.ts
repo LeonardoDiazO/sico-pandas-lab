@@ -1,12 +1,14 @@
 import { TestBed } from '@angular/core/testing';
+import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { App } from './app';
+import { TourOverlayComponent } from './core/tour-overlay/tour-overlay.component';
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [RouterModule.forRoot([])],
-      declarations: [App],
+      imports: [RouterModule.forRoot([]), FormsModule],
+      declarations: [App, TourOverlayComponent],
     }).compileComponents();
   });
 

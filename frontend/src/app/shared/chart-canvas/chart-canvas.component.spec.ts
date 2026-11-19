@@ -196,7 +196,7 @@ describe('ChartCanvasComponent', () => {
       const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
       const chart = Chart.getChart(canvas);
 
-      expect(chart!.data.datasets[0].backgroundColor).toBe('rgb(1, 2, 3)');
+      expect((chart!.data.datasets[0].backgroundColor as string[])[0]).toBe('rgb(1, 2, 3)');
       expect(chart!.data.datasets[1].borderColor).toBe('rgb(4, 5, 6)');
       const line80 = getLine80Annotation(canvas);
       expect(line80.borderColor).toBe('rgb(7, 8, 9)');
@@ -226,7 +226,7 @@ describe('ChartCanvasComponent', () => {
 
     const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
     const chart = Chart.getChart(canvas);
-    expect(chart!.data.datasets[0].backgroundColor).toBe('#4a4fd6');
+    expect((chart!.data.datasets[0].backgroundColor as string[])[0]).toBe('#4a4fd6');
   });
 
   it('creates and updates the Chart.js instance outside Angular\'s zone', () => {
@@ -280,5 +280,55 @@ describe('ChartCanvasComponent', () => {
     const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
     expect(canvas.getAttribute('aria-label')).toContain('Neto');
     expect(canvas.getAttribute('aria-label')).toContain('Vendedor');
+  });
+
+  it('colors the 80% "vital few" bars with the brand and the rest muted', () => {
+    component.records = [
+      { Vendedor: 'Ana', Neto: 70, '% acumulado': 70 },
+      { Vendedor: 'Luis', Neto: 20, '% acumulado': 90 },
+      { Vendedor: 'Eva', Neto: 10, '% acumulado': 100 },
+    ];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    const colors = Chart.getChart(canvas)!.data.datasets[0].backgroundColor as string[];
+    // Ana (70%) and Luis (crosses 80% at 90%) are vital; Eva is the rest.
+    expect(colors[0]).toBe(colors[1]);
+    expect(colors[2]).not.toBe(colors[0]);
+  });
+
+  it('limits bars to topN and switches to a horizontal ranking or a donut with "Otros"', () => {
+    component.records = Array.from({ length: 8 }, (_v, i) => ({ Vendedor: `V${i}`, Neto: 100 - i * 10 }));
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    component.topN = 5;
+    fixture.detectChanges();
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    expect(Chart.getChart(canvas)!.data.labels!.length).toBe(5);
+
+    component.view = 'ranking';
+    component.ngOnChanges({});
+    const ranking = Chart.getChart(canvas)!;
+    expect((ranking.options as { indexAxis?: string }).indexAxis).toBe('y');
+
+    component.view = 'dona';
+    component.ngOnChanges({});
+    const donut = Chart.getChart(canvas)!;
+    expect((donut.config as { type?: string }).type).toBe('doughnut');
+    expect(donut.data.labels).toEqual(['V0', 'V1', 'V2', 'V3', 'V4', 'Otros (3)']);
+  });
+
+  it('derives % acumulado from the values when the records lack it', () => {
+    component.records = [
+      { Vendedor: 'Ana', Neto: 75 },
+      { Vendedor: 'Luis', Neto: 25 },
+    ];
+    component.categoryKey = 'Vendedor';
+    component.valueKey = 'Neto';
+    fixture.detectChanges();
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    expect(Chart.getChart(canvas)!.data.datasets[1].data).toEqual([75, 100]);
   });
 });
