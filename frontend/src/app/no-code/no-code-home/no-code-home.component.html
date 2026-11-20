@@ -33,14 +33,6 @@
     </ol>
   </header>
 
-  @if (banner) {
-    <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok" [attr.role]="banner.ok ? 'status' : 'alert'">
-      <span>{{ banner.text }}</span>
-      <button type="button" class="banner-close" (click)="dismissBanner()" aria-label="Cerrar aviso">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-      </button>
-    </div>
-  }
 
   <div class="step" [class.done]="!!excelProfile">
     <div class="step-marker"><span class="step-num">1</span></div>

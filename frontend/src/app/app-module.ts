@@ -16,10 +16,11 @@ registerLocaleData(localeEsCO);
 import { App } from './app';
 import { AppRoutingModule } from './app-routing-module';
 import { SessionInterceptor } from './core/session.interceptor';
+import { ToastHostComponent } from './core/toast-host/toast-host.component';
 import { TourOverlayComponent } from './core/tour-overlay/tour-overlay.component';
 
 @NgModule({
-  declarations: [App, TourOverlayComponent],
+  declarations: [App, TourOverlayComponent, ToastHostComponent],
   imports: [
     BrowserModule,
     FormsModule,

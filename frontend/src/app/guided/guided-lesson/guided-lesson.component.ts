@@ -1,3 +1,4 @@
+import { ToastService } from '../../core/toast.service';
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 
@@ -34,7 +35,6 @@ const CONNECTION_ERROR_RESULT: CellResult = {
 export class GuidedLessonComponent implements OnInit {
   lesson: Lesson | null = null;
   steps: GuidedStep[] = [];
-  banner: { text: string; ok: boolean } | null = null;
   knownVariables: KnownVariable[] = [];
 
   challengeCode = '';
@@ -48,6 +48,7 @@ export class GuidedLessonComponent implements OnInit {
     private notebook: NotebookService,
     private profile: UserProfileService,
     private tour: TourService,
+    private toast: ToastService,
   ) {}
 
   startTour(): void {
@@ -137,7 +138,7 @@ export class GuidedLessonComponent implements OnInit {
   }
 
   onMessage(message: { text: string; ok: boolean }): void {
-    this.banner = message;
+    this.toast.show(message.text, message.ok);
   }
 
   onLoaded(result: LoadResult): void {

@@ -10,6 +10,7 @@ import {
   ExcelProfileColumn,
   LoadResult,
 } from '../../models/api.models';
+import { ToastService } from '../../core/toast.service';
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 /**
@@ -28,7 +29,6 @@ import { NotebookService } from '../../notebook/services/notebook.service';
 export class NoCodeHomeComponent implements OnDestroy {
   @ViewChild('resultsAnchor') private resultsAnchor?: ElementRef<HTMLElement>;
 
-  banner: { text: string; ok: boolean } | null = null;
   excelProfile: { variable: string; columns: ExcelProfileColumn[]; rows: number } | null = null;
   fileLabel: string | null = null;
   quality: DataQuality | null = null;
@@ -43,7 +43,10 @@ export class NoCodeHomeComponent implements OnDestroy {
   private analysisSub?: Subscription;
   private lastClassifications: ColumnClassification[] | null = null;
 
-  constructor(private notebook: NotebookService) {}
+  constructor(
+    private notebook: NotebookService,
+    private toast: ToastService,
+  ) {}
 
   ngOnDestroy(): void {
     this.analysisSub?.unsubscribe();
@@ -131,7 +134,6 @@ export class NoCodeHomeComponent implements OnDestroy {
     this.analysisSub?.unsubscribe();
     this.generatingAnalysis = true;
     this.analysisError = null;
-    this.banner = null;
     if (scroll) {
       this.bloques = [];
       this.resumen = null;
@@ -160,11 +162,7 @@ export class NoCodeHomeComponent implements OnDestroy {
   }
 
   onMessage(message: { text: string; ok: boolean }): void {
-    this.banner = message;
-  }
-
-  dismissBanner(): void {
-    this.banner = null;
+    this.toast.show(message.text, message.ok);
   }
 
   private scrollToResults(): void {

@@ -7,6 +7,7 @@ import { RouterModule } from '@angular/router';
 import { App } from './app';
 import { SessionInterceptor } from './core/session.interceptor';
 import { SessionService } from './core/session.service';
+import { ToastHostComponent } from './core/toast-host/toast-host.component';
 import { TourOverlayComponent } from './core/tour-overlay/tour-overlay.component';
 
 describe('App', () => {
@@ -17,7 +18,7 @@ describe('App', () => {
     localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [RouterModule.forRoot([]), FormsModule],
-      declarations: [App, TourOverlayComponent],
+      declarations: [App, TourOverlayComponent, ToastHostComponent],
       providers: [
         provideHttpClient(withInterceptorsFromDi()),
         provideHttpClientTesting(),

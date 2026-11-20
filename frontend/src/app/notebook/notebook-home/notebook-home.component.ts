@@ -1,5 +1,6 @@
 import { AfterViewInit, Component, HostListener, OnDestroy, ViewChild } from '@angular/core';
 
+import { ToastService } from '../../core/toast.service';
 import { NotebookDraftService } from '../../core/notebook-draft.service';
 import { Snippet, SnippetsService } from '../../core/snippets.service';
 import { TourService } from '../../core/tour.service';
@@ -41,7 +42,6 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   @ViewChild(DataSourcePanelComponent) dataSourcePanel?: DataSourcePanelComponent;
 
   cells: Cell[] = [{ code: STARTER, result: null, running: false }];
-  banner: { text: string; ok: boolean } | null = null;
   knownVariables: KnownVariable[] = [];
   snippets: Snippet[] = [];
   restoredDraft = false;
@@ -51,6 +51,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
     private tour: TourService,
     private draftService: NotebookDraftService,
     private snippetsService: SnippetsService,
+    private toast: ToastService,
   ) {
     const draft = this.draftService.load();
     const isTrivial = !draft || (draft.length === 1 && draft[0] === STARTER);
@@ -64,10 +65,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
     if (queued.length) {
       const base = isTrivial ? [] : this.cells;
       this.cells = [...base, ...queued.map((code) => ({ code, result: null, running: false }))];
-      this.banner = {
-        text: 'Abrimos el código del tablero en una celda nueva. Ejecútala para ver la misma tabla y modifícala para practicar.',
-        ok: true,
-      };
+      this.toast.success('Abrimos el código del tablero en una celda nueva. Ejecútala para ver la misma tabla y modifícala para practicar.');
     }
     this.snippets = this.snippetsService.list();
   }
@@ -177,7 +175,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   }
 
   private showBanner(text: string, ok: boolean): void {
-    this.banner = { text, ok };
+    this.toast.show(text, ok);
   }
 
   private saveDraft(): void {

@@ -7,10 +7,6 @@
     </div>
   </header>
 
-  @if (banner) {
-    <div class="banner" [class.ok]="banner.ok" [class.bad]="!banner.ok">{{ banner.text }}</div>
-  }
-
   @if (restoredDraft) {
     <div class="banner ok draft-banner">
       Recuperamos tu borrador de la última vez que estuviste aquí.
