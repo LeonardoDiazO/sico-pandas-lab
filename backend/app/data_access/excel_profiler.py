@@ -13,7 +13,7 @@ import warnings
 
 import pandas as pd
 
-from app.data_access.excel_loader import read_excel_raw
+from app.data_access.excel_loader import read_excel_raw, read_excel_raw_sheets
 
 MAX_HEADER_SCAN_ROWS = 30
 HEADER_LOOKAHEAD_ROWS = 10
@@ -62,9 +62,137 @@ def profile_excel(file_storage):
     None whenever verdict is "no_usable", since there's nothing usable to bind.
     Internal-only: callers must not leak it verbatim into an HTTP response.
     Raises ValueError (via read_excel_raw) for a missing/wrong-extension/corrupt file.
-    """
-    raw = read_excel_raw(file_storage)
 
+    Only the FIRST sheet - see profile_workbook() for every sheet.
+    """
+    return profile_raw(read_excel_raw(file_storage))
+
+
+def profile_workbook(file_storage):
+    """Profiles EVERY sheet of the workbook: [(sheet_name, profile), ...] in
+    workbook order, each profile shaped like profile_excel() (auditoria
+    2026-11-18: only the first sheet used to be read, silently ignoring the
+    rest of a multi-sheet book)."""
+    return [(name, profile_raw(raw)) for name, raw in read_excel_raw_sheets(file_storage).items()]
+
+
+def sheet_summary(name, profile):
+    """What the sheet-selection step shows per sheet (API camelCase)."""
+    df = profile.get("dataframe")
+    return {
+        "name": name,
+        "rows": int(df.shape[0]) if df is not None else 0,
+        "columns": len(profile.get("columns") or []),
+        "headerRowIndex": profile.get("header_row_index"),
+        "verdict": profile["verdict"],
+        "detail": profile["detail"],
+        "usable": profile["verdict"] != VERDICT_NO_USABLE,
+    }
+
+
+def stack_sheets(named_profiles):
+    """Stacks the chosen sheets into one DataFrame with a leading `Hoja`
+    column (which sheet each row came from - a natural dimension). When the
+    columns differ between sheets only the columns common to all of them are
+    kept, and `warning` says what was left out. Raises ValueError when they
+    share no column at all.
+
+    Returns a profile dict like profile_raw() plus "warning" and
+    "sheets_used". header_row_index is None (it differs per sheet).
+    """
+    usable = [(name, p) for name, p in named_profiles if p.get("dataframe") is not None]
+    if not usable:
+        raise ValueError("Ninguna de las hojas elegidas tiene datos utilizables.")
+    first_columns = [str(c) for c in usable[0][1]["dataframe"].columns]
+    common = [c for c in first_columns if all(c in map(str, p["dataframe"].columns) for _, p in usable[1:])]
+    if not common:
+        raise ValueError(
+            "Las hojas elegidas no comparten ninguna columna, así que no se pueden apilar. "
+            "Quita alguna hoja de la selección."
+        )
+    left_out = []
+    for name, p in usable:
+        extra = [str(c) for c in p["dataframe"].columns if str(c) not in common]
+        if extra:
+            left_out.append(f"{', '.join(extra)} (hoja {name})")
+    hoja_name = "Hoja" if "Hoja" not in common else "Hoja_origen"
+    frames = []
+    for name, p in usable:
+        frame = p["dataframe"].copy()
+        frame.columns = [str(c) for c in frame.columns]
+        frame = frame[common]
+        frame.insert(0, hoja_name, name)
+        frames.append(frame)
+    stacked = pd.concat(frames, ignore_index=True)
+
+    data_columns = _infer_column_types(stacked.drop(columns=[hoja_name]))
+    stacked = _coerce_numeric_columns(stacked, data_columns)
+    hoja_stats = _column_stats(stacked[hoja_name], stacked[hoja_name].dropna())
+    columns = [{"name": hoja_name, "type": TYPE_CATEGORICA, **hoja_stats}] + data_columns
+
+    needs_cleanup = any(p["verdict"] == VERDICT_USABLE_CON_LIMPIEZA for _, p in usable)
+    totals = sum((p.get("quality") or {}).get("totalsRowsRemoved", 0) for _, p in usable)
+    empties = sum((p.get("quality") or {}).get("emptyRowsRemoved", 0) for _, p in usable)
+    warning = None
+    if left_out:
+        warning = (
+            f"Las hojas no tienen las mismas columnas: se usaron solo las {len(common)} comunes. "
+            f"Quedaron fuera: {'; '.join(left_out)}. Si una hoja no encaja, quítala de la selección."
+        )
+    names = [name for name, _ in usable]
+    return {
+        "verdict": VERDICT_USABLE_CON_LIMPIEZA if needs_cleanup else VERDICT_USABLE,
+        "header_row_index": None,
+        "columns": columns,
+        "detail": f"Se apilaron {len(names)} hojas ({', '.join(names)}) con la columna '{hoja_name}'.",
+        "dataframe": stacked,
+        "quality": build_quality(stacked, columns, totals, empties),
+        "warning": warning,
+        "sheets_used": names,
+    }
+
+
+def build_quality(data, columns, totals_removed=0, empty_removed=0):
+    """Data-quality summary shown between upload and classification: blanks
+    per column, fully duplicated rows, negative values per numeric column,
+    and the total/empty rows the cleanup removed."""
+    total_rows = int(data.shape[0])
+    per_column = []
+    for column in columns:
+        name = column["name"]
+        if name not in data.columns:
+            continue
+        series = data[name]
+        null_count = int(series.isna().sum())
+        entry = {
+            "name": name,
+            "type": column["type"],
+            "nullCount": null_count,
+            "nullRatio": round(null_count / total_rows, 4) if total_rows else 0.0,
+            "negativeCount": None,
+            "negativeSum": None,
+        }
+        if column["type"] == TYPE_NUMERICA:
+            numeric = pd.to_numeric(series, errors="coerce")
+            negatives = numeric[numeric < 0]
+            entry["negativeCount"] = int(negatives.shape[0])
+            entry["negativeSum"] = float(negatives.sum()) if len(negatives) else 0.0
+        per_column.append(entry)
+    try:
+        duplicate_rows = int(data.duplicated().sum())
+    except TypeError:  # unhashable cells (very rare in Excel data)
+        duplicate_rows = int(data.astype(str).duplicated().sum())
+    return {
+        "rows": total_rows,
+        "duplicateRows": duplicate_rows,
+        "totalsRowsRemoved": int(totals_removed),
+        "emptyRowsRemoved": int(empty_removed),
+        "columns": per_column,
+    }
+
+
+def profile_raw(raw):
+    """profile_excel() for one already-read raw sheet (header=None)."""
     first_header_row_index, header_row_index = _detect_header_row(raw)
     if header_row_index is None:
         return {
@@ -85,8 +213,10 @@ def profile_excel(file_storage):
         for i, value in enumerate(header)
     )
 
-    junk_mask = _compute_junk_mask(data)
+    junk_mask, totals_mask = _compute_junk_mask(data, with_totals=True)
     clean_rows = data.loc[~junk_mask].reset_index(drop=True)
+    totals_removed = int(totals_mask.sum())
+    empty_removed = int(junk_mask.sum()) - totals_removed
 
     columns = _infer_column_types(clean_rows)
     clean_rows = _coerce_numeric_columns(clean_rows, columns)
@@ -123,6 +253,7 @@ def profile_excel(file_storage):
         "columns": columns,
         "detail": detail,
         "dataframe": clean_rows,
+        "quality": build_quality(clean_rows, columns, totals_removed, empty_removed),
     }
 
 
@@ -292,7 +423,7 @@ def _detect_header_row(raw):
     return first_header_row_index, header_row_index
 
 
-def _compute_junk_mask(data):
+def _compute_junk_mask(data, with_totals=False):
     """Vectorized "is this row empty/mostly-empty/a totals marker" check.
 
     Unlike header detection (capped at MAX_HEADER_SCAN_ROWS), this runs over
@@ -327,6 +458,9 @@ def _compute_junk_mask(data):
     other_real_text = non_null & ~numeric_like & ~cell_matches
     text_mask = has_marker & ~other_real_text.any(axis=1)
 
+    if with_totals:
+        # (rows removed, rows removed because they are total/subtotal lines)
+        return width_mask | text_mask, text_mask
     return width_mask | text_mask
 
 

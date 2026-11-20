@@ -9,14 +9,13 @@ from flask import Blueprint, current_app, request
 from app.guided import content, data_context
 from app.guided.challenges import CHALLENGE_TO_LESSON
 from app.utils.api_response import api_response
+from app.utils.session import current_session_id
 
 guided_bp = Blueprint("guided", __name__, url_prefix="/api/guided")
 
-SESSION_HEADER = "X-Session-Id"
 
 
-def _session_id():
-    return request.headers.get(SESSION_HEADER) or "anonymous"
+_session_id = current_session_id
 
 
 def _manager():

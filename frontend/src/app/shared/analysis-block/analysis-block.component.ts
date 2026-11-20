@@ -1,6 +1,9 @@
-import { Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild } from '@angular/core';
+import { Router } from '@angular/router';
 
-import { AnalysisBlock } from '../../models/api.models';
+import { NotebookDraftService } from '../../core/notebook-draft.service';
+
+import { AnalysisBlock, OutOfRanking } from '../../models/api.models';
 import { ChartCanvasComponent, ChartView } from '../chart-canvas/chart-canvas.component';
 import { buildParetoRows, formatPct, formatValue, ParetoRow } from '../pareto-data';
 
@@ -10,6 +13,17 @@ export interface ViewOption {
   value: BlockView;
   label: string;
   hint: string;
+}
+
+// A monthly-trend block only makes sense as a line or as its table.
+export const TREND_VIEWS: ViewOption[] = [
+  { value: 'tendencia', label: 'Línea', hint: 'Cómo cambia mes a mes' },
+  { value: 'tabla', label: 'Tabla', hint: 'Los números exactos' },
+];
+
+export interface FilterRequest {
+  column: string;
+  value: string;
 }
 
 export const BLOCK_VIEWS: ViewOption[] = [
@@ -36,12 +50,18 @@ export const BLOCK_VIEWS: ViewOption[] = [
 export class AnalysisBlockComponent implements OnChanges {
   @Input({ required: true }) bloque!: AnalysisBlock;
   @Input() defaultView: BlockView = 'pareto';
+  // "Filtrar todo el tablero por esta categoría" (cross-filter).
+  @Output() filterRequested = new EventEmitter<FilterRequest>();
 
   @ViewChild('cardChart') private cardChart?: ChartCanvasComponent;
   @ViewChild('bigChart') private bigChart?: ChartCanvasComponent;
   @ViewChild('dialogEl') private dialogEl?: ElementRef<HTMLDialogElement>;
 
-  readonly views = BLOCK_VIEWS;
+  constructor(
+    private draft: NotebookDraftService,
+    private router: Router,
+  ) {}
+
   readonly formatValue = formatValue;
   readonly formatPct = formatPct;
 
@@ -53,15 +73,59 @@ export class AnalysisBlockComponent implements OnChanges {
   readonly uid = `blk-${Math.random().toString(36).slice(2, 9)}`;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['defaultView']) {
-      this.view = this.defaultView;
+    if (changes['defaultView'] || changes['bloque']) {
+      this.view = this.isTrend ? (this.defaultView === 'tabla' ? 'tabla' : 'tendencia') : this.defaultView;
     }
     if (changes['bloque']) {
-      this.rows = buildParetoRows(this.records, this.bloque.dimension, this.bloque.metrica);
+      this.rows = buildParetoRows(this.records, this.categoryKey, this.bloque.metrica);
+      if (this.isTrend) {
+        // "80%" means nothing across months: no row is muted.
+        this.rows.forEach((r) => (r.vital = true));
+      }
       this.selectedIndex = null;
-      // More than 10 bars stop being individually readable in a card.
-      this.topN = this.rows.length > 10 ? 10 : null;
+      // More than 10 bars stop being individually readable in a card - unless
+      // the backend already folded the tail into "Otros" (bloque.topN), or the
+      // card is a trend (every month counts).
+      this.topN = this.isTrend || this.bloque.topN ? null : this.rows.length > 10 ? 10 : null;
     }
+  }
+
+  get isTrend(): boolean {
+    return this.bloque?.tipo === 'tendencia';
+  }
+
+  get views(): ViewOption[] {
+    return this.isTrend ? TREND_VIEWS : BLOCK_VIEWS;
+  }
+
+  get fueraDelRanking(): OutOfRanking[] {
+    return this.bloque.fueraDelRanking ?? [];
+  }
+
+  // Trend records are keyed by month ("Mes"), not by the date column name
+  // the block reports as its dimension.
+  get categoryKey(): string {
+    return this.isTrend ? 'Mes' : this.bloque.dimension;
+  }
+
+  // The folded "Otros (k)" row and trend months are not values of a column.
+  canFilter(row: ParetoRow | null): boolean {
+    return !!row && !this.isTrend && !/^Otros \(\d+\)$/.test(row.label);
+  }
+
+  requestFilter(row: ParetoRow): void {
+    if (this.canFilter(row)) {
+      this.filterRequested.emit({ column: this.bloque.dimension, value: row.label });
+    }
+  }
+
+  // "Ver el código": the exact pandas this card ran, opened in the Notebook.
+  openCode(): void {
+    if (!this.bloque.codigo) {
+      return;
+    }
+    this.draft.enqueue(this.bloque.codigo);
+    this.router.navigate(['/notebook']);
   }
 
   get records(): Record<string, unknown>[] {
@@ -104,7 +168,10 @@ export class AnalysisBlockComponent implements OnChanges {
   }
 
   get chartView(): ChartView {
-    return this.view === 'tabla' ? 'pareto' : this.view;
+    if (this.isTrend) {
+      return 'tendencia';
+    }
+    return this.view === 'tabla' || this.view === 'tendencia' ? 'pareto' : this.view;
   }
 
   // Ranking grows with its bar count so every category name stays legible.
@@ -180,7 +247,7 @@ export class AnalysisBlockComponent implements OnChanges {
 
   downloadCsv(): void {
     const escape = (v: string) => (/[";\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    const header = [this.bloque.dimension, this.bloque.metrica, '% del total', '% acumulado', 'Parte del 80%'];
+    const header = [this.categoryKey, this.bloque.metrica, '% del total', '% acumulado', 'Parte del 80%'];
     const lines = this.rows.map((r) =>
       [
         r.label,

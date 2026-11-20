@@ -13,6 +13,7 @@ process that created it. Under Gunicorn the service must therefore run with a
 single worker process (and multiple threads for concurrency) — see the
 backend Dockerfile CMD. For the MVP's 2-3 users this is more than enough.
 """
+import datetime
 import multiprocessing as mp
 import queue
 import threading
@@ -26,6 +27,19 @@ DEFAULT_MEM_BYTES = 512 * 1024 * 1024  # 512 MB
 DEFAULT_CPU_SECONDS = 20
 IDLE_TTL_SECONDS = 30 * 60  # reap sessions idle for 30 minutes
 DEFAULT_ASSISTANT_MAX_REQUESTS = 20  # NL assistant requests per session (Story 6.2, NFR11)
+# Global (all sessions together) assistant requests per calendar day: with
+# server-issued sessions a user can still open new sessions to get a fresh
+# per-session budget, so cost control needs a ceiling that doesn't reset.
+DEFAULT_ASSISTANT_MAX_REQUESTS_PER_DAY = 200
+# Live execution workers at once. Each one is a full Python process with
+# pandas/matplotlib loaded (~150-250 MB), so the container's memory - not the
+# number of users - is the real limit. Past it, new sessions get a 503
+# instead of the whole service being OOM-killed.
+DEFAULT_MAX_SESSIONS = 8
+
+
+class CapacityError(RuntimeError):
+    """No room for one more execution worker (MAX_SESSIONS reached)."""
 
 
 class WorkerHandle:
@@ -74,6 +88,9 @@ class WorkerManager:
         cpu_seconds=DEFAULT_CPU_SECONDS,
         idle_ttl=IDLE_TTL_SECONDS,
         assistant_max_requests=DEFAULT_ASSISTANT_MAX_REQUESTS,
+        assistant_max_requests_per_day=DEFAULT_ASSISTANT_MAX_REQUESTS_PER_DAY,
+        max_sessions=DEFAULT_MAX_SESSIONS,
+        today=None,
     ):
         # "spawn" behaves the same on Windows and Linux, avoiding fork pitfalls
         # with matplotlib / threads inside the Flask process.
@@ -88,12 +105,23 @@ class WorkerManager:
         # table. Deliberately separate from _pending_uploads (that one holds
         # an unconfirmed upload awaiting cleanup, not a bound DataFrame).
         self._session_profiles = {}
+        # session_id -> (variable, [(sheet_name, profile), ...], last_used):
+        # a multi-sheet workbook waiting for the user to pick which sheets to
+        # stack. Kept (not popped) after a selection so the user can change
+        # it (e.g. drop a sheet whose columns don't match) until another
+        # upload, a restart or the TTL.
+        self._pending_workbooks = {}
         self._lock = threading.Lock()
         self.exec_timeout = exec_timeout
         self.mem_bytes = mem_bytes
         self.cpu_seconds = cpu_seconds
         self.idle_ttl = idle_ttl
         self.assistant_max_requests = assistant_max_requests
+        self.assistant_max_requests_per_day = assistant_max_requests_per_day
+        self.max_sessions = max_sessions
+        # Injectable clock for the daily global assistant ceiling (tests).
+        self._today = today or datetime.date.today
+        self._global_usage = (self._today(), 0)  # (day, requests that day)
 
     def _reap_idle(self):
         """Caller must hold self._lock. Sweeps workers, pending uploads, and
@@ -115,6 +143,7 @@ class WorkerManager:
         self._pop_stale(self._pending_uploads, now, last_active_at=lambda entry: entry[3])
         self._pop_stale(self._assistant_usage, now, last_active_at=lambda entry: entry[1])
         self._pop_stale(self._session_profiles, now, last_active_at=lambda entry: entry[3])
+        self._pop_stale(self._pending_workbooks, now, last_active_at=lambda entry: entry[2])
 
     def _pop_stale(self, mapping, now, last_active_at):
         """Drop entries from `mapping` whose `last_active_at(entry)` predates
@@ -134,11 +163,25 @@ class WorkerManager:
         """
         with self._lock:
             self._reap_idle()
+            day, global_count = self._current_global_usage()
+            if global_count >= self.assistant_max_requests_per_day:
+                return False
             count, _ = self._assistant_usage.get(session_id, (0, time.time()))
             if count >= self.assistant_max_requests:
                 return False
             self._assistant_usage[session_id] = (count + 1, time.time())
+            self._global_usage = (day, global_count + 1)
             return True
+
+    def _current_global_usage(self):
+        """Caller must hold self._lock. Resets the global counter when the
+        calendar day changed since the last request."""
+        day, count = self._global_usage
+        today = self._today()
+        if day != today:
+            day, count = today, 0
+            self._global_usage = (day, count)
+        return day, count
 
     def release_assistant_usage(self, session_id):
         """Refund one unit of assistant quota for `session_id` - call this
@@ -154,6 +197,8 @@ class WorkerManager:
                 return
             count, last_used = entry
             self._assistant_usage[session_id] = (max(0, count - 1), last_used)
+            day, global_count = self._current_global_usage()
+            self._global_usage = (day, max(0, global_count - 1))
 
     def _get_or_create(self, session_id):
         with self._lock:
@@ -162,6 +207,9 @@ class WorkerManager:
             if worker is None or not worker.is_alive():
                 if worker is not None:
                     worker.terminate()
+                    self._workers.pop(session_id, None)
+                if len(self._workers) >= self.max_sessions:
+                    raise CapacityError("No hay cupo para una sesión nueva.")
                 worker = WorkerHandle(self._ctx, self.mem_bytes, self.cpu_seconds)
                 self._workers[session_id] = worker
             return worker
@@ -220,7 +268,17 @@ class WorkerManager:
 
             try:
                 challenge = worker.send(
-                    {"type": "check", "challenge_id": challenge_id, "context": context}, self.exec_timeout
+                    {
+                        "type": "check",
+                        "challenge_id": challenge_id,
+                        "context": context,
+                        # Some challenges (05-graficas) require that the
+                        # learner's code actually drew a chart; execute_code
+                        # closes every figure after capturing it, so the
+                        # checker can only learn that from this result.
+                        "had_chart": bool(exec_result.get("chart_svg")),
+                    },
+                    self.exec_timeout,
                 )
             except TimeoutError as exc:
                 self.restart(session_id)
@@ -284,6 +342,25 @@ class WorkerManager:
         variable, df, profile, _staged_at = entry
         return variable, df, profile
 
+    def stage_pending_workbook(self, session_id, variable, named_profiles):
+        with self._lock:
+            self._reap_idle()
+            self._pending_workbooks[session_id] = (variable, named_profiles, time.time())
+
+    def get_pending_workbook(self, session_id):
+        """(variable, [(sheet_name, profile), ...]) or None. Refreshes its TTL."""
+        with self._lock:
+            entry = self._pending_workbooks.get(session_id)
+            if entry is None:
+                return None
+            variable, named_profiles, _ = entry
+            self._pending_workbooks[session_id] = (variable, named_profiles, time.time())
+            return variable, named_profiles
+
+    def discard_pending_workbook(self, session_id):
+        with self._lock:
+            self._pending_workbooks.pop(session_id, None)
+
     def discard_pending_upload(self, session_id):
         with self._lock:
             self._pending_uploads.pop(session_id, None)
@@ -292,6 +369,7 @@ class WorkerManager:
         with self._lock:
             worker = self._workers.pop(session_id, None)
             self._pending_uploads.pop(session_id, None)
+            self._pending_workbooks.pop(session_id, None)
             # The bound DataFrame this profile describes dies with the
             # worker below -- keeping the profile around would let the
             # guided module keep generating example code against columns

@@ -6,7 +6,7 @@ WorkerManager stored on the Flask app.
 """
 from flask import Blueprint, current_app, request
 
-from app.data_access.excel_profiler import profile_excel
+from app.data_access.excel_profiler import VERDICT_NO_USABLE, profile_workbook, sheet_summary, stack_sheets
 from app.notebook.analysis_catalog import MAX_AUTO_BLOCKS, build_catalog
 from app.notebook.chart_builder import (
     CHART_TYPES,
@@ -20,6 +20,7 @@ from app.notebook.nl_chart_interpreter import InterpreterUnavailableError, inter
 from app.notebook.semantic_classifier import ROLES as CLASSIFICATION_ROLES, classify_columns
 from app.notebook.pareto_narrative import build_stats_payload, generate_pareto_narrative
 from app.notebook.table_builder import (
+    AGGREGATIONS,
     build_column_values_code,
     build_sort_code,
     build_summary_code,
@@ -31,15 +32,13 @@ from app.notebook.table_explanation import (
     build_summary_explanation,
 )
 from app.utils.api_response import api_response
+from app.utils.session import current_session_id
 
 notebook_bp = Blueprint("notebook", __name__, url_prefix="/api/notebook")
 
-SESSION_HEADER = "X-Session-Id"
 
 
-def _session_id():
-    """Each browser tab supplies its own opaque id; no auth in the MVP."""
-    return request.headers.get(SESSION_HEADER) or "anonymous"
+_session_id = current_session_id
 
 
 def _manager():
@@ -53,7 +52,41 @@ def _serialize_profile(profile):
         "headerRowIndex": profile["header_row_index"],
         "columns": profile["columns"],
         "detail": profile["detail"],
+        # Data-quality panel (blanks, duplicates, negatives, removed total
+        # rows) - see excel_profiler.build_quality().
+        "quality": profile.get("quality"),
     }
+
+
+def _bind_or_stage(var_name, profile, extra=None):
+    """Shared tail of /upload-excel and /select-sheets: bind a clean table
+    right away, stage one that needs cleanup confirmation, or do nothing for
+    an unusable one. Returns the ApiResponse."""
+    df = profile["dataframe"]
+    verdict = profile["verdict"]
+    bound = False
+    if verdict == "usable":
+        _manager().bind(_session_id(), var_name, df)
+        _manager().remember_profile(_session_id(), var_name, profile["columns"], rows=int(df.shape[0]))
+        bound = True
+    elif verdict == "usable_con_limpieza":
+        _manager().stage_pending_upload(_session_id(), var_name, df, profile)
+
+    rows = int(df.shape[0]) if df is not None else 0
+    columns = list(map(str, df.columns)) if df is not None else []
+    data = {
+        "variable": var_name,
+        "rows": rows,
+        "columns": columns,
+        "profile": _serialize_profile(profile),
+        "bound": bound,
+        "needsSheetSelection": False,
+        **(extra or {}),
+    }
+    message = f"Excel cargado como '{var_name}' ({rows} filas)." if bound else profile["detail"]
+    if data.get("warning"):
+        message = f"{message} {data['warning']}"
+    return api_response(data=data, message=message)
 
 
 @notebook_bp.post("/execute")
@@ -83,43 +116,77 @@ def upload_excel():
     file = request.files["file"]
     var_name = (request.form.get("variable") or "df").strip() or "df"
     try:
-        profile = profile_excel(file)
+        sheets = profile_workbook(file)
     except ValueError as exc:
         return api_response(message=str(exc), success=False, status=400)
-
-    df = profile["dataframe"]
-    verdict = profile["verdict"]
-    bound = False
+    if not sheets:
+        return api_response(message="El archivo no tiene hojas.", success=False, status=400)
 
     # A new upload always supersedes whatever this session had pending before,
     # regardless of this upload's own verdict -- otherwise a stale staged
     # DataFrame from an earlier "usable_con_limpieza" attempt could still be
     # bound later by a delayed/duplicate confirm-excel-cleanup call.
     _manager().discard_pending_upload(_session_id())
+    _manager().discard_pending_workbook(_session_id())
 
-    if verdict == "usable":
-        _manager().bind(_session_id(), var_name, df)
-        _manager().remember_profile(_session_id(), var_name, profile["columns"], rows=int(df.shape[0]))
-        bound = True
-    elif verdict == "usable_con_limpieza":
-        _manager().stage_pending_upload(_session_id(), var_name, df, profile)
+    usable = [(name, profile) for name, profile in sheets if profile["verdict"] != VERDICT_NO_USABLE]
+    if len(usable) >= 2:
+        # Several usable sheets: let the user choose which ones to stack
+        # (POST /select-sheets). Nothing is bound yet.
+        _manager().stage_pending_workbook(_session_id(), var_name, sheets)
+        return api_response(
+            data={
+                "variable": var_name,
+                "rows": 0,
+                "columns": [],
+                "profile": None,
+                "bound": False,
+                "needsSheetSelection": True,
+                "sheets": [sheet_summary(name, profile) for name, profile in sheets],
+            },
+            message=f"El archivo tiene {len(usable)} hojas con datos. Elige cuáles incluir.",
+        )
 
-    rows = int(df.shape[0]) if df is not None else 0
-    columns = list(map(str, df.columns)) if df is not None else []
+    name, profile = usable[0] if usable else sheets[0]
+    extra = {"sheetsUsed": [name]} if len(sheets) > 1 else None
+    return _bind_or_stage(var_name, profile, extra)
 
-    return api_response(
-        data={
-            "variable": var_name,
-            "rows": rows,
-            "columns": columns,
-            "profile": _serialize_profile(profile),
-            "bound": bound,
-        },
-        message=(
-            f"Excel cargado como '{var_name}' ({rows} filas)."
-            if bound
-            else profile["detail"]
-        ),
+
+@notebook_bp.post("/select-sheets")
+def select_sheets():
+    """Stacks the sheets the user picked from a multi-sheet upload into one
+    DataFrame (column `Hoja`), then continues exactly like /upload-excel."""
+    payload = request.get_json(silent=True) or {}
+    requested = payload.get("sheets")
+    if not isinstance(requested, list) or not requested or not all(isinstance(n, str) and n for n in requested):
+        return api_response(message="Elige al menos una hoja.", success=False, status=400)
+
+    pending = _manager().get_pending_workbook(_session_id())
+    if pending is None:
+        return api_response(
+            message="No hay un libro pendiente de elegir hojas. Vuelve a subir el archivo.", success=False, status=400
+        )
+    var_name, sheets = pending
+    by_name = dict(sheets)
+    chosen = list(dict.fromkeys(requested))  # dedupe, keep order
+    unknown = [n for n in chosen if n not in by_name]
+    if unknown:
+        return api_response(message=f"La hoja '{unknown[0]}' no existe en el archivo.", success=False, status=400)
+    not_usable = [n for n in chosen if by_name[n]["verdict"] == VERDICT_NO_USABLE]
+    if not_usable:
+        return api_response(
+            message=f"La hoja '{not_usable[0]}' no tiene una tabla de datos utilizable.", success=False, status=400
+        )
+
+    _manager().discard_pending_upload(_session_id())
+    if len(chosen) == 1:
+        return _bind_or_stage(var_name, by_name[chosen[0]], {"sheetsUsed": chosen, "warning": None})
+    try:
+        stacked = stack_sheets([(n, by_name[n]) for n in chosen])
+    except ValueError as exc:
+        return api_response(message=str(exc), success=False, status=400)
+    return _bind_or_stage(
+        var_name, stacked, {"sheetsUsed": stacked["sheets_used"], "warning": stacked["warning"]}
     )
 
 
@@ -162,6 +229,12 @@ def confirm_excel_cleanup():
             )
         df = df.drop(columns=valid_exclude)
         profile = {**profile, "columns": [c for c in profile["columns"] if c["name"] not in valid_exclude]}
+        if profile.get("quality"):
+            quality = profile["quality"]
+            profile["quality"] = {
+                **quality,
+                "columns": [c for c in quality["columns"] if c["name"] not in valid_exclude],
+            }
 
     try:
         _manager().bind(_session_id(), variable, df)
@@ -450,9 +523,14 @@ def summary_table():
     filters = payload.get("filters")
     if filters is None:
         filters = []
+    # How each group is summarized: 'sum' (default, pre-existing behavior),
+    # 'mean' (prices, rates, percentages) or 'count'.
+    agg = payload.get("agg") or "sum"
 
     if not isinstance(variable, str) or not variable.strip():
         return api_response(message="Falta la variable del DataFrame.", success=False, status=400)
+    if agg not in AGGREGATIONS:
+        return api_response(message="La forma de resumir no es válida.", success=False, status=400)
     if not _valid_columns_list(columns) or not columns:
         return api_response(message="Falta elegir al menos una columna para agrupar.", success=False, status=400)
     if not isinstance(value_column, str) or not value_column.strip():
@@ -461,9 +539,9 @@ def summary_table():
         return api_response(message="Los filtros no son válidos.", success=False, status=400)
 
     if detail:
-        code = build_summary_detail_code(variable, columns, value_column, filters=filters)
+        code = build_summary_detail_code(variable, columns, value_column, filters=filters, agg=agg)
     else:
-        code = build_summary_code(variable, columns, value_column, filters=filters)
+        code = build_summary_code(variable, columns, value_column, filters=filters, agg=agg)
     result = _manager().execute(_session_id(), code)
     if result.get("error"):
         explanation = None
@@ -541,6 +619,8 @@ def _valid_classifications_payload(classifications, known_column_names):
             return False
         if entry.get("role") not in CLASSIFICATION_ROLES:
             return False
+        if entry.get("agg") is not None and entry.get("agg") not in AGGREGATIONS:
+            return False
     return True
 
 
@@ -565,9 +645,28 @@ def auto_analysis_route():
         return api_response(
             message="La clasificación de columnas no es válida.", success=False, status=400
         )
+    # Dashboard cross-filter: [{"column", "values"}] - every card is
+    # recalculated over the filtered rows.
+    filters = payload.get("filters") or []
+    if not _valid_filters_list(filters) or any(f["column"] not in known_names for f in filters):
+        return api_response(message="Los filtros no son válidos.", success=False, status=400)
+    # {metric name: 'sum' | 'mean' | 'count'} - optional, 'sum' by default.
+    aggregations = payload.get("aggregations") or {}
+    if not isinstance(aggregations, dict) or any(
+        not isinstance(k, str) or v not in AGGREGATIONS for k, v in aggregations.items()
+    ):
+        return api_response(message="Las formas de resumir no son válidas.", success=False, status=400)
 
     report = {}
-    blocks = build_catalog(_session_id(), _manager(), profile["variable"], classifications, report)
+    blocks = build_catalog(
+        _session_id(),
+        _manager(),
+        profile["variable"],
+        classifications,
+        report,
+        filters=filters,
+        aggregations=aggregations,
+    )
     # Executive-summary panel (Story: "contextualizaciones amplias") - the
     # counts a user would want before diving into individual blocks. `rows`
     # can be None for a session profiled before this field existed (a
@@ -581,6 +680,7 @@ def auto_analysis_route():
         "omitidas": report.get("omitidas", []),
         "limiteAlcanzado": report.get("limite_alcanzado", False),
         "maxBloques": MAX_AUTO_BLOCKS,
+        "filtros": filters,
     }
     if not blocks:
         return api_response(
@@ -669,7 +769,17 @@ def pareto_narrative_route():
     value_column_group = payload.get("valueColumnGroup")
     group_stats = payload.get("groupStats")
     group_records = payload.get("groupRecords")
+    # Decision #2 (2026-11-18): rows/groups only leave for the LLM after the
+    # user confirmed, in a dialog that says how many rows/groups and which
+    # columns are sent, for THIS action.
+    consent = payload.get("consent") is True
 
+    if not consent:
+        return api_response(
+            message="Confirma el envío de los datos al asistente antes de generar el análisis.",
+            success=False,
+            status=400,
+        )
     if not isinstance(value_column_row, str) or not value_column_row.strip():
         return api_response(message="Falta la columna de valor de la fila.", success=False, status=400)
     if not isinstance(row_stats, dict) or not row_stats:

@@ -150,10 +150,10 @@ def test_challenge_passes_against_the_learners_own_uploaded_data_end_to_end(clie
     assert result["challenge"]["passed"] is True
 
 
-def test_lessons_list_without_any_upload_marks_all_six_as_synthetic(client):
+def test_lessons_list_without_any_upload_marks_all_as_synthetic(client):
     response = client.get("/api/guided/lessons")
     lessons = response.get_json()["data"]["lessons"]
-    assert len(lessons) == 6
+    assert len(lessons) == 9
     assert all(lesson["usa_datos_reales"] is False for lesson in lessons)
 
 

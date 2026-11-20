@@ -11,11 +11,11 @@ the model's answer via `enum`, so it can literally only pick one of the 5
 role names - never invent a new one), same MODEL, same lazy client, same
 InterpreterUnavailableError contract.
 
-Security note (NFR10/NFR11, same guarantee as nl_chart_interpreter.py): this
-module never builds or executes pandas code, and the model only ever sees
-column metadata (name/type/a handful of sample values/uniqueRatio) - never
-the DataFrame's rows. excel_profiler.py's _column_stats() already caps
-sampleValues at 5 entries per column for exactly this reason.
+Security note (NFR10/NFR11 + decision #2 of 2026-11-18): this module never
+builds or executes pandas code, and the model only ever sees each column's
+NAME and profiler TYPE - no sample values, no ratios, never a row. The
+classification runs automatically (no consent dialog), so nothing derived
+from the cell contents may leave the server here.
 
 Design note: `_fallback_classification()` isn't only a degraded mode for
 when GEMINI_API_KEY is missing - it's also the reference rules the model is
@@ -26,7 +26,7 @@ runs FIRST, and the LLM result (when available) replaces it only for the
 columns the model actually returned a valid answer for.
 """
 import json
-import os
+from app.utils.secrets import get_secret
 
 from google import genai
 from google.genai import errors, types
@@ -59,7 +59,7 @@ class InterpreterUnavailableError(Exception):
 def _default_client():
     global _client_singleton
     if _client_singleton is None:
-        _client_singleton = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        _client_singleton = genai.Client(api_key=get_secret("GEMINI_API_KEY"))
     return _client_singleton
 
 
@@ -94,11 +94,11 @@ _SYSTEM_PROMPT = (
     "tipo 'fecha' del perfil -> rol 'fecha'; tipo 'numerica' -> 'metrica'; tipo "
     "'categorica' con uniqueRatio muy alto (casi todos los valores distintos) -> "
     "'identificador'; tipo 'categorica' con uniqueRatio bajo -> 'dimension'; "
-    "tipo 'descartable' -> 'descartar'. Usa los valores de muestra (sampleValues) "
-    "solo para refinar casos ambiguos que el tipo/uniqueRatio por sí solos no "
-    "resuelven bien - nunca contradigas el tipo del perfil sin una razón clara "
-    "visible en las muestras. Nunca inventes un nombre de columna que no esté en "
-    "la lista dada."
+    "tipo 'descartable' -> 'descartar'. Solo recibes el nombre y el tipo de cada "
+    "columna: usa el NOMBRE para refinar casos ambiguos (por ejemplo una columna "
+    "categórica llamada 'Factura', 'NIT' o 'Código' suele ser 'identificador'), sin "
+    "contradecir el tipo del perfil sin una razón clara en el nombre. Nunca inventes "
+    "un nombre de columna que no esté en la lista dada."
 )
 
 
@@ -126,18 +126,9 @@ def _build_schema(columns):
 
 
 def _llm_input_columns(columns):
-    """Strips the profile down to exactly what the model needs to decide a
-    role - name/type/uniqueRatio/sampleValues - never the DataFrame, never
-    nullRatio (irrelevant to role, would just be noise in the prompt)."""
-    return [
-        {
-            "name": c["name"],
-            "type": c["type"],
-            "uniqueRatio": c.get("uniqueRatio"),
-            "sampleValues": c.get("sampleValues", []),
-        }
-        for c in columns
-    ]
+    """Only name and type travel to the model (decision #2, 2026-11-18) -
+    no sampleValues, no uniqueRatio/nullRatio, never the DataFrame."""
+    return [{"name": c["name"], "type": c["type"]} for c in columns]
 
 
 def classify_columns(columns, client=None):
@@ -155,7 +146,7 @@ def classify_columns(columns, client=None):
         return {"classifications": fallback, "usedAssistant": False}
 
     if client is None:
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not get_secret("GEMINI_API_KEY"):
             return {"classifications": fallback, "usedAssistant": False}
         client = _default_client()
 

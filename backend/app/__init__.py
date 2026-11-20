@@ -1,44 +1,97 @@
 import atexit
-import os
+import secrets as _stdlib_secrets
 
 from flask import Flask
 from flask_cors import CORS
+from werkzeug.exceptions import RequestEntityTooLarge
 
-from app.config import Config
+from app.config import Config, runtime_settings
 from app.utils.api_response import api_response
+from app.utils.secrets import capture_secrets
+
+# Used only when SECRET_KEY is not configured (local development): one random
+# key per process, so every create_app() in the same process (tests, reloads)
+# signs and verifies session tokens the same way. Tokens die with the
+# process, exactly like the in-memory notebook workers they point to.
+_FALLBACK_SECRET_KEY = _stdlib_secrets.token_hex(32)
 
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # No auth in the MVP (open access), so CORS is permissive. When login is
-    # added in Growth this should be tightened to the known frontend origin.
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # Secrets are captured into app.config and REMOVED from os.environ before
+    # any notebook worker is spawned, so a worker process is born without
+    # them (see app/utils/secrets.py for why scrubbing inside the child is
+    # not enough on Linux).
+    app.config.update(capture_secrets())
+    if not app.config.get("SECRET_KEY"):
+        app.config["SECRET_KEY"] = _FALLBACK_SECRET_KEY
+
+    settings = runtime_settings()
+    app.config.update(settings)
+    app.config["MAX_CONTENT_LENGTH"] = settings["MAX_UPLOAD_MB"] * 1024 * 1024
+
+    # The shared team key (APP_ACCESS_KEY) is the access control now, so CORS
+    # stays open; X-Session-Id must be exposed so the browser can read the
+    # server-issued session token.
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": "*"}},
+        expose_headers=["X-Session-Id"],
+    )
+
+    from app.utils.session import access_key_required, init_session
+
+    init_session(app)
 
     # Single in-process manager owns every session's execution worker.
-    from app.notebook.worker_manager import WorkerManager
+    from app.notebook.worker_manager import CapacityError, WorkerManager
 
     manager = WorkerManager(
-        exec_timeout=int(os.environ.get("CELL_TIMEOUT_SECONDS", "15")),
-        assistant_max_requests=int(os.environ.get("ASSISTANT_MAX_REQUESTS_PER_SESSION", "20")),
+        exec_timeout=settings["CELL_TIMEOUT_SECONDS"],
+        assistant_max_requests=settings["ASSISTANT_MAX_REQUESTS_PER_SESSION"],
+        assistant_max_requests_per_day=settings["ASSISTANT_MAX_REQUESTS_PER_DAY"],
+        max_sessions=settings["MAX_SESSIONS"],
     )
     app.config["WORKER_MANAGER"] = manager
     # Reap every session's execution process on a clean shutdown so we don't
     # leave orphaned worker processes behind.
     atexit.register(manager.shutdown_all)
 
+    @app.errorhandler(RequestEntityTooLarge)
+    def _too_large(_exc):
+        return api_response(
+            message=f"El archivo supera el límite de {settings['MAX_UPLOAD_MB']} MB.",
+            success=False,
+            status=413,
+        )
+
+    @app.errorhandler(CapacityError)
+    def _capacity(_exc):
+        return api_response(
+            message="El servidor está lleno, intenta en unos minutos.",
+            success=False,
+            status=503,
+        )
+
     # FR21: refuse to boot if the configured DB user can write. Skipped when
     # the RDS is not configured (Excel-only local demo).
     from app.startup_checks import run_read_only_guard
 
-    guard_result = run_read_only_guard()
+    with app.app_context():
+        guard_result = run_read_only_guard()
     app.logger.info("read-only guard: %s", guard_result)
 
     @app.get("/api/health")
     def health():
         return api_response(
-            data={"service": "sico-pandas-lab-backend", "readOnlyGuard": guard_result},
+            data={
+                "service": "sico-pandas-lab-backend",
+                "readOnlyGuard": guard_result,
+                "accessKeyRequired": access_key_required(),
+                "maxUploadMb": settings["MAX_UPLOAD_MB"],
+            },
             message="ok",
         )
 

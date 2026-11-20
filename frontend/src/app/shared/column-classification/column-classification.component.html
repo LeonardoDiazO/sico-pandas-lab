@@ -49,6 +49,19 @@
               <span class="col-type">{{ t }}</span>
             }
           </label>
+          @if (c.role === 'metrica') {
+            <select
+              class="agg-select"
+              [ngModel]="c.agg ?? 'sum'"
+              (ngModelChange)="setAgg(c.name, $event)"
+              [attr.aria-label]="'Cómo resumir ' + c.name"
+              title="Cómo se resume esta métrica por grupo"
+            >
+              @for (a of aggOptions; track a) {
+                <option [value]="a">{{ aggLabels[a] }}</option>
+              }
+            </select>
+          }
           <select
             [id]="'role-' + $index"
             [ngModel]="c.role"

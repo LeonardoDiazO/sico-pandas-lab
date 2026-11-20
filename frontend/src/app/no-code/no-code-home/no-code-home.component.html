@@ -52,6 +52,30 @@
         }
       </div>
       <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+
+      @if (quality && excelProfile) {
+        <section class="quality" aria-labelledby="quality-title">
+          <h4 id="quality-title">Calidad de tus datos</h4>
+          @if (sheetsUsed.length > 1) {
+            <p class="quality-line">Unimos las hojas {{ sheetsUsed.join(', ') }} en una sola tabla con la columna «Hoja».</p>
+          }
+          @if (qualityIssues.length === 0) {
+            <p class="quality-ok">Sin problemas detectados: no hay celdas vacías, filas repetidas ni valores negativos.</p>
+          } @else {
+            <ul class="quality-list">
+              @for (issue of qualityIssues; track issue.label) {
+                <li>
+                  <strong>{{ issue.label }}</strong>
+                  <span>{{ issue.detail }}</span>
+                </li>
+              }
+            </ul>
+          }
+          @if (qualityCleanups.length > 0) {
+            <p class="quality-line">Limpieza automática: {{ qualityCleanups.join(' · ') }}.</p>
+          }
+        </section>
+      }
     </div>
   </div>
 
@@ -79,7 +103,7 @@
           <h3>Tu tablero</h3>
         </div>
 
-        @if (generatingAnalysis) {
+        @if (generatingAnalysis && bloques.length === 0) {
           <div class="skeleton" role="status" aria-live="polite">
             <span class="sr-only">Generando el análisis automático…</span>
             <div class="sk-summary"></div>
@@ -109,7 +133,15 @@
           </div>
         }
 
-        <app-analysis-dashboard [bloques]="bloques" [resumen]="resumen"></app-analysis-dashboard>
+        @if (generatingAnalysis && bloques.length > 0) {
+          <p class="refreshing" role="status"><span class="spinner"></span> Recalculando el tablero con el filtro…</p>
+        }
+        <app-analysis-dashboard
+          [bloques]="bloques"
+          [resumen]="resumen"
+          [busy]="generatingAnalysis"
+          (filtersChange)="onFiltersChange($event)"
+        ></app-analysis-dashboard>
       </div>
     </div>
   }

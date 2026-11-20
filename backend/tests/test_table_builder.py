@@ -177,7 +177,8 @@ def test_summary_single_column_with_null_category_does_not_drop_rows():
 
     namespace = build_namespace()
     namespace["df"] = pd.DataFrame({"cliente": ["A", "B", None], "neto": [100.0, 200.0, 50.0]})
-    code = build_summary_code("df", ["cliente"], "neto")
+    # Historic behavior (negatives=None): the null bucket stays in the table.
+    code = build_summary_code("df", ["cliente"], "neto", negatives=None)
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert "(vacío)" in result["result_html"]
@@ -185,6 +186,14 @@ def test_summary_single_column_with_null_category_does_not_drop_rows():
     # percentages, not just the 2 non-null rows (300.0). "neto" is money
     # (_looks_like_money), so its displayed value is "$ 50", not "50.0".
     assert ">$ 50<" in result["result_html"]
+
+    # Default (auditoría 2026-11-18): the null bucket leaves the ranking but
+    # is still reported, with its total, after the 80/20 sentence - never
+    # silently dropped.
+    result = execute_code(build_summary_code("df", ["cliente"], "neto"), namespace)
+    assert result["error"] is None
+    assert "(vacío)" not in result["result_html"]
+    assert "Fuera del ranking: (vacío) = $ 50 (sin valor en la columna)" in result["stdout"]
 
 
 def test_summary_multiple_columns_uses_composite_grouping_key():
@@ -542,11 +551,16 @@ def test_detail_null_category_is_kept_under_vacio_bucket_not_dropped():
 
     namespace = build_namespace()
     namespace["df"] = pd.DataFrame({"cliente": ["A", None], "neto": [100.0, 50.0]})
-    code = build_summary_detail_code("df", ["cliente"], "neto")
+    code = build_summary_detail_code("df", ["cliente"], "neto", negatives=None)
     result = execute_code(code, namespace)
     assert result["error"] is None
     assert "(vacío)" in result["result_html"]
     assert ">$ 50<" in result["result_html"]
+
+    result = execute_code(build_summary_detail_code("df", ["cliente"], "neto"), namespace)
+    assert result["error"] is None
+    assert "(vacío)" not in result["result_html"]
+    assert "Fuera del ranking: (vacío) = $ 50" in result["stdout"]
 
 
 def test_detail_zero_group_total_does_not_produce_inf_or_nan():

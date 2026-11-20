@@ -239,6 +239,11 @@ select {
   }
 }
 
+.agg-select {
+  max-width: 30%;
+  border-color: var(--ok-border) !important;
+}
+
 .footer {
   display: flex;
   flex-wrap: wrap;

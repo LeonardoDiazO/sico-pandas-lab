@@ -64,6 +64,40 @@
     </div>
   }
 
+  @if (pendingSheets) {
+    <div class="sheet-picker">
+      <p class="note">
+        Tu archivo tiene <strong>{{ pendingSheets.length }} hojas</strong>. Elige cuáles analizar: si eliges varias se
+        unen en una sola tabla con la columna <strong>Hoja</strong>, para comparar entre ellas.
+      </p>
+      <ul class="sheet-list">
+        @for (sheet of pendingSheets; track sheet.name) {
+          <li [class.disabled]="!sheet.usable">
+            <label class="checkbox-option">
+              <input
+                type="checkbox"
+                [checked]="chosenSheets.has(sheet.name)"
+                [disabled]="!sheet.usable || sheetsBusy"
+                (change)="toggleSheet(sheet.name)"
+              />
+              <strong>{{ sheet.name }}</strong>
+              <span class="sheet-meta">
+                @if (sheet.usable) {
+                  {{ sheet.rows | number: '1.0-0' }} filas · {{ sheet.columns }} columnas
+                } @else {
+                  sin tabla de datos utilizable
+                }
+              </span>
+            </label>
+          </li>
+        }
+      </ul>
+      <button class="load-btn" (click)="confirmSheets()" [disabled]="chosenSheets.size === 0 || sheetsBusy">
+        {{ sheetsBusy ? 'Combinando…' : chosenSheets.size > 1 ? 'Unir ' + chosenSheets.size + ' hojas y continuar' : 'Usar esta hoja' }}
+      </button>
+    </div>
+  }
+
   @if (unusableInfo) {
     <div class="unusable-warning">
       <h4>Este archivo no se puede usar</h4>

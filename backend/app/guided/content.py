@@ -1,7 +1,7 @@
 """Guided-learning content: a small progressive pandas course for beginners.
 
-Six lessons, easiest to most advanced (Lesson 0 assumes zero prior Python
-knowledge). Each step carries a plain-language
+Nine lessons, easiest to most advanced (Lesson 0 assumes zero prior Python
+knowledge), each closed by a challenge checked server-side (challenges.py). Each step carries a plain-language
 explanation plus a runnable code cell, executed through the exact same engine
 as the free notebook (FR16), so the guided module teaches the real workflow
 the learner will reuse on their own (FR14, FR15, FR17).
@@ -14,6 +14,8 @@ what to load first, since practicing on real data is the whole point.
 Available in every cell: pd (pandas), np (numpy), plt (matplotlib.pyplot),
 sns (seaborn), stats (scipy.stats). Lesson 1 explains what each one is for.
 """
+import re
+
 from app.guided import data_context
 
 _TRY_EXCEPT_EXPLAINER = (
@@ -31,6 +33,7 @@ LESSONS = [
         "id": "00-python-desde-cero",
         "title": "0. Python desde cero (antes de pandas)",
         "summary": "Si nunca has escrito una línea de código: qué es una variable, qué es print, qué es un import y qué significa el punto en df.head(). Empieza aquí.",
+        "challenge_id": "00-python-desde-cero:reto-1",
         "steps": [
             {
                 "title": "0.1 Ejecutar código: qué es una celda",
@@ -279,6 +282,7 @@ LESSONS = [
         "id": "02-filtrar-ordenar",
         "title": "2. Filtrar y ordenar",
         "summary": "Quédate solo con las filas que te interesan, y ordénalas. La base de casi cualquier análisis.",
+        "challenge_id": "02-filtrar-ordenar:reto-1",
         "steps": [
             {
                 "title": "2.1 Cargar datos (mismo patrón que ya conoces)",
@@ -423,6 +427,7 @@ LESSONS = [
         "id": "04-combinar-tablas",
         "title": "4. Combinar tablas con merge (el 'join' en pandas)",
         "summary": "Cómo cruzar dos o más tablas usando una columna en común — el equivalente pandas de un JOIN de SQL.",
+        "challenge_id": "04-combinar-tablas:reto-1",
         "steps": [
             {
                 "title": "4.1 Por qué combinar tablas",
@@ -521,6 +526,7 @@ LESSONS = [
         "id": "05-graficas",
         "title": "5. Gráficas con matplotlib y seaborn",
         "summary": "Convierte tablas en gráficas: barras, líneas, histogramas y dispersión, con dos librerías distintas.",
+        "challenge_id": "05-graficas:reto-1",
         "steps": [
             {
                 "title": "5.1 La forma más rápida: .plot()",
@@ -606,7 +612,267 @@ LESSONS = [
             },
         ],
     },
+    {
+        "id": "06-limpieza",
+        "title": "6. Limpiar datos: vacíos, duplicados y texto",
+        "summary": "Antes de sumar o agrupar, revisa la calidad: celdas vacías, filas repetidas y textos mal escritos cambian los resultados.",
+        "challenge_id": "06-limpieza:reto-1",
+        "steps": [
+            {
+                "title": "6.1 Una tabla con problemas típicos",
+                "explanation": (
+                    "Los archivos reales casi nunca vienen limpios. Esta tabla de ejemplo tiene, a "
+                    "propósito, los tres problemas más comunes: filas repetidas, celdas vacías y "
+                    "textos escritos de formas distintas ('Bogotá' y 'bogotá'). Mismo patrón "
+                    "try/except de siempre: si ya existe `df_clientes`, se usa la tuya."
+                ),
+                "code": (
+                    "try:\n"
+                    "    df_clientes\n"
+                    "except NameError:\n"
+                    "    df_clientes = pd.DataFrame({\n"
+                    "        'cliente': ['Ana Gómez', 'Luis Pérez', 'Ana Gómez', 'Marta Ruiz', ' Carlos Díaz ', 'Luis Pérez', 'Sofía León'],\n"
+                    "        'ciudad': ['Bogotá', 'Medellín', 'Bogotá', None, 'Cali', 'Medellín', 'bogotá'],\n"
+                    "        'compras': [120000, 85000, 120000, 40000, None, 85000, 60000],\n"
+                    "    })\n"
+                    "df_clientes"
+                ),
+            },
+            {
+                "title": "6.2 Contar las celdas vacías",
+                "explanation": (
+                    "`.isna()` marca con True cada celda vacía (NaN/None) y `.sum()` cuenta cuántas "
+                    "hay por columna. Una métrica con vacíos suma menos de lo que debería, y una "
+                    "categoría vacía termina en un grupo '(vacío)' en los reportes."
+                ),
+                "code": "df_clientes.isna().sum()",
+            },
+            {
+                "title": "6.3 Encontrar y quitar filas duplicadas",
+                "explanation": (
+                    "`.duplicated()` marca las filas que repiten exactamente a una anterior. Si una "
+                    "venta aparece dos veces, cualquier total queda inflado. `.drop_duplicates()` "
+                    "devuelve la tabla sin esas repeticiones (no modifica la original: hay que "
+                    "guardar el resultado en una variable)."
+                ),
+                "code": (
+                    "print('Filas duplicadas:', df_clientes.duplicated().sum())\n"
+                    "sin_duplicados = df_clientes.drop_duplicates()\n"
+                    "sin_duplicados"
+                ),
+            },
+            {
+                "title": "6.4 Qué hacer con los vacíos: quitar o rellenar",
+                "explanation": (
+                    "`.dropna(subset=['col'])` quita las filas donde esa columna está vacía. "
+                    "`.fillna(valor)` las rellena. Decide según el caso: un cliente sin ciudad no "
+                    "se puede agrupar por ciudad (mejor quitarlo de ESE análisis), pero unas "
+                    "compras vacías a veces significan 0."
+                ),
+                "code": (
+                    "con_ciudad = sin_duplicados.dropna(subset=['ciudad']).copy()\n"
+                    "con_ciudad['compras'] = con_ciudad['compras'].fillna(0)\n"
+                    "con_ciudad"
+                ),
+            },
+            {
+                "title": "6.5 Normalizar textos",
+                "explanation": (
+                    "Para pandas, 'Bogotá' y 'bogotá' son dos ciudades distintas, y ' Carlos Díaz ' "
+                    "(con espacios) no es igual a 'Carlos Díaz'. `.str.strip()` quita los espacios de "
+                    "los extremos y `.str.title()` deja cada palabra con mayúscula inicial."
+                ),
+                "code": (
+                    "con_ciudad['cliente'] = con_ciudad['cliente'].str.strip()\n"
+                    "con_ciudad['ciudad'] = con_ciudad['ciudad'].str.title()\n"
+                    "con_ciudad.groupby('ciudad')['compras'].sum()"
+                ),
+            },
+        ],
+    },
+    {
+        "id": "07-fechas",
+        "title": "7. Trabajar con fechas",
+        "summary": "Convierte texto en fechas de verdad, extrae año y mes, filtra por periodos y mira la tendencia mes a mes.",
+        "challenge_id": "07-fechas:reto-1",
+        "steps": [
+            {
+                "title": "7.1 Ventas con fecha",
+                "explanation": (
+                    "Esta tabla de ejemplo tiene una venta por fila, con su fecha, cliente y valor "
+                    "neto. Los valores negativos son notas crédito (devoluciones). Lo usamos también "
+                    "en la Lección 8."
+                ),
+                "code": (
+                    "try:\n"
+                    "    df_ventas\n"
+                    "except NameError:\n"
+                    "    df_ventas = pd.DataFrame({\n"
+                    "        'fecha': ['2026-01-05', '2026-01-18', '2026-01-25', '2026-02-02', '2026-02-14', '2026-02-20', '2026-03-03', '2026-03-09', '2026-03-15', '2026-03-28'],\n"
+                    "        'cliente': ['Ana', 'Luis', 'Marta', 'Ana', 'Pedro', 'Luis', 'Ana', 'Pedro', 'Marta', 'Sofía'],\n"
+                    "        'neto': [500000, 300000, 150000, 450000, 80000, -300000, 600000, -120000, 200000, 90000],\n"
+                    "    })\n"
+                    "print(df_ventas.dtypes)\n"
+                    "df_ventas"
+                ),
+            },
+            {
+                "title": "7.2 Convertir texto en fecha con pd.to_datetime",
+                "explanation": (
+                    "Mientras `fecha` sea texto (dtype `object`), pandas no sabe que '2026-02-02' va "
+                    "después de '2026-01-25' ni qué mes es. `pd.to_datetime()` la convierte a "
+                    "`datetime64`. Con `errors='coerce'` un valor que no se entiende queda vacío "
+                    "(NaT) en lugar de detener todo."
+                ),
+                "code": (
+                    "fechas = pd.to_datetime(df_ventas['fecha'], errors='coerce')\n"
+                    "print('Tipo después de convertir:', fechas.dtype)\n"
+                    "fechas"
+                ),
+            },
+            {
+                "title": "7.3 Extraer año, mes y día de la semana",
+                "explanation": (
+                    "Una columna de fechas tiene el accesor `.dt`, que da sus partes: `.dt.year`, "
+                    "`.dt.month`, `.dt.day_name()`. Así puedes agrupar por cualquiera de ellas."
+                ),
+                "code": (
+                    "con_partes = df_ventas.assign(\n"
+                    "    fecha=fechas,\n"
+                    "    anio=fechas.dt.year,\n"
+                    "    mes=fechas.dt.month,\n"
+                    "    dia=fechas.dt.day_name(),\n"
+                    ")\n"
+                    "con_partes"
+                ),
+            },
+            {
+                "title": "7.4 Filtrar un periodo",
+                "explanation": (
+                    "Con fechas reales se puede comparar: `fechas >= '2026-02-01'` da True/False por "
+                    "fila, igual que cualquier filtro de la Lección 2."
+                ),
+                "code": (
+                    "desde_febrero = df_ventas[fechas >= '2026-02-01']\n"
+                    "desde_febrero"
+                ),
+            },
+            {
+                "title": "7.5 Tendencia mes a mes",
+                "explanation": (
+                    "`.dt.to_period('M')` convierte cada fecha en su mes ('2026-01'). Agrupar por "
+                    "ese mes y sumar da la serie mensual, y `.pct_change()` calcula cuánto subió o "
+                    "bajó cada mes frente al anterior."
+                ),
+                "code": (
+                    "por_mes = df_ventas.groupby(fechas.dt.to_period('M'))['neto'].sum()\n"
+                    "print('Variación % frente al mes anterior:')\n"
+                    "print((por_mes.pct_change() * 100).round(1))\n"
+                    "por_mes.plot(kind='line', marker='o', title='Neto por mes')\n"
+                    "plt.tight_layout()"
+                ),
+            },
+        ],
+    },
+    {
+        "id": "08-razonamiento",
+        "title": "8. Razonar con los datos: netos, 80/20 y lo que queda fuera",
+        "summary": "Cómo llega el tablero sin código a sus conclusiones: totales netos por cliente, el punto del 80% y por qué algunos grupos salen del ranking.",
+        "challenge_id": "08-razonamiento:reto-1",
+        "steps": [
+            {
+                "title": "8.1 Los mismos datos de ventas",
+                "explanation": (
+                    "Usamos `df_ventas` de la Lección 7 (si no la corriste, esta celda la crea). "
+                    "Fíjate en Luis y Pedro: tienen ventas, pero también notas crédito."
+                ),
+                "code": (
+                    "try:\n"
+                    "    df_ventas\n"
+                    "except NameError:\n"
+                    "    df_ventas = pd.DataFrame({\n"
+                    "        'fecha': ['2026-01-05', '2026-01-18', '2026-01-25', '2026-02-02', '2026-02-14', '2026-02-20', '2026-03-03', '2026-03-09', '2026-03-15', '2026-03-28'],\n"
+                    "        'cliente': ['Ana', 'Luis', 'Marta', 'Ana', 'Pedro', 'Luis', 'Ana', 'Pedro', 'Marta', 'Sofía'],\n"
+                    "        'neto': [500000, 300000, 150000, 450000, 80000, -300000, 600000, -120000, 200000, 90000],\n"
+                    "    })\n"
+                    "df_ventas"
+                ),
+            },
+            {
+                "title": "8.2 El total NETO de cada cliente",
+                "explanation": (
+                    "Sumar por cliente descuenta automáticamente sus notas crédito: el resultado es "
+                    "lo que de verdad dejó cada uno. Luis quedó en 0 y Pedro en negativo."
+                ),
+                "code": (
+                    "netos = df_ventas.groupby('cliente')['neto'].sum().sort_values(ascending=False)\n"
+                    "netos"
+                ),
+            },
+            {
+                "title": "8.3 Por qué los netos ≤ 0 salen del ranking",
+                "explanation": (
+                    "Un 80/20 responde '¿quiénes concentran el valor?'. Un cliente con neto 0 o "
+                    "negativo no aporta valor: si lo dejas, el '% del total' de los demás pasa de "
+                    "100% y el punto del 80% se mueve. Por eso el tablero sin código los saca del "
+                    "ranking y los muestra aparte, con su monto, en vez de esconderlos."
+                ),
+                "code": (
+                    "fuera = netos[netos <= 0]\n"
+                    "en_ranking = netos[netos > 0]\n"
+                    "print('Fuera del ranking:')\n"
+                    "print(fuera)\n"
+                    "en_ranking"
+                ),
+            },
+            {
+                "title": "8.4 % del total y % acumulado",
+                "explanation": (
+                    "Con el ranking limpio, cada cliente se divide por el total (`% del total`) y "
+                    "`.cumsum()` va sumando de arriba hacia abajo (`% acumulado`). Son exactamente "
+                    "las columnas que ves en el tablero."
+                ),
+                "code": (
+                    "pct = (en_ranking / en_ranking.sum() * 100).round(1)\n"
+                    "acumulado = (en_ranking.cumsum() / en_ranking.sum() * 100).round(1)\n"
+                    "pd.DataFrame({'neto': en_ranking, '% del total': pct, '% acumulado': acumulado})"
+                ),
+            },
+            {
+                "title": "8.5 Encontrar el punto del 80%",
+                "explanation": (
+                    "El primer cliente cuyo acumulado llega a 80% marca el corte: él y todos los de "
+                    "arriba son 'los pocos que concentran la mayoría'. Esa es la frase '80/20' del "
+                    "tablero, calculada a mano."
+                ),
+                "code": (
+                    "n_cruce = int((acumulado < 80).sum()) + 1\n"
+                    "print(f'{n_cruce} de {len(en_ranking)} clientes concentran el {acumulado.iloc[n_cruce - 1]:.0f}% del neto.')"
+                ),
+            },
+        ],
+    },
 ]
+
+
+def canonical_table_sources(table_var):
+    """Server-side constructors for a lesson synthetic table: the body of
+    every `except NameError:` branch that creates `table_var` in a lesson
+    step, dedented into standalone code. challenges.py executes these in a
+    namespace of its own to get the reference data for a check - so the
+    reference is the lesson's own code, never whatever the learner has in
+    their namespace under the same name."""
+    pattern = re.compile(
+        rf"try:\n    {re.escape(table_var)}\nexcept NameError:\n((?:    [^\n]*(?:\n|$))+)"
+    )
+    sources = []
+    for lesson in LESSONS:
+        for step in lesson["steps"]:
+            for match in pattern.finditer(step["code"]):
+                body = "\n".join(line[4:] for line in match.group(1).splitlines())
+                if body not in sources:
+                    sources.append(body)
+    return sources
 
 
 def list_lessons(learner_profile=None):

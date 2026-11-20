@@ -5,6 +5,8 @@ import {
   AnalysisBlock,
   AnalysisSummary,
   ColumnClassification,
+  ColumnFilter,
+  DataQuality,
   ExcelProfileColumn,
   LoadResult,
 } from '../../models/api.models';
@@ -29,6 +31,8 @@ export class NoCodeHomeComponent implements OnDestroy {
   banner: { text: string; ok: boolean } | null = null;
   excelProfile: { variable: string; columns: ExcelProfileColumn[]; rows: number } | null = null;
   fileLabel: string | null = null;
+  quality: DataQuality | null = null;
+  sheetsUsed: string[] = [];
   bloques: AnalysisBlock[] = [];
   resumen: AnalysisSummary | null = null;
   generatingAnalysis = false;
@@ -59,6 +63,8 @@ export class NoCodeHomeComponent implements OnDestroy {
     this.bloques = [];
     this.resumen = null;
     this.lastClassifications = null;
+    this.quality = result.profile?.quality ?? null;
+    this.sheetsUsed = result.sheetsUsed ?? [];
     if (result.profile) {
       this.excelProfile = { variable: result.variable, columns: result.profile.columns, rows: result.rows };
       this.fileLabel = `${result.rows.toLocaleString('es-CO')} filas · ${result.profile.columns.length} columnas`;
@@ -66,15 +72,72 @@ export class NoCodeHomeComponent implements OnDestroy {
   }
 
   onClassificationConfirmed(classifications: ColumnClassification[]): void {
+    this.runAnalysis(classifications, []);
+  }
+
+  // Cross-filter from the dashboard: same confirmed classification, new filters.
+  onFiltersChange(filters: ColumnFilter[]): void {
+    if (this.lastClassifications) {
+      this.runAnalysis(this.lastClassifications, filters, false);
+    }
+  }
+
+  get qualityIssues(): { label: string; detail: string }[] {
+    const q = this.quality;
+    if (!q) {
+      return [];
+    }
+    const issues: { label: string; detail: string }[] = [];
+    const blanks = q.columns.filter((c) => c.nullCount > 0).sort((a, b) => b.nullRatio - a.nullRatio);
+    if (blanks.length) {
+      issues.push({
+        label: `${blanks.length} ${blanks.length === 1 ? 'columna tiene' : 'columnas tienen'} celdas vacías`,
+        detail: blanks
+          .slice(0, 4)
+          .map((c) => `${c.name} (${Math.round(c.nullRatio * 100)}%)`)
+          .join(', ') + (blanks.length > 4 ? '…' : ''),
+      });
+    }
+    if (q.duplicateRows > 0) {
+      issues.push({
+        label: `${q.duplicateRows} ${q.duplicateRows === 1 ? 'fila repetida' : 'filas repetidas'}`,
+        detail: 'Filas idénticas en todas sus columnas: revisa si son registros duplicados antes de sumar.',
+      });
+    }
+    const negatives = q.columns.filter((c) => (c.negativeCount ?? 0) > 0);
+    if (negatives.length) {
+      issues.push({
+        label: `Valores negativos en ${negatives.map((c) => c.name).join(', ')}`,
+        detail: 'Suelen ser notas crédito o devoluciones: el tablero trabaja con el neto de cada grupo.',
+      });
+    }
+    return issues;
+  }
+
+  get qualityCleanups(): string[] {
+    const q = this.quality;
+    const out: string[] = [];
+    if (q?.totalsRowsRemoved) {
+      out.push(`${q.totalsRowsRemoved} ${q.totalsRowsRemoved === 1 ? 'fila de totales quitada' : 'filas de totales quitadas'} (para no sumar dos veces)`);
+    }
+    if (q?.emptyRowsRemoved) {
+      out.push(`${q.emptyRowsRemoved} ${q.emptyRowsRemoved === 1 ? 'fila vacía quitada' : 'filas vacías quitadas'}`);
+    }
+    return out;
+  }
+
+  private runAnalysis(classifications: ColumnClassification[], filters: ColumnFilter[], scroll = true): void {
     this.lastClassifications = classifications;
     this.analysisSub?.unsubscribe();
     this.generatingAnalysis = true;
     this.analysisError = null;
     this.banner = null;
-    this.bloques = [];
-    this.resumen = null;
-    this.scrollToResults();
-    this.analysisSub = this.notebook.autoAnalysis(classifications).subscribe({
+    if (scroll) {
+      this.bloques = [];
+      this.resumen = null;
+      this.scrollToResults();
+    }
+    this.analysisSub = this.notebook.autoAnalysis(classifications, {}, filters).subscribe({
       next: (res) => {
         this.generatingAnalysis = false;
         this.bloques = res.data.bloques;

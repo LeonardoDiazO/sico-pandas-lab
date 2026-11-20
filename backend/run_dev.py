@@ -8,11 +8,13 @@ threading behaviour locally via Werkzeug's built-in dev server.
 """
 from dotenv import load_dotenv
 
-load_dotenv()  # `flask run` does this automatically; a plain script does not.
-
-from app import create_app  # noqa: E402 - must import after load_dotenv()
+from app import create_app
 
 if __name__ == "__main__":
+    # Only in the main process: the "spawn" workers re-import this module as
+    # __mp_main__, and loading .env there would put the secrets back into
+    # each worker's environment (see app/utils/secrets.py).
+    load_dotenv()  # `flask run` does this automatically; a plain script does not.
     app = create_app()
     # threaded=True so a slow RDS call doesn't block every other request.
     # use_reloader=False: the reloader spawns a second process that re-runs

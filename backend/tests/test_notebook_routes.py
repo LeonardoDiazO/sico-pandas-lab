@@ -998,3 +998,16 @@ def test_summary_table_detail_false_or_absent_keeps_the_aggregate_only_view(clie
     assert data["error"] is None
     assert "TOTAL" not in data["result_html"]
     assert "80/20" in data["result_html"]
+
+
+def test_confirm_excel_cleanup_drops_excluded_columns_from_quality(client):
+    """Review pass 2: the quality panel must not keep reporting a column the
+    user just excluded."""
+    messy_data = {"file": (_messy_xlsx_bytes(), "sucio.xlsx")}
+    client.post("/api/notebook/upload-excel", data=messy_data, content_type="multipart/form-data")
+    confirmed = client.post(
+        "/api/notebook/confirm-excel-cleanup", json={"excludeColumns": ["cantidad"]}
+    ).get_json()["data"]
+    quality = confirmed["profile"]["quality"]
+    assert quality is not None
+    assert "cantidad" not in {c["name"] for c in quality["columns"]}

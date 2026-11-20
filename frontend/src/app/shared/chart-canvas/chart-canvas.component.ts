@@ -29,7 +29,7 @@ Chart.register(...registerables, annotationPlugin);
  *   someone who has never read a Pareto chart.
  * - dona: share of the total (top 5 + "Otros"), for "how big is each slice".
  */
-export type ChartView = 'pareto' | 'ranking' | 'dona';
+export type ChartView = 'pareto' | 'ranking' | 'dona' | 'tendencia';
 
 // Reads a color off the app's shared design tokens (styles.scss :root) at
 // render time instead of a hardcoded hex. The fallbacks duplicate the
@@ -162,7 +162,9 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   get chartAriaLabel(): string {
     const viewLabel =
-      this.view === 'ranking'
+      this.view === 'tendencia'
+        ? 'Gráfica de línea de tendencia mensual'
+        : this.view === 'ranking'
         ? 'Ranking de barras horizontales'
         : this.view === 'dona'
           ? 'Gráfica de participación'
@@ -544,6 +546,57 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     };
   }
 
+  // Monthly trend: one line, months in time order (never re-sorted by value).
+  private trendConfig(): ChartConfiguration<'line'> {
+    const c = this.resolveColors();
+    const rows = this.rows;
+    return {
+      type: 'line',
+      data: {
+        labels: rows.map((r) => r.label),
+        datasets: [
+          {
+            label: this.valueKey,
+            data: rows.map((r) => r.value),
+            borderColor: c.brand,
+            backgroundColor: withAlpha(c.brand, 0.12),
+            fill: true,
+            tension: 0.25,
+            borderWidth: 2,
+            pointRadius: rows.map((_r, i) => (this.selectedIndex === i ? 6 : 3)),
+            pointHoverRadius: 6,
+          },
+        ],
+      },
+      options: {
+        ...this.commonOptions(),
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...this.baseTooltip(),
+            callbacks: {
+              label: (context) => `${this.valueKey}: ${formatValue(Number(context.parsed.y), this.valueKey)}`,
+            },
+          },
+          annotation: { annotations: {} },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            border: { display: false },
+            ticks: { color: c.text, callback: (v) => formatCompact(Number(v), this.valueKey), maxTicksLimit: 6 },
+            grid: { color: c.grid },
+          },
+          x: {
+            ticks: { color: c.text, autoSkip: true, maxRotation: 45 },
+            grid: { display: false },
+          },
+        },
+      },
+    };
+  }
+
   private commonOptions() {
     return {
       responsive: true,
@@ -570,7 +623,9 @@ export class ChartCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.rows = buildParetoRows(this.records, this.categoryKey, this.valueKey);
 
     const config =
-      this.view === 'ranking'
+      this.view === 'tendencia'
+        ? (this.trendConfig() as unknown as ChartConfiguration)
+        : this.view === 'ranking'
         ? (this.rankingConfig() as unknown as ChartConfiguration)
         : this.view === 'dona'
           ? (this.donutConfig() as unknown as ChartConfiguration)

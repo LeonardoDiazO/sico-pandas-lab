@@ -32,4 +32,30 @@
   <router-outlet></router-outlet>
 </main>
 
+@if (accessRequired) {
+  <div class="access-gate" role="dialog" aria-modal="true" aria-labelledby="access-title">
+    <form class="access-card" (ngSubmit)="submitAccessKey()">
+      <h2 id="access-title">Ingresa la clave del equipo</h2>
+      <p>Esta herramienta ejecuta código en el servidor, así que solo está abierta para el equipo.</p>
+      <label class="sr-only" for="access-key">Clave del equipo</label>
+      <input
+        id="access-key"
+        name="accessKey"
+        type="password"
+        autocomplete="current-password"
+        [(ngModel)]="accessKeyInput"
+        placeholder="Clave del equipo"
+        [disabled]="accessChecking"
+        autofocus
+      />
+      @if (accessError) {
+        <p class="access-error" role="alert">{{ accessError }}</p>
+      }
+      <button type="submit" [disabled]="!accessKeyInput.trim() || accessChecking">
+        {{ accessChecking ? 'Verificando…' : 'Entrar' }}
+      </button>
+    </form>
+  </div>
+}
+
 <app-tour-overlay></app-tour-overlay>

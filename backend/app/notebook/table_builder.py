@@ -8,7 +8,44 @@ so CELL_TIMEOUT_SECONDS and the existing DataFrame -> HTML capture
 (execution.py::_capture_value(), already used by the free notebook's
 df.head()) come for free. No new execution or rendering mechanism needed.
 """
+import re
+
 from app.notebook.chart_builder import HIGH_CARDINALITY_THRESHOLD, _grouping_expr, _looks_like_money
+
+# How each group is summarized (no-code dashboard, auditoría 2026-11-18: a
+# price/rate column summed across rows is meaningless - it must be averaged).
+AGGREGATIONS = ("sum", "mean", "count")
+AGG_LABELS = {"sum": "Suma", "mean": "Promedio", "count": "Conteo"}
+
+# Label of the bucket a grouping null becomes (chart_builder._grouping_expr).
+EMPTY_GROUP_LABEL = "(vacío)"
+OUT_OF_RANKING_PREFIX = "Fuera del ranking:"
+
+# One normalized text form per cell value, shared by the filter-values
+# listing and the filter itself. A numeric column with blanks is float in
+# pandas, so `astype(str)` gave "3.0" while the dashboard (JSON -> JS) shows
+# and sends back "3" - a click on that category matched nothing (auditoría
+# pass 1, #17). Integral floats lose their ".0"; nulls become "(vacío)".
+_NORMALIZER_LINE = (
+    "_norm = lambda v: '(vacío)' if pd.isna(v) else "
+    "(str(int(v)) if isinstance(v, float) and float(v).is_integer() else str(v))"
+)
+_INTEGRAL_FLOAT_TEXT = re.compile(r"^-?\d+\.0+$")
+
+
+def _normalize_filter_value(value):
+    if isinstance(value, str) and _INTEGRAL_FLOAT_TEXT.match(value):
+        return value.split(".")[0]
+    return value
+
+
+def agg_title(metric, dimension_label, agg="sum"):
+    """'Neto por Vendedor', 'Promedio de Precio por Vendedor', ..."""
+    if agg == "mean":
+        return f"Promedio de {metric} por {dimension_label}"
+    if agg == "count":
+        return f"Conteo de {metric} por {dimension_label}"
+    return f"{metric} por {dimension_label}"
 
 # Excel-style filter dropdown ("choose which values to include"), Story 8.4.
 # A high-cardinality column (e.g. an invoice number - virtually every row
@@ -33,7 +70,8 @@ def build_column_values_code(variable, column):
     just become their string form on both sides of the comparison).
     """
     return (
-        f"_valores = sorted({variable}[{column!r}].dropna().astype(str).unique().tolist())"
+        f"{_NORMALIZER_LINE}\n"
+        f"_valores = sorted({variable}[{column!r}].dropna().map(_norm).unique().tolist())"
         f"[:{MAX_FILTER_VALUES}]\n"
         f"pd.DataFrame({{{column!r}: _valores}})"
     )
@@ -57,11 +95,10 @@ def _filter_lines(variable, filters):
     """
     if not filters:
         return [], variable
-    lines = [f"_filtrado = {variable}"]
+    lines = [_NORMALIZER_LINE, f"_filtrado = {variable}"]
     for f in filters:
-        lines.append(
-            f"_filtrado = _filtrado[_filtrado[{f['column']!r}].astype(str).isin({f['values']!r})]"
-        )
+        values = [_normalize_filter_value(v) for v in f["values"]]
+        lines.append(f"_filtrado = _filtrado[_filtrado[{f['column']!r}].map(_norm).isin({values!r})]")
     return lines, "_filtrado"
 
 
@@ -151,7 +188,13 @@ def build_sort_code(variable, value_column, ascending, filters=None):
 
 
 def _pareto_marker_lines(
-    variable, grouping, value_column, noun_singular="categoría concentra", noun_plural="categorías concentran"
+    variable,
+    grouping,
+    value_column,
+    noun_singular="categoría concentra",
+    noun_plural="categorías concentran",
+    agg="sum",
+    negatives=None,
 ):
     """Code lines that compute _t (sorted descending), '% del total'
     (_pct), '% acumulado' (_acum), and the 80/20 marker column (_marca) -
@@ -166,14 +209,32 @@ def _pareto_marker_lines(
     instead of a groupby sum. `noun_singular`/`noun_plural` let the printed
     sentence say "fila(s) concentra(n)" instead of "categoría(s)
     concentra(n)" for that case.
+
+    `agg` ('sum' | 'mean' | 'count', grouped case only): how each group is
+    summarized - the Pareto is computed over that per-group value.
+
+    `negatives='separate'` (auditoría 2026-11-18): the Pareto runs on NET
+    group totals; groups whose net is <= 0 and the "(vacío)" group (exact
+    match of the key) leave the ranking - they would push "% del total" past
+    100% and move the 80% point - and are printed AFTER the 80/20 sentence as
+    "Fuera del ranking: <grupo> = <valor> (<motivo>)" lines, so nothing is
+    hidden. `None` keeps the historic behavior (everything ranked).
     """
-    t_expr = (
-        f"{variable}[{value_column!r}].sort_values(ascending=False)"
-        if grouping is None
-        else f"{variable}.groupby({grouping})[{value_column!r}].sum().sort_values(ascending=False)"
-    )
-    return [
-        f"_t = {t_expr}",
+    if grouping is None:
+        t_expr = f"{variable}[{value_column!r}].sort_values(ascending=False)"
+    else:
+        agg_expr = "count()" if agg == "count" else ("mean()" if agg == "mean" else "sum()")
+        t_expr = f"{variable}.groupby({grouping})[{value_column!r}].{agg_expr}.sort_values(ascending=False)"
+    separate = negatives == "separate" and grouping is not None
+    lines = [f"_t = {t_expr}"]
+    if separate:
+        lines += [
+            f"_es_vacio = pd.Series([str(_k) == {EMPTY_GROUP_LABEL!r} for _k in _t.index], index=_t.index)",
+            "_fuera = _t[_es_vacio | (_t <= 0)]",
+            "_fuera_vacio = _es_vacio[_fuera.index]",
+            "_t = _t[~(_es_vacio | (_t <= 0))]",
+        ]
+    lines += [
         # A signed value_column can make group totals cancel out to exactly
         # zero (e.g. a "saldo" column with equal and opposite balances) -
         # dividing by a zero total produces +/-inf, and cumsum() of that
@@ -209,9 +270,45 @@ def _pareto_marker_lines(
         f"    _palabra = {noun_singular!r} if _n_cruce == 1 else {noun_plural!r}",
         "    print(f'{_n_cruce} de {_n_total} {_palabra} el {_pct_cruce:.0f}% del total.')",
     ]
+    if separate:
+        money = _looks_like_money(value_column) and agg != "count"
+        fmt = "'$ ' + f'{_v:,.0f}'.replace(',', '.')" if money else "f'{_v:,.2f}'.rstrip('0').rstrip('.')"
+        motivo_valor = "promedio ≤ 0" if agg == "mean" else "neto ≤ 0"
+        lines += [
+            f"_fmt_fuera = lambda _v: {fmt}",
+            "_etq_fuera = lambda _k: str(int(_k)) if isinstance(_k, float) and float(_k).is_integer() else str(_k)",
+            "for _k, _v in _fuera.items():",
+            f"    _motivo = 'sin valor en la columna' if _fuera_vacio[_k] else {motivo_valor!r}",
+            f"    print(f'{OUT_OF_RANKING_PREFIX} {{_etq_fuera(_k)}} = {{_fmt_fuera(_v)}} ({{_motivo}})')",
+        ]
+    return lines
 
 
-def _pareto_chart_lines(value_column):
+def _top_n_lines(top_n, agg="sum"):
+    """Folds every group past the first `top_n` into one "Otros (k)" row -
+    AFTER _pareto_marker_lines computed '% del total'/'% acumulado' and the
+    80/20 sentence over ALL groups, so those numbers never change; only the
+    displayed table/chart gets shorter (auditoría: a dimension with 88 values
+    used to be dropped from the dashboard instead)."""
+    if not top_n:
+        return []
+    rest = "mean()" if agg == "mean" else "sum()"
+    return [
+        f"if len(_t) > {int(top_n)}:",
+        f"    _resto = len(_t) - {int(top_n)}",
+        "    _etiqueta = f'Otros ({_resto})'",
+        "    _nombre_eje = _t.index.name",
+        f"    _marca_otros = '✓ ← 80% aquí (dentro de Otros)' if (_marca.iloc[{int(top_n)}:] != '').any() else ''",
+        f"    _t = pd.concat([_t.iloc[:{int(top_n)}], pd.Series({{_etiqueta: _t.iloc[{int(top_n)}:].{rest}}})])",
+        f"    _pct = pd.concat([_pct.iloc[:{int(top_n)}], pd.Series({{_etiqueta: round(float(_pct.iloc[{int(top_n)}:].sum()), 1)}})])",
+        f"    _acum = pd.concat([_acum.iloc[:{int(top_n)}], pd.Series({{_etiqueta: float(_acum.iloc[-1])}})])",
+        f"    _marca = pd.concat([_marca.iloc[:{int(top_n)}], pd.Series({{_etiqueta: _marca_otros}})])",
+        "    for _serie in (_t, _pct, _acum, _marca):",
+        "        _serie.index.name = _nombre_eje",
+    ]
+
+
+def _pareto_chart_lines(value_column, money=None):
     """The classic Pareto diagram: each group's own bar (left axis, real
     values) plus the cumulative-% line (right axis, 0-100 - this is the
     actual "80/20" part) over the exact same _t/_acum _pareto_marker_lines()
@@ -242,7 +339,7 @@ def _pareto_chart_lines(value_column):
     execution.py's _inject_svg_tooltips), so the exact identity a hidden
     x-axis label would have shown is still one hover away.
     """
-    is_money = _looks_like_money(value_column)
+    is_money = _looks_like_money(value_column) if money is None else money
     return [
         "import urllib.parse as _urlp",
         (
@@ -272,7 +369,7 @@ def _pareto_chart_lines(value_column):
     ]
 
 
-def build_summary_code(variable, columns, value_column, filters=None):
+def build_summary_code(variable, columns, value_column, filters=None, agg="sum", top_n=None, negatives="separate"):
     """Group by column(s), sum a value column, and compute each group's
     share of the total plus a running cumulative share (sorted descending)
     - answers "who concentrates the value" (Story 8.2) directly, and marks
@@ -311,11 +408,13 @@ def build_summary_code(variable, columns, value_column, filters=None):
     """
     filter_lines, source = _filter_lines(variable, filters or [])
     grouping = _grouping_expr(source, columns)
-    value_expr = _money_format_expr("_t") if _looks_like_money(value_column) else "_t"
+    is_money = _looks_like_money(value_column) and agg != "count"
+    value_expr = _money_format_expr("_t") if is_money else "_t"
     lines = (
         filter_lines
-        + _pareto_marker_lines(source, grouping, value_column)
-        + _pareto_chart_lines(value_column)
+        + _pareto_marker_lines(source, grouping, value_column, agg=agg, negatives=negatives)
+        + _top_n_lines(top_n, agg)
+        + _pareto_chart_lines(value_column, money=is_money)
         + [
             # Bare expression, not assigned to a variable - execution.py only
             # captures the LAST expression statement of a cell as the result;
@@ -329,7 +428,9 @@ def build_summary_code(variable, columns, value_column, filters=None):
     return "\n".join(lines)
 
 
-def build_summary_detail_code(variable, columns, value_column, filters=None):
+def build_summary_detail_code(
+    variable, columns, value_column, filters=None, agg="sum", top_n=None, negatives="separate"
+):
     """User feedback on the grouped summary (build_summary_code): "faltaria
     un resumen detallado, en el que por ejemplo salga LATIN LOGISTICS
     COLOMBIA S.A.S. las n veces" - the aggregate total per group isn't
@@ -363,10 +464,22 @@ def build_summary_detail_code(variable, columns, value_column, filters=None):
 
     filters - same Excel-style {"column", "values"} filters as
     build_summary_code, applied before grouping (see _filter_lines).
+
+    agg/negatives - same meaning as build_summary_code (the "— TOTAL" rows
+    carry the per-group aggregate; groups out of the ranking are listed in
+    stdout, not in the table). top_n - only the first top_n groups get their
+    detail rows (a line in stdout says how many were left out).
     """
     filter_lines, source = _filter_lines(variable, filters or [])
     grouping = _grouping_expr(source, columns)
-    lines = filter_lines + _pareto_marker_lines(source, grouping, value_column) + [
+    lines = filter_lines + _pareto_marker_lines(source, grouping, value_column, agg=agg, negatives=negatives)
+    if top_n:
+        lines += [
+            f"if len(_t) > {int(top_n)}:",
+            f"    print(f'Detalle de los {int(top_n)} grupos principales de {{len(_t)}}.')",
+            f"    _t, _pct, _acum, _marca = (_s.iloc[:{int(top_n)}] for _s in (_t, _pct, _acum, _marca))",
+        ]
+    lines += [
         f"_grupo = {grouping}",
         f"_total_grupo = {source}.groupby(_grupo)[{value_column!r}].transform('sum')",
         # Same zero-total guard as build_summary_code/build_sort_code - a
@@ -375,6 +488,9 @@ def build_summary_detail_code(variable, columns, value_column, filters=None):
         f"_pct_grupo = ({source}[{value_column!r}] / _total_grupo * 100)"
         ".round(1).replace([float('inf'), float('-inf')], 0).fillna(0)",
         f"_detalle = {source}.assign(**{{'Grupo': _grupo, '% de su grupo': _pct_grupo}})",
+        # Rows of groups outside the ranking (net <= 0, "(vacío)", past top_n)
+        # are not detailed - those groups are listed in stdout instead.
+        "_detalle = _detalle[_detalle['Grupo'].isin(_t.index)]",
         # Categorical (not plain sort_values on the string column) so groups
         # stay ordered by TOTAL descending (same order _t already has), not
         # alphabetically - matches build_summary_code's ordering.
@@ -393,7 +509,7 @@ def build_summary_detail_code(variable, columns, value_column, filters=None):
     ]
     # Bare expression, not assigned to a variable - execution.py only
     # captures the LAST expression statement of a cell as the result.
-    if _looks_like_money(value_column):
+    if _looks_like_money(value_column) and agg != "count":
         lines.append(
             f"_final.assign(**{{{value_column!r}: {_money_format_expr(f'_final[{value_column!r}]')}}})"
         )

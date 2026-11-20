@@ -77,3 +77,17 @@ def read_excel_raw(file_storage):
         return pd.read_excel(file_storage, engine=engine, header=None)
     except Exception as exc:  # noqa: BLE001 - surface any parse failure cleanly
         raise ValueError(f"No se pudo leer el Excel: {exc}") from exc
+
+
+def read_excel_raw_sheets(file_storage):
+    """Every sheet of the workbook, read with no assumed header row, as an
+    ordered {sheet_name: DataFrame}. Used by excel_profiler.profile_workbook
+    so a multi-sheet book is no longer silently cut down to its first sheet.
+    """
+    _validate_and_rewind(file_storage)
+    engine = _detect_engine(file_storage)
+    try:
+        sheets = pd.read_excel(file_storage, engine=engine, header=None, sheet_name=None)
+    except Exception as exc:  # noqa: BLE001 - surface any parse failure cleanly
+        raise ValueError(f"No se pudo leer el Excel: {exc}") from exc
+    return {str(name): frame for name, frame in sheets.items()}

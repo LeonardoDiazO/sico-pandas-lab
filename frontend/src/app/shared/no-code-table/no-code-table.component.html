@@ -180,12 +180,25 @@
       </div>
       <p class="note">
         Compara el 80/20 de "Ordenar tabla" con el de "Resumen y porcentaje por columna" usando el asistente
-        (Gemini) - se le envían todas las filas y grupos generados arriba (sin las columnas que no aplican a
-        esta comparación), no solo un resumen.
+        (Gemini, un servicio externo). Antes de enviar nada te mostramos exactamente qué datos salen.
       </p>
-      <button class="generate-btn" (click)="generateNarrative()" [disabled]="narrativeLoading">
-        {{ narrativeLoading ? 'Generando…' : 'Generar análisis con el asistente' }}
-      </button>
+      @if (consentPreview) {
+        <div class="consent-box" role="alertdialog" aria-labelledby="consent-title">
+          <p id="consent-title"><strong>¿Enviar estos datos al asistente externo?</strong></p>
+          <p>
+            Se enviarán {{ consentPreview.rows }} filas y {{ consentPreview.groups }} grupos, con las columnas:
+            {{ consentPreview.columns.join(', ') }}. Pueden incluir nombres de clientes o facturas.
+          </p>
+          <div class="consent-actions">
+            <button class="generate-btn" (click)="generateNarrative()">Sí, enviar y generar</button>
+            <button class="link" (click)="cancelNarrativeConsent()">Cancelar</button>
+          </div>
+        </div>
+      } @else {
+        <button class="generate-btn" (click)="askNarrativeConsent()" [disabled]="narrativeLoading">
+          {{ narrativeLoading ? 'Generando…' : 'Generar análisis con el asistente' }}
+        </button>
+      }
       @if (narrativeError) {
         <p class="note filter-error">{{ narrativeError }}</p>
       }

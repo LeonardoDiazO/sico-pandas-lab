@@ -19,7 +19,7 @@ Security note (NFR11): only column metadata (name/type) plus the user's
 question text are ever sent to the LLM - never DataFrame content.
 """
 import json
-import os
+from app.utils.secrets import get_secret
 
 from google import genai
 from google.genai import errors, types
@@ -129,7 +129,7 @@ def _default_client():
     """
     global _client_singleton
     if _client_singleton is None:
-        _client_singleton = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        _client_singleton = genai.Client(api_key=get_secret("GEMINI_API_KEY"))
     return _client_singleton
 
 
@@ -148,7 +148,7 @@ def interpret_chart_request(question, columns, client=None):
         # review gap). Checking explicitly here keeps the same guard in
         # place regardless of the underlying SDK's own behavior, so this
         # never depends on which provider is behind it.
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not get_secret("GEMINI_API_KEY"):
             raise InterpreterUnavailableError(
                 "El asistente no está disponible en este momento."
             )

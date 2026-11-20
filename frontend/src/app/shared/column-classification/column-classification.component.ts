@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges } from '@angular/core';
 import { Subscription } from 'rxjs';
 
-import { ColumnClassification, ColumnRole, ExcelProfileColumn } from '../../models/api.models';
+import { Aggregation, ColumnClassification, ColumnRole, ExcelProfileColumn } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 export interface ProfileState {
@@ -24,6 +24,20 @@ const ROLE_SHORT: Record<ColumnRole, { one: string; many: string }> = {
   identificador: { one: 'identificador', many: 'identificadores' },
   descartar: { one: 'descartada', many: 'descartadas' },
 };
+
+const AGG_LABELS: Record<Aggregation, string> = {
+  sum: 'Sumar',
+  mean: 'Promediar',
+  count: 'Contar filas',
+};
+
+// Names whose values are rates/prices: adding them up gives nonsense, the
+// average is what a person expects.
+const MEAN_HINT = /(precio|tarifa|tasa|porcentaje|promedio|%|margen|ratio|indice|índice)/i;
+
+export function suggestAggregation(columnName: string): Aggregation {
+  return MEAN_HINT.test(columnName) ? 'mean' : 'sum';
+}
 
 const TYPE_LABELS: Record<string, string> = {
   categorica: 'texto',
@@ -54,6 +68,8 @@ export class ColumnClassificationComponent implements OnChanges, OnDestroy {
 
   readonly roleLabels = ROLE_LABELS;
   readonly roleOptions: ColumnRole[] = ['dimension', 'metrica', 'fecha', 'identificador', 'descartar'];
+  readonly aggOptions: Aggregation[] = ['sum', 'mean', 'count'];
+  readonly aggLabels = AGG_LABELS;
 
   loading = false;
   usedAssistant = false;
@@ -85,8 +101,11 @@ export class ColumnClassificationComponent implements OnChanges, OnDestroy {
     this.sub = this.notebook.classifyColumns().subscribe({
       next: (res) => {
         this.loading = false;
-        this.classifications = res.data.classifications.map((c) => ({ ...c }));
-        this.suggested = res.data.classifications.map((c) => ({ ...c }));
+        const withAgg = res.data.classifications.map((c) =>
+          c.role === 'metrica' ? { ...c, agg: c.agg ?? suggestAggregation(c.name) } : { ...c },
+        );
+        this.classifications = withAgg.map((c) => ({ ...c }));
+        this.suggested = withAgg.map((c) => ({ ...c }));
         this.usedAssistant = res.data.usedAssistant;
       },
       error: () => {
@@ -132,18 +151,28 @@ export class ColumnClassificationComponent implements OnChanges, OnDestroy {
   }
 
   get modifiedFromSuggestion(): boolean {
-    return this.classifications.some((c) => this.suggested.find((s) => s.name === c.name)?.role !== c.role);
+    return this.classifications.some((c) => this.isChanged(c.name));
   }
 
   isChanged(name: string): boolean {
     const now = this.classifications.find((c) => c.name === name)?.role;
-    return this.suggested.find((s) => s.name === name)?.role !== now;
+    const sug = this.suggested.find((s) => s.name === name);
+    const cur = this.classifications.find((c) => c.name === name);
+    return sug?.role !== now || (now === 'metrica' && sug?.agg !== cur?.agg);
   }
 
   setRole(name: string, role: ColumnRole): void {
     const entry = this.classifications.find((c) => c.name === name);
     if (entry) {
       entry.role = role;
+      entry.agg = role === 'metrica' ? (entry.agg ?? suggestAggregation(name)) : undefined;
+    }
+  }
+
+  setAgg(name: string, agg: Aggregation): void {
+    const entry = this.classifications.find((c) => c.name === name);
+    if (entry && entry.role === 'metrica') {
+      entry.agg = agg;
     }
   }
 
@@ -160,6 +189,6 @@ export class ColumnClassificationComponent implements OnChanges, OnDestroy {
   }
 
   private snapshot(): string {
-    return JSON.stringify(this.classifications.map((c) => [c.name, c.role]));
+    return JSON.stringify(this.classifications.map((c) => [c.name, c.role, c.agg ?? null]));
   }
 }

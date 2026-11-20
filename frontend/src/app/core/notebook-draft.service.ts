@@ -13,6 +13,10 @@ import { Injectable } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class NotebookDraftService {
   private readonly key = 'sico-pandas-lab-notebook-draft';
+  private readonly queueKey = 'sico-pandas-lab-notebook-queue';
+  // In-memory fallback when localStorage is blocked: the hand-off happens
+  // within one tab (in-app navigation), so memory is enough.
+  private memoryQueue: string[] = [];
 
   load(): string[] | null {
     try {
@@ -33,5 +37,44 @@ export class NotebookDraftService {
 
   clear(): void {
     localStorage.removeItem(this.key);
+  }
+
+  /** "Ver el código" (tablero sin código): code the Notebook should open as
+   * new cells next time it loads. */
+  enqueue(code: string): void {
+    const queue = [...this.peekQueue(), code];
+    this.memoryQueue = queue;
+    try {
+      localStorage.setItem(this.queueKey, JSON.stringify(queue));
+    } catch {
+      // memory fallback above
+    }
+  }
+
+  /** Returns and empties the queued code. */
+  takeQueue(): string[] {
+    const queue = this.peekQueue();
+    this.memoryQueue = [];
+    try {
+      localStorage.removeItem(this.queueKey);
+    } catch {
+      // nothing stored
+    }
+    return queue;
+  }
+
+  private peekQueue(): string[] {
+    try {
+      const raw = localStorage.getItem(this.queueKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.every((c) => typeof c === 'string')) {
+          return parsed;
+        }
+      }
+    } catch {
+      // fall through to memory
+    }
+    return [...this.memoryQueue];
   }
 }

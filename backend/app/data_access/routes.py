@@ -12,16 +12,15 @@ from flask import Blueprint, current_app, request
 
 from app.data_access import sico_client
 from app.utils.api_response import api_response
+from app.utils.session import current_session_id
 
 data_bp = Blueprint("data_access", __name__, url_prefix="/api/data")
 
-SESSION_HEADER = "X-Session-Id"
 
 _NON_IDENTIFIER = re.compile(r"\W")
 
 
-def _session_id():
-    return request.headers.get(SESSION_HEADER) or "anonymous"
+_session_id = current_session_id
 
 
 def _manager():

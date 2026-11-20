@@ -1,7 +1,7 @@
-import { Component, Input, OnChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output } from '@angular/core';
 
-import { AnalysisBlock, AnalysisSummary } from '../../models/api.models';
-import { BLOCK_VIEWS, BlockView } from '../analysis-block/analysis-block.component';
+import { AnalysisBlock, AnalysisSummary, ColumnFilter } from '../../models/api.models';
+import { BLOCK_VIEWS, BlockView, FilterRequest } from '../analysis-block/analysis-block.component';
 import { buildParetoRows, formatValue } from '../pareto-data';
 
 interface MetricGroup {
@@ -43,6 +43,10 @@ function readStoredView(): BlockView {
 export class AnalysisDashboardComponent implements OnChanges {
   @Input() bloques: AnalysisBlock[] = [];
   @Input() resumen: AnalysisSummary | null = null;
+  // True while a filtered/unfiltered regeneration is running (chip disabled).
+  @Input() busy = false;
+  // Cross-filter: the parent re-runs the whole catalog with these filters.
+  @Output() filtersChange = new EventEmitter<ColumnFilter[]>();
 
   readonly views = BLOCK_VIEWS;
   readonly ALL = ALL;
@@ -95,6 +99,19 @@ export class AnalysisDashboardComponent implements OnChanges {
 
   get omitidas() {
     return this.resumen?.omitidas ?? [];
+  }
+
+  get activeFilters(): ColumnFilter[] {
+    return this.resumen?.filtros ?? [];
+  }
+
+  onFilterRequested(req: FilterRequest): void {
+    const others = this.activeFilters.filter((f) => f.column !== req.column);
+    this.filtersChange.emit([...others, { column: req.column, values: [req.value] }]);
+  }
+
+  removeFilter(column: string): void {
+    this.filtersChange.emit(this.activeFilters.filter((f) => f.column !== column));
   }
 
   get demasiadas() {

@@ -5,12 +5,57 @@ executions (so variables defined in cell 1 are available in cell 2), while
 running in a separate OS process so a crash or runaway loop cannot take down
 the Flask server or leak into another user's session.
 
-Threat model (see architecture doc): this protects against *accidents* by
-trusted internal users, not against a determined attacker. Resource limits are
-applied via resource.setrlimit on POSIX (Render/Linux); on Windows dev
-machines the limits are skipped with no error.
+Threat model (architecture doc, Decision #1): this sandbox protects against
+ACCIDENTS and CASUAL ABUSE by people who have the team key - a runaway loop,
+`import os`, `open('/etc/passwd')`, `pd.read_csv('/proc/self/environ')`,
+`pd.read_pickle(...)`. It is NOT a defense against a determined attacker:
+Python's object model has known escapes (for example `pd.__builtins__` still
+reaches the real builtins). Layers, in order:
+
+1. The Flask process removes every secret from its own environment before
+   spawning any worker (app/utils/secrets.py), so the worker is born without
+   GEMINI_API_KEY/SECRET_KEY/SICO_DB_* - and `/proc/<pid>/environ` of either
+   process no longer has them.
+2. `_harden_process()` scrubs anything secret-looking that is still in the
+   worker's environment (defense in depth) and wraps the file/URL/pickle I/O
+   of pandas/numpy/matplotlib (execution.install_io_guards).
+3. Cells run with a COPY of the builtins: filtered `__import__` (allowlist)
+   and no open/exec/eval/compile/input/breakpoint (execution.build_namespace).
+4. Resource limits via resource.setrlimit on POSIX (Render/Linux); on Windows
+   dev machines the limits are skipped with no error.
+
+Moving to container isolation (gVisor/CodeJail) is the documented Growth
+upgrade if the user base or trust level changes.
 """
+import multiprocessing
+import os
+import re
 import traceback
+
+# Environment variable names that look like credentials. Matched against the
+# upper-cased name.
+_SECRET_ENV_PATTERN = re.compile(
+    r"(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|^SICO_DB_|^AWS_|^GEMINI|^GOOGLE_|DATABASE_URL)"
+)
+
+
+def _scrub_environment():
+    for name in list(os.environ):
+        if _SECRET_ENV_PATTERN.search(name.upper()):
+            os.environ.pop(name, None)
+
+
+def _harden_process():
+    """Process-wide hardening. Only applied when actually running as a child
+    worker process - tests call worker_loop() in the pytest process itself,
+    where patching pandas and wiping the environment would leak into every
+    other test."""
+    if multiprocessing.parent_process() is None:
+        return
+    _scrub_environment()
+    from app.notebook.execution import install_io_guards
+
+    install_io_guards()
 
 
 def _install_resource_limits(mem_bytes, cpu_seconds):
@@ -43,6 +88,7 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
     from app.notebook.execution import build_namespace, execute_code
 
     try:
+        _harden_process()
         namespace = build_namespace()
     except Exception as exc:
         # A broken environment (e.g. a dependency listed in requirements.txt
@@ -70,6 +116,13 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
         )
         return
 
+    # Untouched copies of every DataFrame the backend injected (`bind`), kept
+    # OUTSIDE the learner's namespace: guided-lesson checkers compare the
+    # learner's answer against these, so replacing/mutating `df` before
+    # assigning an answer can't make a challenge pass. Private by convention
+    # only (same process as the learner) - enough for the threat model above.
+    pristine = {}
+
     while True:
         message = input_q.get()
         if message is None:  # shutdown signal
@@ -81,7 +134,9 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
         elif kind == "bind":
             # Inject a value (e.g. a DataFrame loaded from Excel or the RDS)
             # under a variable name the user can reference in their cells.
-            namespace[message["name"]] = message["value"]
+            value = message["value"]
+            namespace[message["name"]] = value
+            pristine[message["name"]] = value.copy() if hasattr(value, "copy") else value
             output_q.put({"bound": message["name"]})
         elif kind == "check":
             # Runs a guided-lesson challenge checker against the learner's own
@@ -90,6 +145,14 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
             # visible from the browser's network tab.
             from app.guided.challenges import run_checker
 
-            output_q.put(run_checker(message["challenge_id"], namespace, message.get("context")))
+            output_q.put(
+                run_checker(
+                    message["challenge_id"],
+                    namespace,
+                    message.get("context"),
+                    pristine=pristine,
+                    had_chart=bool(message.get("had_chart")),
+                )
+            )
         else:
             output_q.put({"error": {"type": "ProtocolError", "message": f"tipo desconocido: {kind}", "traceback": ""}})

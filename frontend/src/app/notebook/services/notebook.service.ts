@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import {
+  Aggregation,
   ApiResponse,
   AutoAnalysisResult,
   CellResult,
@@ -11,6 +12,7 @@ import {
   ClassifyColumnsResult,
   ColumnClassification,
   ColumnFilter,
+  HealthResult,
   LoadResult,
   ParetoNarrativeResponse,
   ParetoStats,
@@ -43,6 +45,15 @@ export class NotebookService {
     return this.http.post<ApiResponse<LoadResult>>(`${this.base}/api/notebook/confirm-excel-cleanup`, {
       excludeColumns,
     });
+  }
+
+  // Multi-sheet workbook: stack the chosen sheets into one df (column "Hoja").
+  selectSheets(sheets: string[]): Observable<ApiResponse<LoadResult>> {
+    return this.http.post<ApiResponse<LoadResult>>(`${this.base}/api/notebook/select-sheets`, { sheets });
+  }
+
+  health(): Observable<ApiResponse<HealthResult>> {
+    return this.http.get<ApiResponse<HealthResult>>(`${this.base}/api/health`);
   }
 
   cancelExcelCleanup(): Observable<ApiResponse<unknown>> {
@@ -127,6 +138,9 @@ export class NotebookService {
       valueColumnGroup,
       groupStats,
       groupRecords,
+      // Only ever called after the user confirmed the consent dialog that
+      // lists what is sent (no-code-table); the backend rejects without it.
+      consent: true,
     });
   }
 
@@ -141,9 +155,15 @@ export class NotebookService {
   // Catálogo automático: runs a Pareto per dimension x metrica combination
   // the CONFIRMED (possibly user-corrected) classification enables - pure
   // pandas, no AI in this call.
-  autoAnalysis(classifications: ColumnClassification[]): Observable<ApiResponse<AutoAnalysisResult>> {
+  autoAnalysis(
+    classifications: ColumnClassification[],
+    aggregations: Record<string, Aggregation> = {},
+    filters: ColumnFilter[] = [],
+  ): Observable<ApiResponse<AutoAnalysisResult>> {
     return this.http.post<ApiResponse<AutoAnalysisResult>>(`${this.base}/api/notebook/auto-analysis`, {
       classifications,
+      aggregations,
+      filters,
     });
   }
 

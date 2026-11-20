@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { finalize, retry, timer } from 'rxjs';
 
-import { ExcelProfile, LoadResult, TableInfo } from '../../models/api.models';
+import { ApiResponse, ExcelProfile, LoadResult, SheetSummary, TableInfo } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 /**
@@ -34,6 +34,10 @@ export class DataSourcePanelComponent implements OnInit {
   cleanupBusy = false;
   unusableInfo: { detail: string } | null = null;
   dragOver = false;
+  // Multi-sheet workbook waiting for the user to pick sheets.
+  pendingSheets: SheetSummary[] | null = null;
+  chosenSheets = new Set<string>();
+  sheetsBusy = false;
   lastFileName: string | null = null;
 
   // Columns the user unchecked on the cleanup preview screen (kept by
@@ -145,36 +149,75 @@ export class DataSourcePanelComponent implements OnInit {
     this.lastFileName = file.name;
     this.excelBusy = true;
     this.pendingCleanup = null;
+    this.pendingSheets = null;
     this.unusableInfo = null;
     this.excludedColumns = new Set<string>();
     this.notebook
       .uploadExcel(file, 'df')
       .pipe(finalize(() => (this.excelBusy = false)))
       .subscribe({
-      next: (res) => {
-        if (!res.success || !res.data) {
-          this.emitMessage(res.message, false);
-          return;
-        }
-        const profile = res.data.profile;
-        if (!profile || profile.verdict === 'usable') {
-          // Ya limpio (o una respuesta sin profile, ej. carga de tabla): comportamiento de siempre.
-          this.emitMessage(res.message, true);
-          this.loaded.emit(res.data);
-        } else if (profile.verdict === 'usable_con_limpieza') {
-          // No se emite `loaded` todavía -- el DataFrame no está bindeado hasta confirmar (Story 4.2).
-          this.pendingCleanup = { variable: res.data.variable, profile };
-          this.excludedColumns = new Set<string>();
-        } else {
-          // no_usable: bloque dedicado (UX-DR1), no el banner genérico de error.
-          this.unusableInfo = { detail: profile.detail };
-        }
-      },
+      next: (res) => this.handleLoadResponse(res),
       error: (err: HttpErrorResponse) => {
         const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
         this.emitMessage(backendMessage ?? 'No se pudo subir el Excel. Revisa tu conexión e inténtalo otra vez.', false);
       },
     });
+  }
+
+  // Shared by /upload-excel and /select-sheets: same verdict handling.
+  private handleLoadResponse(res: ApiResponse<LoadResult>): void {
+    if (!res.success || !res.data) {
+      this.emitMessage(res.message, false);
+      return;
+    }
+    if (res.data.needsSheetSelection && res.data.sheets?.length) {
+      // Decisión #4: the user chooses which sheets to stack (column "Hoja").
+      this.pendingSheets = res.data.sheets;
+      this.chosenSheets = new Set(res.data.sheets.filter((s) => s.usable).map((s) => s.name));
+      return;
+    }
+    this.pendingSheets = null;
+    const profile = res.data.profile;
+    if (!profile || profile.verdict === 'usable') {
+      // Ya limpio (o una respuesta sin profile, ej. carga de tabla): comportamiento de siempre.
+      this.emitMessage(res.message, true);
+      this.loaded.emit(res.data);
+    } else if (profile.verdict === 'usable_con_limpieza') {
+      // No se emite `loaded` todavía -- el DataFrame no está bindeado hasta confirmar (Story 4.2).
+      this.pendingCleanup = { variable: res.data.variable, profile };
+      this.excludedColumns = new Set<string>();
+    } else {
+      // no_usable: bloque dedicado (UX-DR1), no el banner genérico de error.
+      this.unusableInfo = { detail: profile.detail };
+    }
+  }
+
+  toggleSheet(name: string): void {
+    if (this.chosenSheets.has(name)) {
+      this.chosenSheets.delete(name);
+    } else {
+      this.chosenSheets.add(name);
+    }
+    this.chosenSheets = new Set(this.chosenSheets);
+  }
+
+  confirmSheets(): void {
+    if (!this.pendingSheets || this.chosenSheets.size === 0 || this.sheetsBusy) {
+      return;
+    }
+    // Keep the workbook's own sheet order.
+    const chosen = this.pendingSheets.map((s) => s.name).filter((n) => this.chosenSheets.has(n));
+    this.sheetsBusy = true;
+    this.notebook
+      .selectSheets(chosen)
+      .pipe(finalize(() => (this.sheetsBusy = false)))
+      .subscribe({
+        next: (res) => this.handleLoadResponse(res),
+        error: (err: HttpErrorResponse) => {
+          const backendMessage = typeof err.error?.message === 'string' ? err.error.message : null;
+          this.emitMessage(backendMessage ?? 'No se pudieron combinar las hojas. Intenta de nuevo.', false);
+        },
+      });
   }
 
   toggleExcludeColumn(name: string): void {

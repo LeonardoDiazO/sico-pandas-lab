@@ -265,6 +265,45 @@ code {
   margin-top: 0.5rem;
 }
 
+.sheet-picker {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.75rem;
+
+  .load-btn {
+    min-height: 34px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.82rem;
+  }
+}
+
+.sheet-list {
+  list-style: none;
+  margin: 0.5rem 0 0.7rem;
+  padding: 0;
+  font-size: 0.84rem;
+
+  li.disabled {
+    opacity: 0.55;
+  }
+
+  .checkbox-option {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0;
+    cursor: pointer;
+  }
+}
+
+.sheet-meta {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
 .unusable-warning {
   background: var(--warn-soft);
   border: 1px solid var(--warn-border);

@@ -3,7 +3,7 @@
 // separator to actually read as currency - a plain quantity column (Cant,
 // Consec) must NOT get a "$" prefix. The Excel profiler has no concept of
 // "this numeric column is money" (it only classifies categorica/numerica/
-// fecha/descartable), so this is a substring heuristic on the column name -
+// fecha/descartable), so this is a word heuristic on the column name -
 // imperfect but good enough without asking the user to tag every column.
 //
 // Duplicated in backend/app/notebook/chart_builder.py's _MONEY_KEYWORDS (no
@@ -29,31 +29,58 @@ const MONEY_KEYWORDS = [
   'subtotal',
 ];
 
+const NEGATIVE_MONEY_TOKENS = new Set(['cantidad', 'cantidades']);
+
+function stripAccents(text: string): string {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// Splits a column name into lower-case words: separators (spaces, _, -, .,
+// /) and camelCase boundaries. A header spelled one letter per cell ("N E T
+// O", "V A L O R   T O T A L") is re-joined: runs of single letters
+// separated by single spaces become one word, and a name made only of single
+// letters becomes one word. Same rules as chart_builder.py's _name_tokens().
+export function nameTokens(columnName: string): string[] {
+  const name = columnName
+    .trim()
+    .replace(/([a-záéíóúñ])(?=[A-ZÁÉÍÓÚÑ])/g, '$1 ')
+    // Letters glued to digits are separate words ("Venta2026").
+    .replace(/([A-Za-zÀ-ÿ])(?=\d)|(\d)(?=[A-Za-zÀ-ÿ])/g, '$1$2 ');
+  const groups = name.split(/\s{2,}/).filter((g) => g.length > 0);
+  let words: string[] = [];
+  for (const group of groups) {
+    const pieces = group.split(' ');
+    if (pieces.length > 1 && pieces.every((p) => p.length === 1)) {
+      words.push(pieces.join(''));
+    } else {
+      // Any non-letter/digit run separates words ("Valor($)", "Neto:").
+      words.push(...group.split(/[^0-9A-Za-zÀ-ÿ]+/));
+    }
+  }
+  words = words.filter((w) => w.length > 0);
+  if (words.length > 1 && words.every((w) => w.length === 1)) {
+    words = [words.join('')];
+  }
+  return words.map((w) => stripAccents(w.toLowerCase()));
+}
+
 export function looksLikeMoney(columnName: string | null | undefined): boolean {
-  // Real bug report (file: "relacion de facturas matecol.xlsx"): its own
-  // value column is literally named "N E T O" - one letter per cell joined
-  // with spaces (a two-row split header in that report). Stripping ALL
-  // whitespace before matching (not just trimming the ends) fixes this
-  // generically - no keyword above contains a space itself, so this can
-  // only turn a previously-missed match into a correct one, never the
-  // reverse. Same fix as backend/app/notebook/chart_builder.py's
-  // _looks_like_money() - keep both in sync.
+  // Decided per WORD of the column name, never by substring (auditoría
+  // 2026-11-18: "Inventario" contains "venta" and "Clientes activa" contains
+  // "iva", and both were shown as pesos). A keyword counts when it is a whole
+  // word - exactly or in plural ("Ventas", "Valores"). "N E T O" style
+  // headers are re-joined (nameTokens) and the word "cantidad" overrides any
+  // money word ("Cantidad Venta" is a unit count). Same rules as
+  // backend/app/notebook/chart_builder.py's _looks_like_money() - keep both
+  // in sync.
   if (!columnName) {
     return false;
   }
-  const lowered = columnName.toLowerCase().replace(/\s+/g, '');
-  // Real bug found in production: a merged two-row header column named
-  // "Cantidad Venta" (a UNIT COUNT, not a peso amount) got a "$" prefix
-  // because "venta" alone is a money keyword - "venta" is genuinely
-  // ambiguous in Spanish ("the sale" as an event/count vs. its peso value).
-  // "cantidad" (quantity) is an unambiguous negative signal that overrides
-  // any positive keyword match - same fix and same one-directional safety
-  // as backend/app/notebook/chart_builder.py's _looks_like_money() - keep
-  // both in sync.
-  if (lowered.includes('cantidad')) {
+  const tokens = nameTokens(columnName);
+  if (tokens.some((t) => NEGATIVE_MONEY_TOKENS.has(t))) {
     return false;
   }
-  return MONEY_KEYWORDS.some((keyword) => lowered.includes(keyword));
+  return tokens.some((t) => MONEY_KEYWORDS.some((k) => t === k || t === `${k}s` || t === `${k}es`));
 }
 
 // A money-looking value column (see looksLikeMoney) arrives from the

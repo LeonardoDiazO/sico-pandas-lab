@@ -1,4 +1,4 @@
-@if (bloques.length > 0) {
+@if (bloques.length > 0 || activeFilters.length > 0) {
   <div class="dashboard">
     @if (resumen) {
       <dl class="summary">
@@ -61,6 +61,20 @@
       }
     }
 
+    @if (activeFilters.length > 0) {
+      <div class="filter-bar" role="status">
+        <span class="filter-label">Filtrado por</span>
+        @for (f of activeFilters; track f.column) {
+          <span class="filter-chip">
+            {{ f.column }} = {{ f.values.join(', ') }}
+            <button type="button" (click)="removeFilter(f.column)" [disabled]="busy" [attr.aria-label]="'Quitar filtro ' + f.column">
+              quitar
+            </button>
+          </span>
+        }
+      </div>
+    }
+
     <div class="controls">
       @if (groups.length > 1) {
         <div class="tabs" role="tablist" aria-label="Métricas">
@@ -120,7 +134,7 @@
         }
         <div class="grid">
           @for (bloque of group.bloques; track bloque.titulo) {
-            <app-analysis-block [bloque]="bloque" [defaultView]="globalView"></app-analysis-block>
+            <app-analysis-block [bloque]="bloque" [defaultView]="globalView" (filterRequested)="onFilterRequested($event)"></app-analysis-block>
           }
         </div>
       </section>

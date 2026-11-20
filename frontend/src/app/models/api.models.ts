@@ -59,7 +59,12 @@ export type ColumnRole = 'dimension' | 'metrica' | 'fecha' | 'identificador' | '
 export interface ColumnClassification {
   name: string;
   role: ColumnRole;
+  // Only for role 'metrica': how it is summarized per group (default 'sum').
+  agg?: Aggregation;
 }
+
+// How a métrica is summarized per group in the automatic dashboard.
+export type Aggregation = 'sum' | 'mean' | 'count';
 
 export interface ClassifyColumnsResult {
   classifications: ColumnClassification[];
@@ -74,11 +79,28 @@ export interface ClassifyColumnsResult {
 // no clear 80% crossing. `resultado` is a TableResult shape (same one
 // /summary-table already returns) with its own stdout cleared, since
 // `insight` already surfaced that sentence.
+export interface OutOfRanking {
+  grupo: string;
+  valor: string;
+  motivo: string;
+}
+
 export interface AnalysisBlock {
+  // 'pareto' (dimension x métrica ranking) or 'tendencia' (monthly trend).
+  // Optional: absent in responses from a backend that predates it.
+  tipo?: 'pareto' | 'tendencia';
   titulo: string;
   dimension: string;
   metrica: string;
+  agg?: Aggregation;
   insight: string | null;
+  // Groups left out of the ranking ("(vacío)", net <= 0) with their amount.
+  fueraDelRanking?: OutOfRanking[];
+  // Set when the backend folded a high-cardinality dimension into Top N + "Otros".
+  topN?: number | null;
+  valoresDistintos?: number | null;
+  // Exact pandas code the block ran ("Ver el código").
+  codigo?: string;
   resultado: TableResult;
 }
 
@@ -96,6 +118,7 @@ export interface AnalysisSummary {
   omitidas?: { dimension: string; valores: number }[];
   limiteAlcanzado?: boolean;
   maxBloques?: number;
+  filtros?: ColumnFilter[];
 }
 
 export interface AutoAnalysisResult {
@@ -103,11 +126,41 @@ export interface AutoAnalysisResult {
   resumen: AnalysisSummary;
 }
 
+export interface QualityColumn {
+  name: string;
+  type: string;
+  nullCount: number;
+  nullRatio: number;
+  negativeCount: number | null;
+  negativeSum: number | null;
+}
+
+// Data-quality panel (excel_profiler.build_quality).
+export interface DataQuality {
+  rows: number;
+  duplicateRows: number;
+  totalsRowsRemoved: number;
+  emptyRowsRemoved: number;
+  columns: QualityColumn[];
+}
+
 export interface ExcelProfile {
   verdict: 'usable' | 'usable_con_limpieza' | 'no_usable';
   headerRowIndex: number | null;
   columns: ExcelProfileColumn[];
   detail: string;
+  quality?: DataQuality | null;
+}
+
+// One sheet of a multi-sheet workbook, for the sheet-selection step.
+export interface SheetSummary {
+  name: string;
+  rows: number;
+  columns: number;
+  headerRowIndex: number | null;
+  verdict: ExcelProfile['verdict'];
+  detail: string;
+  usable: boolean;
 }
 
 export interface LoadResult {
@@ -115,8 +168,18 @@ export interface LoadResult {
   rows: number;
   columns: string[];
   note?: string | null;
-  profile?: ExcelProfile;
+  profile?: ExcelProfile | null;
   bound?: boolean;
+  needsSheetSelection?: boolean;
+  sheets?: SheetSummary[];
+  sheetsUsed?: string[];
+  warning?: string | null;
+}
+
+export interface HealthResult {
+  service: string;
+  accessKeyRequired?: boolean;
+  maxUploadMb?: number;
 }
 
 export interface LessonSummary {

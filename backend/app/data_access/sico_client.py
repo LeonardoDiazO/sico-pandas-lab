@@ -17,7 +17,7 @@ read-only — see _engine()):
     and are never handed to the execution worker (it only receives the
     resulting DataFrame). This satisfies FR20 / FR7 / FR21.
 """
-import os
+from app.utils.secrets import get_secret
 import time
 
 import pandas as pd
@@ -53,7 +53,7 @@ def _qualified(table):
 
 
 def is_configured():
-    return bool(os.environ.get("SICO_DB_HOST") and os.environ.get("SICO_DB_USER"))
+    return bool(get_secret("SICO_DB_HOST") and get_secret("SICO_DB_USER"))
 
 
 _ENGINE = None
@@ -74,18 +74,18 @@ def _engine():
 
     from sqlalchemy import create_engine, event
 
-    host = os.environ.get("SICO_DB_HOST")
-    user = os.environ.get("SICO_DB_USER")
-    password = os.environ.get("SICO_DB_PASSWORD", "")
-    port = os.environ.get("SICO_DB_PORT", "3306")
+    host = get_secret("SICO_DB_HOST")
+    user = get_secret("SICO_DB_USER")
+    password = get_secret("SICO_DB_PASSWORD", "")
+    port = get_secret("SICO_DB_PORT", "3306")
     if not host or not user:
         raise SicoNotConfigured(
             "La conexión a la base de datos de sico no está configurada "
             "(faltan variables SICO_DB_*)."
         )
     url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{SCHEMA}"
-    connect_args = {"connect_timeout": int(os.environ.get("SICO_DB_CONNECT_TIMEOUT", "10"))}
-    if os.environ.get("SICO_DB_SSL", "").lower() in ("1", "true", "require"):
+    connect_args = {"connect_timeout": int(get_secret("SICO_DB_CONNECT_TIMEOUT", "10"))}
+    if (get_secret("SICO_DB_SSL", "") or "").lower() in ("1", "true", "require"):
         connect_args["ssl"] = {"ssl": True}
 
     # pool_recycle avoids reusing a connection the RDS has already dropped after

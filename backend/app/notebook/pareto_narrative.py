@@ -34,7 +34,7 @@ render it as plain interpolated text (not innerHTML) so even a surprising
 response can't inject markup - see no-code-table.component.html.
 """
 import json
-import os
+from app.utils.secrets import get_secret
 
 from google.genai import errors, types
 
@@ -108,7 +108,7 @@ def generate_pareto_narrative(stats, client=None):
     blocked/empty response) - same exception type nl_chart_interpreter.py
     already uses, so routes.py handles both the same way."""
     if client is None:
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not get_secret("GEMINI_API_KEY"):
             raise InterpreterUnavailableError("El asistente no está disponible en este momento.")
         client = _default_client()
 

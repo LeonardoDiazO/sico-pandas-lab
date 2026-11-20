@@ -113,14 +113,13 @@ def run_read_only_guard():
     in to a privileged account (session read-only is still enforced); otherwise
     we surface a clear message.
     """
-    import os
-
     from app.data_access.sico_client import is_configured
+    from app.utils.secrets import get_secret
 
     if not is_configured():
         return "skipped: sico DB not configured"
 
-    allow_write = os.environ.get("SICO_ALLOW_WRITE_USER", "").lower() in ("1", "true")
+    allow_write = (get_secret("SICO_ALLOW_WRITE_USER", "") or "").lower() in ("1", "true")
     try:
         _verdict, message = verify_read_only(_fetch_privileges_from_db, allow_write)
         return message

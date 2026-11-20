@@ -220,8 +220,34 @@ export class NoCodeTableComponent implements OnChanges {
   narrativeText: string | null = null;
   narrativeError: string | null = null;
 
-  generateNarrative(): void {
+  // Decisión #2: nothing reaches the assistant until the user confirms a
+  // dialog stating how many rows/groups and which columns are sent.
+  consentPreview: { rows: number; groups: number; columns: string[] } | null = null;
+  // The exact payload shown in the dialog - sent as-is on confirm.
+  private approvedStats: ReturnType<NoCodeTableComponent['buildNarrativeStats']> = null;
+
+  askNarrativeConsent(): void {
     const stats = this.buildNarrativeStats();
+    if (!stats) {
+      return;
+    }
+    const columns = new Set<string>();
+    for (const record of [...stats.rowRecords.slice(0, 1), ...stats.groupRecords.slice(0, 1)]) {
+      Object.keys(record).forEach((k) => columns.add(k));
+    }
+    this.approvedStats = stats;
+    this.consentPreview = { rows: stats.rowRecords.length, groups: stats.groupRecords.length, columns: [...columns] };
+  }
+
+  cancelNarrativeConsent(): void {
+    this.consentPreview = null;
+    this.approvedStats = null;
+  }
+
+  generateNarrative(): void {
+    const stats = this.approvedStats;
+    this.consentPreview = null;
+    this.approvedStats = null;
     if (!stats) {
       return;
     }

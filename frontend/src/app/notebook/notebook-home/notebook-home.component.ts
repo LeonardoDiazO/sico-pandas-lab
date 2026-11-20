@@ -58,6 +58,17 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
       this.cells = draft.map((code) => ({ code, result: null, running: false }));
       this.restoredDraft = true;
     }
+    // "Ver el código" from the automatic dashboard: open it as new cells,
+    // after whatever draft was restored (never replacing the user's work).
+    const queued = this.draftService.takeQueue();
+    if (queued.length) {
+      const base = isTrivial ? [] : this.cells;
+      this.cells = [...base, ...queued.map((code) => ({ code, result: null, running: false }))];
+      this.banner = {
+        text: 'Abrimos el código del tablero en una celda nueva. Ejecútala para ver la misma tabla y modifícala para practicar.',
+        ok: true,
+      };
+    }
     this.snippets = this.snippetsService.list();
   }
 

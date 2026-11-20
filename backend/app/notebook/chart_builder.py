@@ -18,6 +18,9 @@ a small closed set already validated by the caller - this never builds code
 from free-form user text.
 """
 
+import re
+import unicodedata
+
 CHART_TYPES = {
     "torta", "barras", "linea", "histograma",
     # User feedback ("acaso no existen más [gráficas]?"): area/boxplot/heatmap
@@ -65,7 +68,7 @@ TOP_N_CATEGORIES_BEFORE_OTROS = HIGH_CARDINALITY_THRESHOLD
 # separator to actually read as currency - a plain quantity column (Cant,
 # Consec) must NOT get a "$" prefix. excel_profiler.py has no concept of
 # "this numeric column is money" (it only classifies categorica/numerica/
-# fecha/descartable), so this is a substring heuristic on the column name,
+# fecha/descartable), so this is a word heuristic on the column name,
 # same trade-off the profiler itself already accepts elsewhere (e.g. its
 # DATE_YYYYMMDD_PATTERN guesses "date" from shape, not a declared type) -
 # imperfect but good enough without asking the user to tag every column.
@@ -80,40 +83,67 @@ _MONEY_KEYWORDS = (
 )
 
 
-def _looks_like_money(column_name):
-    """Real bug report (file: "relacion de facturas matecol.xlsx"): its own
-    value column is literally named "N E T O" - one letter per cell joined
-    with spaces (a two-row split header: a category row + a specific-field
-    row, both real in that report). ' '.join('neto'.lower()) contains no
-    space-free "neto" substring, so it silently never matched - the pie
-    chart/tables built correctly but with zero money formatting, no error
-    anywhere to notice. Stripping ALL whitespace before matching (not just
-    trimming the ends) fixes this generically for any similarly space-split
-    header, without ever creating a false match: no keyword below contains a
-    space itself, so removing spaces from the candidate name can only turn a
-    previously-missed match into a correct one, never the reverse.
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-záéíóúñ])(?=[A-ZÁÉÍÓÚÑ])")
+# Any non-letter/digit run separates words ("Valor($)", "Neto:", "valor_neto").
+_TOKEN_SEPARATORS = re.compile(r"[^0-9A-Za-zÀ-ÿ]+")
+# Letters glued to digits are separate words too ("Venta2026").
+_DIGIT_BOUNDARY = re.compile(r"(?<=[A-Za-zÀ-ÿ])(?=\d)|(?<=\d)(?=[A-Za-zÀ-ÿ])")
+_NEGATIVE_MONEY_TOKENS = {"cantidad", "cantidades"}
 
-    Real bug found in production (est_proveedorvdart_admon.xls, a two-row
-    header merged by _merge_header_rows): the resulting column "Cantidad
-    Venta" (a UNIT COUNT - how many items were sold, ~5000 for a whole
-    vendor) got a "$" prefix and read as pesos, because "venta" alone is a
-    money keyword - but "venta" is genuinely ambiguous in Spanish business
-    vocabulary, meaning both "the sale" (an event/count) and "the sale's
-    peso value" depending on context. The report's own category-row prefix
-    already disambiguates this: "Cantidad ..." (quantity) is never money
-    regardless of what specific word follows, while "Valor ..."/"... Neta" -
-    genuinely money - never carry that prefix. Excluding "cantidad" is a
-    negative signal that overrides every positive keyword match, not a
-    second keyword list to keep in sync - it only ever turns a previous
-    false positive into a correct negative, the same one-directional safety
-    the whitespace-stripping fix above already relies on.
+
+def _strip_accents(text):
+    return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
+
+
+def _name_tokens(column_name):
+    """Splits a column name into lower-case words: separators (spaces, _, -,
+    ., /) and camelCase boundaries. A header spelled one letter per cell
+    ("N E T O", "V A L O R   T O T A L") is re-joined: runs of single letters
+    separated by single spaces become one word, and a name made only of
+    single letters becomes one word."""
+    name = _DIGIT_BOUNDARY.sub(" ", _CAMEL_BOUNDARY.sub(" ", column_name.strip()))
+    groups = [g for g in re.split(r"\s{2,}", name) if g]
+    words = []
+    for group in groups:
+        pieces = group.split(" ")
+        if len(pieces) > 1 and all(len(p) == 1 for p in pieces):
+            words.append("".join(pieces))
+        else:
+            words.extend(_TOKEN_SEPARATORS.split(group))
+    words = [w for w in words if w]
+    if len(words) > 1 and all(len(w) == 1 for w in words):
+        words = ["".join(words)]
+    return [_strip_accents(w.lower()) for w in words]
+
+
+def _looks_like_money(column_name):
+    """Is this numeric column a peso amount? Decided per WORD of the column
+    name, never by substring.
+
+    Real bug (auditoría 2026-11-18): substring matching formatted
+    "Inventario" (contains "venta") and "Clientes activa" (contains "iva") as
+    pesos. Now a keyword only counts when it is a whole word of the name -
+    exactly, or in plural ("Ventas", "Valores"). Words come from separators
+    and camelCase ("ValorTotal" -> valor, total).
+
+    Kept from earlier real bugs:
+    - "N E T O" (one letter per cell, file "relacion de facturas matecol"):
+      runs of single letters are re-joined into a word (see _name_tokens).
+    - "Cantidad Venta" (a unit count, est_proveedorvdart_admon.xls): the
+      word "cantidad" is a negative signal that overrides any money word.
+
+    Duplicated in frontend/src/app/shared/money-format.ts - keep both in sync.
     """
-    if not column_name:
+    if not column_name or not isinstance(column_name, str):
         return False
-    lowered = "".join(column_name.lower().split())
-    if "cantidad" in lowered:
+    tokens = _name_tokens(column_name)
+    if any(t in _NEGATIVE_MONEY_TOKENS for t in tokens):
         return False
-    return any(keyword in lowered for keyword in _MONEY_KEYWORDS)
+    for token in tokens:
+        for keyword in _MONEY_KEYWORDS:
+            if token == keyword or token == keyword + "s" or token == keyword + "es":
+                return True
+    return False
 
 
 def needs_cardinality_check(chart_type):

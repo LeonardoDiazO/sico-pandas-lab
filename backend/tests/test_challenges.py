@@ -1,7 +1,13 @@
 import pandas as pd
 
+from app.guided import content
 from app.guided.challenges import run_checker
 from app.notebook.execution import build_namespace, execute_code
+
+
+def _lesson_step_code(lesson_id, index):
+    lesson = next(l for l in content.LESSONS if l["id"] == lesson_id)
+    return lesson["steps"][index]["code"]
 
 
 def _ns_with_movimiento():
@@ -66,7 +72,9 @@ def test_agrupar_challenge_fails_when_not_sorted():
         ns,
     )
     execute_code("resultado = df_02_movimiento.groupby('mov_item')['mov_neto'].sum()", ns)
-    result = run_checker("03-agrupar:reto-1", ns)
+    # As if this table had been loaded from sico (bound -> pristine copy).
+    pristine = {"df_02_movimiento": ns["df_02_movimiento"].copy()}
+    result = run_checker("03-agrupar:reto-1", ns, pristine=pristine)
     assert result["passed"] is False
     assert "ordenar" in result["message"]
 
@@ -105,16 +113,21 @@ def test_checker_never_raises_on_broken_namespace():
 # not the lesson's synthetic df_02_movimiento) -------------------------------
 
 
+_OWN_EXCEL = pd.DataFrame(
+    {
+        "Vendedor": ["Ana", "Luis", "Ana", "Marta", "Luis"],
+        "Cantidad": [3, 1, 5, 2, 4],
+        "Neto": [30000, 12000, 50000, 8000, 40000],
+    }
+)
+# What the worker keeps for a `bind`ed upload: the untouched original.
+_PRISTINE = {"df": _OWN_EXCEL}
+
+
 def _ns_with_own_excel():
+    """Simulates an uploaded Excel bound as `df` (the worker's `bind`)."""
     ns = build_namespace()
-    execute_code(
-        "df = pd.DataFrame({\n"
-        "    'Vendedor': ['Ana', 'Luis', 'Ana', 'Marta', 'Luis'],\n"
-        "    'Cantidad': [3, 1, 5, 2, 4],\n"
-        "    'Neto': [30000, 12000, 50000, 8000, 40000],\n"
-        "})",
-        ns,
-    )
+    ns["df"] = _OWN_EXCEL.copy()
     return ns
 
 
@@ -122,7 +135,7 @@ def test_fundamentos_challenge_passes_against_the_learners_own_columns():
     ns = _ns_with_own_excel()
     execute_code("total_cantidad = df['Cantidad'].sum()", ns)
     context = {"table_var": "df", "roles": {"num1": "Cantidad"}}
-    result = run_checker("01-fundamentos:reto-1", ns, context)
+    result = run_checker("01-fundamentos:reto-1", ns, context, pristine=_PRISTINE)
     assert result["passed"] is True
 
 
@@ -130,7 +143,7 @@ def test_fundamentos_challenge_fails_when_the_wrong_own_column_is_summed():
     ns = _ns_with_own_excel()
     execute_code("total_cantidad = df['Neto'].sum()", ns)  # summed the wrong column
     context = {"table_var": "df", "roles": {"num1": "Cantidad"}}
-    result = run_checker("01-fundamentos:reto-1", ns, context)
+    result = run_checker("01-fundamentos:reto-1", ns, context, pristine=_PRISTINE)
     assert result["passed"] is False
 
 
@@ -138,7 +151,7 @@ def test_fundamentos_challenge_error_message_names_the_real_column():
     ns = _ns_with_own_excel()
     execute_code("total_cantidad = 0", ns)  # deliberately wrong, to reach the hint message
     context = {"table_var": "df", "roles": {"num1": "Cantidad"}}
-    result = run_checker("01-fundamentos:reto-1", ns, context)
+    result = run_checker("01-fundamentos:reto-1", ns, context, pristine=_PRISTINE)
     assert result["passed"] is False
     assert "df" in result["message"]
     assert "Cantidad" in result["message"]
@@ -151,7 +164,7 @@ def test_agrupar_challenge_passes_against_the_learners_own_columns():
         ns,
     )
     context = {"table_var": "df", "roles": {"cat": "Vendedor", "num2": "Neto"}}
-    result = run_checker("03-agrupar:reto-1", ns, context)
+    result = run_checker("03-agrupar:reto-1", ns, context, pristine=_PRISTINE)
     assert result["passed"] is True
 
 
@@ -162,5 +175,5 @@ def test_agrupar_challenge_fails_on_wrong_column_with_own_data():
         ns,
     )
     context = {"table_var": "df", "roles": {"cat": "Vendedor", "num2": "Neto"}}
-    result = run_checker("03-agrupar:reto-1", ns, context)
+    result = run_checker("03-agrupar:reto-1", ns, context, pristine=_PRISTINE)
     assert result["passed"] is False
