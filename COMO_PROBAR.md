@@ -147,7 +147,7 @@ Para activar la conexión, configura las variables de entorno del backend (ver
 `backend/.env.example`):
 
 ```
-SICO_DB_HOST=mappale-sico.cdngbntx2q8s.us-west-2.rds.amazonaws.com
+SICO_DB_HOST=<endpoint-de-la-rds-de-sico>
 SICO_DB_PORT=3306
 SICO_DB_USER=<usuario>
 SICO_DB_PASSWORD=<clave>

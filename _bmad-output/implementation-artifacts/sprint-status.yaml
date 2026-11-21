@@ -1,0 +1,122 @@
+# generated: 2026-07-12
+# last_updated: 2026-07-20 (agregadas Epics 4-6 del modulo sin codigo, ver epics-modulo-nocode-sico-pandas-lab-2026-07-18.md; todas en backlog, sin historias creadas aun)
+# last_updated: 2026-09-22 (agregadas Epics 10-11 al backlog - interactividad/UX del modulo sin codigo y del modulo guiado, salidas de mesa redonda bmad-party-mode; ver analisis-interactividad-ux-guiado-nocode-sico-pandas-lab-2026-09-21.md y epics.md en planning-artifacts. 5 historias en Epic 10, 3 en Epic 11, ninguna implementada aun. De paso se corrigio un bug de YAML preexistente en el campo last_updated de abajo (dos puntos sin comillas rompian el parseo) y se actualizo Architecture (Plotly -> Chart.js) para Epic 10.)
+# project: sico-pandas-lab
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: REPOSITORIOS/sico-pandas-lab/ (codigo) + REPOSITORIOS/_bmad-output/stories-sico-pandas-lab/ (specs)
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# NOTA: Las historias 1.2-3.4 se implementaron en codigo (backend Flask + frontend Angular)
+# y se verificaron localmente (21 tests backend en verde, build frontend en verde, flujo
+# end-to-end ejercido via curl). Quedan en "review" a la espera de las pruebas manuales del
+# usuario. La 1.1 sigue "in-progress" porque el deploy en Render es accion manual del usuario.
+# La Epica 2 esta implementada en codigo pero su verificacion CONTRA DATOS REALES requiere:
+#   (1) usuario MariaDB de solo-lectura acotado a las 4 tablas, (2) confirmar TLS. Sin eso,
+#   los endpoints de datos responden con error claro (probado).
+
+generated: 2026-07-12
+last_updated: "2026-09-23 (Epicas 10 y 11 pasan a done - las 8 historias fueron pusheadas a master (commits 3b74fce..1ecc15c), verificadas en vivo con 2 archivos Excel reales del usuario tras cazar y corregir un freeze real del navegador (Chart.js + Zone.js, fix con NgZone.runOutsideAngular en chart-canvas.component.ts, con test de regresion) - ver spec-10-1-...md, seccion Spec Change Log. Epica 12 agregada al backlog - 'Analisis en un clic', salida de mesa redonda bmad-party-mode: el tablero automatico del modulo sin codigo se genera sin clics intermedios (o con uno solo si hace falta limpieza), la clasificacion de columnas pasa de paso bloqueante a panel de correccion post-resultado. Cero cambios de backend. Ver analisis-un-clic-dashboard-nocode-sico-pandas-lab-2026-09-23.md y epics-epic12-analisis-un-clic-sico-pandas-lab-2026-09-23.md en planning-artifacts. 3 historias, sin implementar aun. Historial previo: Story 11-3 en review - indicador de datos reales de sico vs. ejemplo sintetico por tarjeta de leccion, reutilizando data_context.resolve_context() ya existente; backend expone usa_datos_reales en el listado. Con esto las 3 historias de la Epica 11 estan en review - epic-11 sigue in-progress hasta que pasen a done. Historial previo: Story 11-1 en review - mapa de progreso vertical de las 6 lecciones (completada/actual/bloqueada), bloqueo puramente de frontend, colores migrados a tokens; parcheado tras revision con accesibilidad (sr-only, lock-hint visible) y test de renderizado real. Historial previo: Story 11-2 en review - feedback visual distinto al superar un reto (animacion de entrada, colores por token, accesibilidad), independiente de 11-1/11-3 (toca solo guided-lesson). epic-11 pasa a in-progress. Historial previo: Story 10-5 en review - colores del grafico (barras, linea acumulada, referencia 80%, leyenda, tooltip, ejes) migrados a design tokens de styles.scss en vez de hex hardcodeado; se cambio --warn por --brand-dark para la linea acumulada (evitar semantica de advertencia). Con esto las 5 historias de la Epica 10 estan implementadas y en review - epic-10 sigue in-progress hasta que pasen a done. Historial previo: Story 10-4 en review - linea de referencia 80% via chartjs-plugin-annotation, migrando el axhline del SVG original; y1.max ajustado a 105 para no recortar la etiqueta. Historial previo: Story 10-3 en review - duracion de animacion explicita bajo 1s con soporte de prefers-reduced-motion; se hallo y corrigio de paso que ChromeHeadless reporta reduced-motion=true por defecto, afectando los tests. Historial previo: Story 10-2 en review - tooltip combinado (barra + % acumulado) via Chart.js interaction:index, formato de dinero/decimales corregido tras revision, test nuevo de formatTooltipLabel. Historial previo: Story 10-1 en review - implementacion completa de la migracion a Chart.js del tablero automatico, revisada (3 capas: blind-hunter, edge-case-hunter, verification-gap) y parchada (parseo de dinero centralizado en money-format.ts, NaN en vez de 0 para valores invalidos, aria-label de accesibilidad, tests nuevos de chart-canvas y analysis-dashboard). Ver spec-10-1-migrar-el-tablero-automatico-a-graficas-interactivas-con-datos-crudos.md. Historial previo: Epics 10-11 agregadas al backlog - interactividad/UX del modulo sin codigo y del modulo guiado, ver epics.md en planning-artifacts; y 2026-07-30, Epic 9 agregada al backlog - resumen ejecutivo con multiples KPIs, ver epics-epic9-kpis-ejecutivos-sico-pandas-lab-2026-07-30.md; ese mismo dia, arreglo chico ya implementado sin epica formal - valor absoluto en leyenda de torta + puente de texto hacia tabla de resumen + tarjetas KPI automaticas en no-code-table para resumenes de baja cardinalidad, via nuevo campo result_records en execution.py)"
+project: sico-pandas-lab
+project_key: NOKEY
+tracking_system: file-system
+story_location: REPOSITORIOS/sico-pandas-lab/
+
+development_status:
+  epic-1: in-progress
+  1-1-ver-la-aplicacion-desplegada-y-funcionando: in-progress
+  1-2-crear-y-ejecutar-celdas-de-codigo-python-pandas: review
+  1-3-ver-errores-de-ejecucion-de-forma-clara-y-segura: review
+  1-4-cargar-un-archivo-excel-como-fuente-de-datos: review
+  1-5-generar-graficas-desde-un-dataframe: review
+  1-6-reiniciar-mi-notebook-sesion: review
+  epic-1-retrospective: optional
+
+  epic-2: in-progress
+  2-1-verificacion-automatica-de-privilegios-de-solo-lectura-al-arrancar: review
+  2-2-conectarse-al-esquema-sco-y-ver-las-tablas-disponibles: review
+  2-3-cargar-una-tabla-de-sico-como-dataframe: review
+  2-4-ejecutar-consultas-combinadas-joins-entre-tablas: review
+  2-5-bloqueo-de-operaciones-de-escritura-sobre-produccion: review
+  2-6-credenciales-de-la-rds-nunca-expuestas-al-codigo-del-usuario: review
+  epic-2-retrospective: optional
+
+  epic-3: in-progress
+  3-1-acceder-al-modulo-guiado-con-un-ejemplo-usando-datos-reales-de-sico: review
+  3-2-entender-que-hace-cada-bloque-de-codigo-del-ejemplo: review
+  3-3-ejecutar-los-ejemplos-guiados-por-cuenta-propia: review
+  3-4-pasar-del-modulo-guiado-al-notebook-libre: review
+  epic-3-retrospective: optional
+
+  epic-4: done
+  4-1-perfilar-el-excel-al-subirlo: done
+  4-2-confirmar-la-limpieza-propuesta-cuando-el-excel-viene-sucio: done
+  4-3-ver-un-mensaje-claro-cuando-el-excel-no-sirve: done
+  epic-4-retrospective: optional
+
+  epic-5: done
+  5-1-elegir-la-columna-para-agrupar: done
+  5-2-elegir-el-tipo-de-grafica-compatible: done
+  5-3-generar-la-grafica-sin-escribir-codigo: done
+  5-4-advertencia-por-cardinalidad-alta: done
+  epic-5-retrospective: optional
+
+  epic-6: done
+  6-1-traducir-una-pregunta-en-lenguaje-natural-a-la-seleccion-de-grafica: done
+  6-2-limite-de-uso-del-asistente-por-sesion: done
+  epic-6-retrospective: optional
+
+  epic-7: done
+  7-1-corregir-deteccion-de-encabezado-en-excels-con-densidad-no-uniforme: done
+  7-2-seleccion-multiple-de-columnas-para-agrupar-con-checkboxes: done
+  7-3-explicacion-en-lenguaje-simple-de-la-grafica-generada: done
+  7-4-mejorar-legibilidad-de-la-grafica-de-torta-con-muchas-categorias: done
+  epic-7-retrospective: optional
+
+  epic-8: done
+  8-1-ordenar-las-filas-crudas-por-una-columna-de-valor: done
+  8-2-resumen-agrupado-con-porcentaje-del-total-y-porcentaje-acumulado: done
+  8-3-resaltar-donde-se-cruza-el-80-por-ciento-pareto: done
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-fijar-varios-resumenes-a-la-vez: backlog
+  9-2-desglose-venta-perdida-neto-cuando-el-valor-tiene-signo-mixto: backlog
+  epic-9-retrospective: optional
+
+  epic-10: done
+  10-1-migrar-el-tablero-automatico-a-graficas-interactivas-con-datos-crudos: done
+  10-2-ver-tooltip-con-valor-exacto-en-las-graficas: done
+  10-3-animacion-de-entrada-al-generar-una-grafica: done
+  10-4-linea-de-corte-del-80-por-ciento-en-el-pareto: done
+  10-5-colores-del-grafico-alineados-a-los-design-tokens: done
+  epic-10-retrospective: optional
+
+  epic-11: done
+  11-1-ver-el-progreso-de-las-6-lecciones-como-un-mapa: done
+  11-2-feedback-distinto-al-superar-un-reto: done
+  11-3-indicador-de-datos-reales-de-sico-vs-ejemplo-sintetico: done
+  epic-11-retrospective: optional
+
+  epic-12: backlog
+  12-1-ver-el-tablero-automatico-sin-esperar-un-clic-de-confirmacion: backlog
+  12-2-corregir-la-clasificacion-de-una-columna-despues-de-ver-el-tablero: backlog
+  12-3-mensaje-informativo-en-vez-de-formulario-bloqueante: backlog
+  epic-12-retrospective: optional

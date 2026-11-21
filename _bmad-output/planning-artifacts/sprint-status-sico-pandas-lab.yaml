@@ -1,0 +1,101 @@
+# generated: 2026-07-12
+# last_updated: 2026-07-20 (agregadas Epics 4-6 del modulo sin codigo, ver epics-modulo-nocode-sico-pandas-lab-2026-07-18.md; todas en backlog, sin historias creadas aun)
+# project: sico-pandas-lab
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: REPOSITORIOS/sico-pandas-lab/ (codigo) + REPOSITORIOS/_bmad-output/stories-sico-pandas-lab/ (specs)
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# NOTA: Las historias 1.2-3.4 se implementaron en codigo (backend Flask + frontend Angular)
+# y se verificaron localmente (21 tests backend en verde, build frontend en verde, flujo
+# end-to-end ejercido via curl). Quedan en "review" a la espera de las pruebas manuales del
+# usuario. La 1.1 sigue "in-progress" porque el deploy en Render es accion manual del usuario.
+# La Epica 2 esta implementada en codigo pero su verificacion CONTRA DATOS REALES requiere:
+#   (1) usuario MariaDB de solo-lectura acotado a las 4 tablas, (2) confirmar TLS. Sin eso,
+#   los endpoints de datos responden con error claro (probado).
+
+generated: 2026-07-12
+last_updated: 2026-07-30 (Epic 9 agregada al backlog - resumen ejecutivo con multiples KPIs, ver epics-epic9-kpis-ejecutivos-sico-pandas-lab-2026-07-30.md; 2 historias, sin implementar aun. Ademas, ese mismo dia: arreglo chico ya implementado sin epica formal - valor absoluto en leyenda de torta + puente de texto hacia tabla de resumen + tarjetas KPI automaticas en no-code-table para resumenes de baja cardinalidad, via nuevo campo result_records en execution.py)
+project: sico-pandas-lab
+project_key: NOKEY
+tracking_system: file-system
+story_location: REPOSITORIOS/sico-pandas-lab/
+
+development_status:
+  epic-1: in-progress
+  1-1-ver-la-aplicacion-desplegada-y-funcionando: in-progress
+  1-2-crear-y-ejecutar-celdas-de-codigo-python-pandas: review
+  1-3-ver-errores-de-ejecucion-de-forma-clara-y-segura: review
+  1-4-cargar-un-archivo-excel-como-fuente-de-datos: review
+  1-5-generar-graficas-desde-un-dataframe: review
+  1-6-reiniciar-mi-notebook-sesion: review
+  epic-1-retrospective: optional
+
+  epic-2: in-progress
+  2-1-verificacion-automatica-de-privilegios-de-solo-lectura-al-arrancar: review
+  2-2-conectarse-al-esquema-sco-y-ver-las-tablas-disponibles: review
+  2-3-cargar-una-tabla-de-sico-como-dataframe: review
+  2-4-ejecutar-consultas-combinadas-joins-entre-tablas: review
+  2-5-bloqueo-de-operaciones-de-escritura-sobre-produccion: review
+  2-6-credenciales-de-la-rds-nunca-expuestas-al-codigo-del-usuario: review
+  epic-2-retrospective: optional
+
+  epic-3: in-progress
+  3-1-acceder-al-modulo-guiado-con-un-ejemplo-usando-datos-reales-de-sico: review
+  3-2-entender-que-hace-cada-bloque-de-codigo-del-ejemplo: review
+  3-3-ejecutar-los-ejemplos-guiados-por-cuenta-propia: review
+  3-4-pasar-del-modulo-guiado-al-notebook-libre: review
+  epic-3-retrospective: optional
+
+  epic-4: done
+  4-1-perfilar-el-excel-al-subirlo: done
+  4-2-confirmar-la-limpieza-propuesta-cuando-el-excel-viene-sucio: done
+  4-3-ver-un-mensaje-claro-cuando-el-excel-no-sirve: done
+  epic-4-retrospective: optional
+
+  epic-5: done
+  5-1-elegir-la-columna-para-agrupar: done
+  5-2-elegir-el-tipo-de-grafica-compatible: done
+  5-3-generar-la-grafica-sin-escribir-codigo: done
+  5-4-advertencia-por-cardinalidad-alta: done
+  epic-5-retrospective: optional
+
+  epic-6: done
+  6-1-traducir-una-pregunta-en-lenguaje-natural-a-la-seleccion-de-grafica: done
+  6-2-limite-de-uso-del-asistente-por-sesion: done
+  epic-6-retrospective: optional
+
+  epic-7: done
+  7-1-corregir-deteccion-de-encabezado-en-excels-con-densidad-no-uniforme: done
+  7-2-seleccion-multiple-de-columnas-para-agrupar-con-checkboxes: done
+  7-3-explicacion-en-lenguaje-simple-de-la-grafica-generada: done
+  7-4-mejorar-legibilidad-de-la-grafica-de-torta-con-muchas-categorias: done
+  epic-7-retrospective: optional
+
+  epic-8: done
+  8-1-ordenar-las-filas-crudas-por-una-columna-de-valor: done
+  8-2-resumen-agrupado-con-porcentaje-del-total-y-porcentaje-acumulado: done
+  8-3-resaltar-donde-se-cruza-el-80-por-ciento-pareto: done
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-fijar-varios-resumenes-a-la-vez: backlog
+  9-2-desglose-venta-perdida-neto-cuando-el-valor-tiene-signo-mixto: backlog
+  epic-9-retrospective: optional

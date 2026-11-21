@@ -18,3 +18,6 @@ frontend/.angular/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local, per-machine tool settings (permissions, paths) - never versioned
+**/settings.local.json
