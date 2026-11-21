@@ -1,7 +1,8 @@
 .guided-lesson {
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 1.5rem 1rem;
+  // Bottom room for the fixed navigation bar.
+  padding: 1.5rem 1rem 6rem;
 
   h2 {
     color: #2a2f5b;
@@ -32,8 +33,8 @@
 }
 
 .summary {
-  color: #55557a;
-  margin-bottom: 1.5rem;
+  color: var(--ink-muted);
+  margin-bottom: 1rem;
 }
 
 .step {
@@ -46,13 +47,14 @@
 }
 
 .explanation {
-  background: #f7f7ff;
-  border-left: 3px solid #51599b;
-  padding: 0.6rem 0.9rem;
-  border-radius: 0 6px 6px 0;
-  font-size: 0.88rem;
-  color: #3a3a55;
-  margin-bottom: 0.75rem;
+  background: var(--surface-alt);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin-bottom: 0.9rem;
+  max-width: 75ch;
 }
 
 .banner {
@@ -179,5 +181,159 @@
     background: transparent;
     color: #51599b;
     border: 1px solid #51599b;
+  }
+}
+
+// --- Own data (optional, collapsed) -----------------------------------------
+.lesson-data {
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+
+  summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.2rem 0.7rem;
+    padding: 0.7rem 1rem;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: '';
+      align-self: center;
+      width: 7px;
+      height: 7px;
+      border-right: 2px solid var(--ink-faint);
+      border-bottom: 2px solid var(--ink-faint);
+      transform: rotate(-45deg);
+      transition: transform 0.18s ease;
+    }
+  }
+
+  &[open] summary::before {
+    transform: rotate(45deg);
+  }
+}
+
+.data-title {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.data-sub {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.data-body {
+  padding: 0 1rem 1rem;
+}
+
+// --- Progress segments -------------------------------------------------------
+.lesson-progress {
+  scroll-margin-top: 64px;
+  margin-bottom: 1.1rem;
+
+  ol {
+    display: flex;
+    gap: 4px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.lesson-progress .seg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+
+  .seg-bar {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    transition: background-color 0.2s ease;
+  }
+
+  .seg-label {
+    font-size: 0.72rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &:hover .seg-bar {
+    background: var(--border-strong);
+  }
+
+  &.done {
+    color: var(--ok);
+
+    .seg-bar {
+      background: var(--ok);
+    }
+  }
+
+  &.current {
+    color: var(--brand-dark);
+
+    .seg-bar {
+      background: var(--brand);
+    }
+  }
+}
+
+// --- Pages -------------------------------------------------------------------
+.lesson-page:not([hidden]) {
+  animation: page-forward 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lesson-pages[data-dir='back'] .lesson-page:not([hidden]) {
+  animation-name: page-back;
+}
+
+@keyframes page-forward {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes page-back {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+.page-meta {
+  margin: 0 0 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lesson-page:not([hidden]) {
+    animation: none;
   }
 }

@@ -7,34 +7,31 @@ export const GUIDED_TOUR_STEPS: TourStep[] = [
     text: 'Desde aquí vuelves en cualquier momento a la lista completa de lecciones.',
   },
   {
-    target: 'app-data-source-panel',
-    title: 'Traer tus datos',
+    target: '.lesson-data',
+    title: 'Practicar con tus datos (opcional)',
     text:
-      'Busca una tabla de sico y presiona "cargar" para practicar con datos reales -- si no cargas nada, ' +
+      'Ábrelo para subir tu Excel o cargar una tabla de sico y practicar con datos reales. Si no cargas nada, ' +
       'cada paso usa un ejemplo pequeño automáticamente, así que siempre puedes seguir la lección.',
   },
   {
-    target: 'app-loaded-variables',
-    title: 'Qué tienes cargado',
-    text: 'Aquí ves qué variables (tablas) están disponibles ahora mismo en tu sesión.',
+    target: '.lesson-progress',
+    title: 'Tu avance',
+    text:
+      'Cada barra es una página de la lección: los pasos, el reto y el cierre. Se ponen en verde cuando los ' +
+      'completas, y puedes tocar cualquiera para ir directo a ella.',
   },
   {
-    target: '.step',
-    title: 'Pasos de la lección',
+    target: '.lesson-page.current .step',
+    title: 'Un paso a la vez',
     text:
-      'Cada paso trae una explicación en lenguaje sencillo y una celda con código real ya escrito -- ' +
+      'Cada paso trae una explicación en lenguaje sencillo y una celda con código real ya escrito: ' +
       'ejecútala para ver qué hace, y cámbiala para experimentar, no se rompe nada.',
   },
   {
-    target: '.challenge',
-    title: 'Reto',
+    target: '.wizard-nav',
+    title: 'Avanzar sin bajar',
     text:
-      'Algunas lecciones terminan en un Reto: una celda en blanco donde escribes tú la solución. ' +
-      'Al presionar "Comprobar reto" se revisa automáticamente si tu resultado es correcto.',
-  },
-  {
-    target: '.finish',
-    title: 'Seguir avanzando',
-    text: 'Aquí pasas a la siguiente lección cuando estés listo, o saltas al notebook libre para practicar con tus propios datos.',
+      'Con «Siguiente» pasas al próximo paso, al reto y al cierre de la lección, donde está la siguiente lección. ' +
+      'El reto se revisa automáticamente al presionar «Comprobar reto».',
   },
 ];

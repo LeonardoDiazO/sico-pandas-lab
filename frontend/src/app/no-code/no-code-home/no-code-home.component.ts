@@ -1,4 +1,12 @@
 import { Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
+
+export type WizardStep = 1 | 2 | 3 | 4;
+
+interface WizardStepInfo {
+  n: WizardStep;
+  title: string;
+  hint: string;
+}
 import { Subscription } from 'rxjs';
 
 import {
@@ -27,7 +35,21 @@ import { NotebookService } from '../../notebook/services/notebook.service';
   styleUrl: './no-code-home.component.scss',
 })
 export class NoCodeHomeComponent implements OnDestroy {
-  @ViewChild('resultsAnchor') private resultsAnchor?: ElementRef<HTMLElement>;
+  @ViewChild('wizardTop') private wizardTop?: ElementRef<HTMLElement>;
+
+  // Step-by-step flow (user feedback: scrolling down a long page to reach the
+  // next step was uncomfortable) - one step on screen at a time, moved with
+  // Anterior/Siguiente or the clickable step indicator. Steps stay mounted
+  // while hidden, so nothing done in a step is lost when moving between them.
+  readonly steps: WizardStepInfo[] = [
+    { n: 1, title: 'Sube tu archivo', hint: 'Excel .xlsx o .xls' },
+    { n: 2, title: 'Confirma las columnas', hint: 'Qué es cada una' },
+    { n: 3, title: 'Explora el tablero', hint: 'Gráficas y hallazgos' },
+    { n: 4, title: 'Análisis a mano', hint: 'Opcional' },
+  ];
+  activeStep: WizardStep = 1;
+  // Slide direction of the last move (for the transition).
+  direction: 'forward' | 'back' = 'forward';
 
   excelProfile: { variable: string; columns: ExcelProfileColumn[]; rows: number } | null = null;
   fileLabel: string | null = null;
@@ -52,11 +74,66 @@ export class NoCodeHomeComponent implements OnDestroy {
     this.analysisSub?.unsubscribe();
   }
 
-  get currentStep(): 1 | 2 | 3 {
-    if (!this.excelProfile) {
-      return 1;
+  isDone(n: WizardStep): boolean {
+    switch (n) {
+      case 1:
+        return !!this.excelProfile;
+      case 2:
+        return this.bloques.length > 0;
+      case 3:
+        return this.bloques.length > 0;
+      default:
+        return false;
     }
-    return this.bloques.length > 0 || this.generatingAnalysis ? 3 : 2;
+  }
+
+  canGoTo(n: WizardStep): boolean {
+    switch (n) {
+      case 1:
+        return true;
+      case 2:
+      case 4:
+        return !!this.excelProfile;
+      case 3:
+        return this.generatingAnalysis || this.bloques.length > 0 || !!this.analysisError;
+    }
+  }
+
+  goTo(n: WizardStep): void {
+    if (!this.canGoTo(n) || n === this.activeStep) {
+      return;
+    }
+    this.direction = n > this.activeStep ? 'forward' : 'back';
+    this.activeStep = n;
+    this.bringWizardIntoView();
+  }
+
+  get nextStep(): WizardStep | null {
+    return this.activeStep < 4 ? ((this.activeStep + 1) as WizardStep) : null;
+  }
+
+  get prevStep(): WizardStep | null {
+    return this.activeStep > 1 ? ((this.activeStep - 1) as WizardStep) : null;
+  }
+
+  // Why "Siguiente" is disabled, said in plain words next to it.
+  get nextBlockedReason(): string | null {
+    const next = this.nextStep;
+    if (!next || this.canGoTo(next)) {
+      return null;
+    }
+    if (this.activeStep === 1) {
+      return 'Sube un archivo para continuar.';
+    }
+    if (this.activeStep === 2) {
+      return 'Pulsa «Generar tablero» para continuar.';
+    }
+    return null;
+  }
+
+  get nextLabel(): string {
+    const next = this.nextStep;
+    return next ? `Siguiente: ${this.steps[next - 1].title.toLowerCase()}` : '';
   }
 
   onLoaded(result: LoadResult): void {
@@ -137,7 +214,10 @@ export class NoCodeHomeComponent implements OnDestroy {
     if (scroll) {
       this.bloques = [];
       this.resumen = null;
-      this.scrollToResults();
+      // Generating moves straight to the dashboard step (its skeleton shows progress).
+      this.direction = 'forward';
+      this.activeStep = 3;
+      this.bringWizardIntoView();
     }
     this.analysisSub = this.notebook.autoAnalysis(classifications, {}, filters).subscribe({
       next: (res) => {
@@ -165,11 +245,16 @@ export class NoCodeHomeComponent implements OnDestroy {
     this.toast.show(message.text, message.ok);
   }
 
-  private scrollToResults(): void {
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    // After the step-3 container renders.
-    setTimeout(() =>
-      this.resultsAnchor?.nativeElement.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }),
-    );
+  // Only scrolls when the step indicator is above the viewport (e.g. after
+  // reading a long dashboard) - never a jump when it is already visible.
+  private bringWizardIntoView(): void {
+    const el = this.wizardTop?.nativeElement;
+    if (!el || typeof window === 'undefined') {
+      return;
+    }
+    if (el.getBoundingClientRect().top < 0) {
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    }
   }
 }

@@ -7,56 +7,138 @@
     <h2>{{ lesson.title }}</h2>
     <p class="summary">{{ lesson.summary }}</p>
 
-    <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
-
-    <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
-
-    @for (step of steps; track $index) {
-      <div class="step">
-        <h3>{{ step.title }}</h3>
-        <p class="explanation">{{ step.explanation }}</p>
-        <app-code-cell
-          [code]="step.code"
-          [result]="step.result"
-          [running]="step.running"
-          [removable]="false"
-          (run)="runStep($index, $event)"
-        ></app-code-cell>
+    <details class="lesson-data">
+      <summary>
+        <span class="data-title">Practicar con tus propios datos</span>
+        <span class="data-sub">
+          @if (knownVariables.length > 0) {
+            {{ knownVariables.length }} {{ knownVariables.length === 1 ? 'tabla cargada' : 'tablas cargadas' }}
+          } @else {
+            Opcional: si no cargas nada, cada paso usa un ejemplo pequeño
+          }
+        </span>
+      </summary>
+      <div class="data-body">
+        <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+        <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
       </div>
-    }
+    </details>
 
-    @if (lesson.challenge) {
-      <div class="challenge">
-        <h3>🎯 Reto: pon en práctica lo que aprendiste</h3>
-        <p class="prompt">{{ lesson.challenge.prompt }}</p>
-        <app-code-cell
-          [code]="challengeCode"
-          [result]="challengeResult"
-          [running]="challengeRunning"
-          [removable]="false"
-          runLabel="✅ Comprobar reto"
-          (run)="runChallenge($event)"
-        ></app-code-cell>
-        @if (challengeVerdict) {
-          <div class="verdict" [class.passed]="challengeVerdict.passed" [class.failed]="!challengeVerdict.passed" role="status">
-            <span class="verdict-icon" aria-hidden="true">{{ challengeVerdict.passed ? '✅' : '🤔' }}</span>
-            <span class="verdict-message">{{ challengeVerdict.message }}</span>
+    <!-- Progress through the lesson; every page is one click away. -->
+    <nav class="lesson-progress" aria-label="Avance de la lección">
+      <ol>
+        @for (page of pages; track $index; let i = $index) {
+          <li>
+            <button
+              type="button"
+              class="seg"
+              [class.current]="i === pageIndex"
+              [class.done]="isPageDone(page)"
+              [class.special]="page.kind !== 'step'"
+              [attr.aria-current]="i === pageIndex ? 'step' : null"
+              [attr.aria-label]="(page.kind === 'step' ? 'Paso ' + (i + 1) + ': ' : '') + page.label"
+              [title]="page.label"
+              (click)="goToPage(i)"
+            >
+              <span class="seg-bar"></span>
+              <span class="seg-label">
+                @if (page.kind === 'step') {
+                  {{ i + 1 }}
+                } @else if (page.kind === 'challenge') {
+                  Reto
+                } @else {
+                  Fin
+                }
+              </span>
+            </button>
+          </li>
+        }
+      </ol>
+    </nav>
+
+    <div class="lesson-pages" [attr.data-dir]="direction">
+      @for (step of steps; track $index; let i = $index) {
+        <article class="lesson-page" [class.current]="pageIndex === i" [hidden]="pageIndex !== i">
+          <div class="step">
+            <p class="page-meta">Paso {{ i + 1 }} de {{ steps.length }}</p>
+            <h3>{{ step.title }}</h3>
+            <p class="explanation">{{ step.explanation }}</p>
+            <app-code-cell
+              [code]="step.code"
+              [result]="step.result"
+              [running]="step.running"
+              [removable]="false"
+              (run)="runStep(i, $event)"
+            ></app-code-cell>
           </div>
+        </article>
+      }
+
+      @if (lesson.challenge) {
+        <article class="lesson-page" [class.current]="currentPage?.kind === 'challenge'" [hidden]="currentPage?.kind !== 'challenge'">
+          <div class="challenge">
+            <h3>🎯 Reto: pon en práctica lo que aprendiste</h3>
+            <p class="prompt">{{ lesson.challenge.prompt }}</p>
+            <app-code-cell
+              [code]="challengeCode"
+              [result]="challengeResult"
+              [running]="challengeRunning"
+              [removable]="false"
+              runLabel="✅ Comprobar reto"
+              (run)="runChallenge($event)"
+            ></app-code-cell>
+            @if (challengeVerdict) {
+              <div class="verdict" [class.passed]="challengeVerdict.passed" [class.failed]="!challengeVerdict.passed" role="status">
+                <span class="verdict-icon" aria-hidden="true">{{ challengeVerdict.passed ? '✅' : '🤔' }}</span>
+                <span class="verdict-message">{{ challengeVerdict.message }}</span>
+              </div>
+            }
+          </div>
+        </article>
+      }
+
+      <article class="lesson-page" [class.current]="currentPage?.kind === 'finish'" [hidden]="currentPage?.kind !== 'finish'">
+        <div class="finish">
+          @if (isComplete) {
+            <p class="done">✓ Lección completada{{ userName ? ', ' + userName : '' }}.</p>
+          } @else if (lesson.challenge) {
+            <p>Te falta superar el reto para completar esta lección.</p>
+            <button type="button" class="free-btn secondary" (click)="goToPage(pages.length - 2)">Volver al reto</button>
+          }
+          @if (lesson.next_lesson_id) {
+            <p>¿Listo para seguir?</p>
+            <a class="free-btn" [routerLink]="['/guiado', lesson.next_lesson_id]">Siguiente lección: {{ lesson.next_lesson_title }} →</a>
+          } @else {
+            <p>Terminaste el curso. ¿Listo para aplicarlo con tus propios datos?</p>
+          }
+          <a class="free-btn secondary" routerLink="/notebook">Continuar en el notebook libre →</a>
+        </div>
+      </article>
+    </div>
+
+    <footer class="wizard-nav">
+      <div class="wizard-nav-inner">
+        @if (pageIndex > 0) {
+          <button type="button" class="nav-btn back" (click)="goToPage(pageIndex - 1)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+            Anterior
+          </button>
+        } @else {
+          <span></span>
+        }
+        <span class="nav-progress">{{ pageIndex + 1 }} de {{ pages.length }}</span>
+        @if (pageIndex < pages.length - 1) {
+          <div class="nav-next">
+            <button type="button" class="nav-btn next" (click)="goToPage(pageIndex + 1)">
+              <span class="nav-next-label">{{ nextLabel }}</span>
+              <span class="nav-next-short">Siguiente</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </button>
+          </div>
+        } @else {
+          <span></span>
         }
       </div>
-    }
-
-    <div class="finish">
-      @if (isComplete) {
-        <p class="done">✓ Lección completada{{ userName ? ', ' + userName : '' }}.</p>
-      }
-      @if (lesson.next_lesson_id) {
-        <p>¿Listo para seguir?</p>
-        <a class="free-btn" [routerLink]="['/guiado', lesson.next_lesson_id]">Siguiente: {{ lesson.next_lesson_title }} →</a>
-      } @else {
-        <p>Terminaste el curso. ¿Listo para aplicarlo con tus propios datos?</p>
-      }
-      <a class="free-btn secondary" routerLink="/notebook">Continuar en el notebook libre →</a>
-    </div>
+    </footer>
   </section>
 }

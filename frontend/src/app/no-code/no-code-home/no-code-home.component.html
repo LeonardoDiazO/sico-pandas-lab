@@ -1,46 +1,48 @@
 <section class="no-code">
   <header class="page-header">
     <h2>Análisis automático de tu Excel</h2>
-    <p class="intro">
-      Sube un archivo, confirma qué es cada columna y obtén un tablero interactivo — sin escribir una sola línea de
-      código.
-    </p>
-    <ol class="progress" aria-label="Pasos">
-      <li [class.on]="currentStep === 1" [class.done]="currentStep > 1" [attr.aria-current]="currentStep === 1 ? 'step' : null">
-        <span class="dot">
-          @if (currentStep > 1) {
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
-          } @else {
-            1
-          }
-        </span>
-        Subir archivo
-      </li>
-      <li [class.on]="currentStep === 2" [class.done]="currentStep > 2" [attr.aria-current]="currentStep === 2 ? 'step' : null">
-        <span class="dot">
-          @if (currentStep > 2) {
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
-          } @else {
-            2
-          }
-        </span>
-        Confirmar columnas
-      </li>
-      <li [class.on]="currentStep === 3" [attr.aria-current]="currentStep === 3 ? 'step' : null">
-        <span class="dot">3</span>
-        Explorar el tablero
-      </li>
-    </ol>
+    <p class="intro">Sube un archivo, confirma qué es cada columna y obtén un tablero interactivo, sin escribir código.</p>
   </header>
 
+  <!-- Step indicator: also the navigation (a step opens once its prerequisites are met). -->
+  <nav class="stepper" #wizardTop aria-label="Pasos del análisis">
+    <ol>
+      @for (s of steps; track s.n) {
+        <li>
+          <button
+            type="button"
+            class="step-tab"
+            [class.on]="activeStep === s.n"
+            [class.done]="isDone(s.n) && activeStep !== s.n"
+            [class.optional]="s.n === 4"
+            [disabled]="!canGoTo(s.n)"
+            [attr.aria-current]="activeStep === s.n ? 'step' : null"
+            (click)="goTo(s.n)"
+          >
+            <span class="dot" aria-hidden="true">
+              @if (isDone(s.n) && activeStep !== s.n) {
+                <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+              } @else {
+                {{ s.n }}
+              }
+            </span>
+            <span class="step-text">
+              <span class="step-title">{{ s.title }}</span>
+              <span class="step-hint">{{ s.hint }}</span>
+            </span>
+          </button>
+        </li>
+      }
+    </ol>
+  </nav>
 
-  <div class="step" [class.done]="!!excelProfile">
-    <div class="step-marker"><span class="step-num">1</span></div>
-    <div class="step-body">
-      <div class="step-head">
-        <h3>Sube tu archivo</h3>
+  <div class="panes" [attr.data-dir]="direction">
+    <!-- 1. Upload -->
+    <section class="pane" [hidden]="activeStep !== 1" aria-labelledby="pane1-title">
+      <div class="pane-head">
+        <h3 id="pane1-title">Sube tu archivo</h3>
         @if (fileLabel) {
-          <span class="step-meta tabular-nums">{{ fileLabel }}</span>
+          <span class="pane-meta tabular-nums">{{ fileLabel }}</span>
         }
       </div>
       <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
@@ -68,86 +70,111 @@
           }
         </section>
       }
-    </div>
-  </div>
+    </section>
 
-  @if (excelProfile) {
-    <div class="step" [class.done]="bloques.length > 0">
-      <div class="step-marker"><span class="step-num">2</span></div>
-      <div class="step-body">
-        <div class="step-head">
-          <h3>Confirma qué es cada columna</h3>
-        </div>
+    <!-- 2. Classify -->
+    <section class="pane" [hidden]="activeStep !== 2" aria-labelledby="pane2-title">
+      <div class="pane-head">
+        <h3 id="pane2-title">Confirma qué es cada columna</h3>
+      </div>
+      @if (excelProfile) {
         <app-column-classification
           [profile]="excelProfile"
           [busy]="generatingAnalysis"
           (confirmed)="onClassificationConfirmed($event)"
         ></app-column-classification>
+      }
+    </section>
+
+    <!-- 3. Dashboard -->
+    <section class="pane" [hidden]="activeStep !== 3" aria-labelledby="pane3-title">
+      <div class="pane-head">
+        <h3 id="pane3-title">Tu tablero</h3>
       </div>
-    </div>
-  }
 
-  @if (generatingAnalysis || bloques.length > 0 || analysisError) {
-    <div class="step done" #resultsAnchor>
-      <div class="step-marker"><span class="step-num">3</span></div>
-      <div class="step-body">
-        <div class="step-head">
-          <h3>Tu tablero</h3>
-        </div>
-
-        @if (generatingAnalysis && bloques.length === 0) {
-          <div class="skeleton" role="status" aria-live="polite">
-            <span class="sr-only">Generando el análisis automático…</span>
-            <div class="sk-summary"></div>
-            <div class="sk-grid">
-              @for (i of [1, 2]; track i) {
-                <div class="sk-card">
-                  <div class="sk-line w60"></div>
-                  <div class="sk-line w85"></div>
-                  <div class="sk-bars">
-                    @for (h of [92, 70, 48, 34, 22, 14]; track $index) {
-                      <span [style.height.%]="h"></span>
-                    }
-                  </div>
+      @if (generatingAnalysis && bloques.length === 0) {
+        <div class="skeleton" role="status" aria-live="polite">
+          <span class="sr-only">Generando el análisis automático…</span>
+          <div class="sk-summary"></div>
+          <div class="sk-grid">
+            @for (i of [1, 2]; track i) {
+              <div class="sk-card">
+                <div class="sk-line w60"></div>
+                <div class="sk-line w85"></div>
+                <div class="sk-bars">
+                  @for (h of [92, 70, 48, 34, 22, 14]; track $index) {
+                    <span [style.height.%]="h"></span>
+                  }
                 </div>
-              }
-            </div>
-            <p class="sk-note">Calculando totales, porcentajes y el punto del 80% para cada combinación…</p>
+              </div>
+            }
           </div>
-        } @else if (analysisError) {
-          <div class="empty-state">
-            <p>{{ analysisError }}</p>
-            <p class="hint">
-              Necesitas al menos una columna marcada como <strong>Dimensión</strong> (por ejemplo cliente o ciudad) y una
-              como <strong>Métrica</strong> (por ejemplo valor o cantidad).
-            </p>
-            <button type="button" class="btn-secondary" (click)="retryAnalysis()">Intentar de nuevo</button>
+          <p class="sk-note">Calculando totales, porcentajes y el punto del 80% para cada combinación…</p>
+        </div>
+      } @else if (analysisError) {
+        <div class="empty-state">
+          <p>{{ analysisError }}</p>
+          <p class="hint">
+            Necesitas al menos una columna marcada como <strong>Dimensión</strong> (por ejemplo cliente o ciudad) y una
+            como <strong>Métrica</strong> (por ejemplo valor o cantidad).
+          </p>
+          <div class="empty-actions">
+            <button type="button" class="btn-secondary" (click)="goTo(2)">Revisar las columnas</button>
+            <button type="button" class="btn-link" (click)="retryAnalysis()">Intentar de nuevo</button>
           </div>
-        }
+        </div>
+      }
 
-        @if (generatingAnalysis && bloques.length > 0) {
-          <p class="refreshing" role="status"><span class="spinner"></span> Recalculando el tablero con el filtro…</p>
-        }
-        <app-analysis-dashboard
-          [bloques]="bloques"
-          [resumen]="resumen"
-          [busy]="generatingAnalysis"
-          (filtersChange)="onFiltersChange($event)"
-        ></app-analysis-dashboard>
+      @if (generatingAnalysis && bloques.length > 0) {
+        <p class="refreshing" role="status"><span class="spinner"></span> Recalculando el tablero con el filtro…</p>
+      }
+      <app-analysis-dashboard
+        [bloques]="bloques"
+        [resumen]="resumen"
+        [busy]="generatingAnalysis"
+        (filtersChange)="onFiltersChange($event)"
+      ></app-analysis-dashboard>
+    </section>
+
+    <!-- 4. Manual (optional) -->
+    <section class="pane" [hidden]="activeStep !== 4" aria-labelledby="pane4-title">
+      <div class="pane-head">
+        <h3 id="pane4-title">Análisis a mano</h3>
+        <span class="pane-meta">Elige tú la columna, el tipo de gráfica y los filtros</span>
       </div>
-    </div>
-  }
-
-  @if (excelProfile) {
-    <details class="manual-toggle">
-      <summary>
-        <span class="summary-title">Análisis puntual</span>
-        <span class="summary-sub">Elige tú la columna, el tipo de gráfica y los filtros</span>
-      </summary>
-      <div class="manual-panels">
+      @if (excelProfile) {
         <app-no-code-chart [profile]="excelProfile"></app-no-code-chart>
         <app-no-code-table [profile]="excelProfile"></app-no-code-table>
-      </div>
-    </details>
-  }
+      }
+    </section>
+  </div>
+
+  <!-- Always-visible navigation: no scrolling to find the next step. -->
+  <footer class="wizard-nav">
+    <div class="wizard-nav-inner">
+      @if (prevStep) {
+        <button type="button" class="nav-btn back" (click)="goTo(prevStep)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+          Anterior
+        </button>
+      } @else {
+        <span></span>
+      }
+      <span class="nav-progress">Paso {{ activeStep }} de {{ steps.length }}</span>
+      @if (nextStep) {
+        <div class="nav-next">
+          @if (nextBlockedReason) {
+            <span class="nav-reason">{{ nextBlockedReason }}</span>
+          }
+          <button type="button" class="nav-btn next" [disabled]="!canGoTo(nextStep)" (click)="goTo(nextStep)">
+            <span class="nav-next-label">{{ nextLabel }}</span>
+            <span class="nav-next-short">Siguiente</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+          </button>
+        </div>
+      } @else {
+        <span></span>
+      }
+    </div>
+  </footer>
 </section>

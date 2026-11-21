@@ -98,7 +98,8 @@
 @media (max-width: 640px) {
   .toast-stack {
     top: auto;
-    bottom: 16px;
+    // Above the fixed step navigation bar.
+    bottom: 84px;
   }
 }
 

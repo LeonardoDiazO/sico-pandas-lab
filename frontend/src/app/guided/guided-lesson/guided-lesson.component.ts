@@ -18,6 +18,15 @@ interface GuidedStep {
   running: boolean;
 }
 
+// One screen per page of the lesson: each step, then the challenge (when the
+// lesson has one), then the closing page - user feedback: scrolling down a
+// long lesson to find the next step was uncomfortable.
+export interface LessonPage {
+  kind: 'step' | 'challenge' | 'finish';
+  index: number; // step index for kind 'step'
+  label: string;
+}
+
 const CONNECTION_ERROR_RESULT: CellResult = {
   stdout: null,
   result_html: null,
@@ -42,6 +51,9 @@ export class GuidedLessonComponent implements OnInit {
   challengeVerdict: { passed: boolean; message: string } | null = null;
   challengeRunning = false;
 
+  pageIndex = 0;
+  direction: 'forward' | 'back' = 'forward';
+
   constructor(
     private route: ActivatedRoute,
     private guided: GuidedService,
@@ -50,6 +62,57 @@ export class GuidedLessonComponent implements OnInit {
     private tour: TourService,
     private toast: ToastService,
   ) {}
+
+  get pages(): LessonPage[] {
+    const pages: LessonPage[] = this.steps.map((step, i) => ({ kind: 'step' as const, index: i, label: step.title }));
+    if (this.lesson?.challenge) {
+      pages.push({ kind: 'challenge', index: -1, label: 'Reto' });
+    }
+    pages.push({ kind: 'finish', index: -1, label: 'Cierre' });
+    return pages;
+  }
+
+  get currentPage(): LessonPage | null {
+    return this.pages[this.pageIndex] ?? null;
+  }
+
+  // A step counts as done once it ran without error; the challenge once passed.
+  isPageDone(page: LessonPage): boolean {
+    if (page.kind === 'step') {
+      const step = this.steps[page.index];
+      return !!step?.result && !step.result.error;
+    }
+    if (page.kind === 'challenge') {
+      return !!this.challengeVerdict?.passed || this.isComplete;
+    }
+    return false;
+  }
+
+  goToPage(index: number): void {
+    if (index < 0 || index >= this.pages.length || index === this.pageIndex) {
+      return;
+    }
+    this.direction = index > this.pageIndex ? 'forward' : 'back';
+    this.pageIndex = index;
+    if (typeof window !== 'undefined' && window.scrollY > 0) {
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      document.querySelector('.lesson-progress')?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    }
+  }
+
+  get nextLabel(): string {
+    const next = this.pages[this.pageIndex + 1];
+    if (!next) {
+      return '';
+    }
+    if (next.kind === 'challenge') {
+      return 'Siguiente: el reto';
+    }
+    if (next.kind === 'finish') {
+      return 'Terminar la lección';
+    }
+    return 'Siguiente paso';
+  }
 
   startTour(): void {
     this.tour.start('guided', GUIDED_TOUR_STEPS);
@@ -72,6 +135,8 @@ export class GuidedLessonComponent implements OnInit {
     this.challengeResult = null;
     this.challengeVerdict = null;
     this.challengeRunning = false;
+    this.pageIndex = 0;
+    this.direction = 'forward';
     this.guided.getLesson(id).subscribe({
       next: (res) => {
         this.lesson = res.data;

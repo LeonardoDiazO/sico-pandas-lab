@@ -14,32 +14,83 @@
     </div>
   }
 
-  <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+  <div class="nb-layout">
+    <!-- Tools: one tab at a time, beside the cells instead of above them. -->
+    <aside class="nb-tools" aria-label="Herramientas">
+      <div class="tool-tabs" role="tablist" aria-label="Herramientas del notebook">
+        <button
+          type="button"
+          role="tab"
+          class="tool-tab"
+          data-tab="datos"
+          [class.on]="toolTab === 'datos'"
+          [attr.aria-selected]="toolTab === 'datos'"
+          (click)="toolTab = 'datos'"
+        >
+          Datos
+          @if (knownVariables.length > 0) {
+            <span class="count">{{ knownVariables.length }}</span>
+          }
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="tool-tab"
+          data-tab="guardadas"
+          [class.on]="toolTab === 'guardadas'"
+          [attr.aria-selected]="toolTab === 'guardadas'"
+          (click)="toolTab = 'guardadas'"
+        >
+          Guardadas
+          @if (snippets.length > 0) {
+            <span class="count">{{ snippets.length }}</span>
+          }
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="tool-tab"
+          data-tab="graficas"
+          [class.on]="toolTab === 'graficas'"
+          [attr.aria-selected]="toolTab === 'graficas'"
+          (click)="toolTab = 'graficas'"
+        >
+          Gráficas
+        </button>
+      </div>
 
-  <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
+      <div class="tool-pane" role="tabpanel" [hidden]="toolTab !== 'datos'">
+        <app-data-source-panel (loaded)="onLoaded($event)" (message)="onMessage($event)"></app-data-source-panel>
+        <app-loaded-variables [variables]="knownVariables"></app-loaded-variables>
+        <p class="no-code-hint">
+          ¿Prefieres ordenar, resumir o graficar sin escribir código? Usa
+          <a routerLink="/sin-codigo">Sin código</a>.
+        </p>
+      </div>
+      <div class="tool-pane" role="tabpanel" [hidden]="toolTab !== 'guardadas'">
+        <app-saved-queries [snippets]="snippets" (insert)="insertCode($event)" (remove)="onRemoveSnippet($event)"></app-saved-queries>
+      </div>
+      <div class="tool-pane" role="tabpanel" [hidden]="toolTab !== 'graficas'">
+        <app-chart-helper [variables]="knownVariables" (insert)="insertCode($event)"></app-chart-helper>
+      </div>
+    </aside>
 
-  <p class="no-code-hint">
-    ¿Quieres ordenar, resumir o graficar sin escribir código? Usa la pestaña
-    <a routerLink="/sin-codigo">Sin código</a>.
-  </p>
+    <div class="nb-cells">
+      @for (cell of cells; track $index) {
+        <app-code-cell
+          [code]="cell.code"
+          [result]="cell.result"
+          [running]="cell.running"
+          [removable]="cells.length > 1"
+          [allowSave]="true"
+          (codeChange)="cell.code = $event"
+          (run)="runCell($index, $event)"
+          (remove)="removeCell($index)"
+          (save)="onSaveSnippet($event)"
+        ></app-code-cell>
+      }
 
-  <app-saved-queries [snippets]="snippets" (insert)="insertCode($event)" (remove)="onRemoveSnippet($event)"></app-saved-queries>
-
-  <app-chart-helper [variables]="knownVariables" (insert)="insertCode($event)"></app-chart-helper>
-
-  @for (cell of cells; track $index) {
-    <app-code-cell
-      [code]="cell.code"
-      [result]="cell.result"
-      [running]="cell.running"
-      [removable]="cells.length > 1"
-      [allowSave]="true"
-      (codeChange)="cell.code = $event"
-      (run)="runCell($index, $event)"
-      (remove)="removeCell($index)"
-      (save)="onSaveSnippet($event)"
-    ></app-code-cell>
-  }
-
-  <button class="add-cell" (click)="addCell()">+ Agregar celda</button>
+      <button class="add-cell" (click)="addCell()">+ Agregar celda</button>
+    </div>
+  </div>
 </section>

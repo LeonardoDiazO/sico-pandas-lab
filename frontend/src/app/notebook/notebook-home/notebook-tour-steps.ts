@@ -21,17 +21,17 @@ export const NOTEBOOK_TOUR_STEPS: TourStep[] = [
     text: 'Aquí siempre ves qué variables (tablas) tienes disponibles ahora mismo, y cuántas columnas tiene cada una.',
   },
   {
-    target: 'app-saved-queries',
+    target: '.tool-tab[data-tab="guardadas"]',
     title: 'Mis consultas guardadas',
     text:
       'Cuando armes un análisis que te sirva, guárdalo con nombre (botón "💾 Guardar" en cualquier celda) y ' +
-      'aquí queda listo para insertarlo de nuevo cuando lo necesites, sin reescribirlo.',
+      'en esta pestaña queda listo para insertarlo de nuevo cuando lo necesites, sin reescribirlo.',
   },
   {
-    target: 'app-chart-helper',
+    target: '.tool-tab[data-tab="graficas"]',
     title: 'Ayudante de gráficas',
     text:
-      '¿Quieres una gráfica pero no recuerdas la sintaxis? Elige el tipo, la tabla y las columnas aquí -- ' +
+      '¿Quieres una gráfica pero no recuerdas la sintaxis? En esta pestaña eliges el tipo, la tabla y las columnas -- ' +
       'se inserta el código real como una celda nueva, editable, para que aprendas viéndolo en acción.',
   },
   {

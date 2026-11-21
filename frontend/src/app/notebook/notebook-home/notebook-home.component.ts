@@ -45,6 +45,9 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   knownVariables: KnownVariable[] = [];
   snippets: Snippet[] = [];
   restoredDraft = false;
+  // Tools live in a side panel with tabs (user feedback: scrolling past the
+  // data/saved/chart panels to reach the cells was uncomfortable).
+  toolTab: 'datos' | 'guardadas' | 'graficas' = 'datos';
 
   constructor(
     private notebook: NotebookService,
@@ -88,6 +91,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
 
   addCell(): void {
     this.cells.push({ code: '', result: null, running: false });
+    this.revealLastCell();
   }
 
   removeCell(index: number): void {
@@ -150,6 +154,17 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
 
   insertCode(code: string): void {
     this.cells.push({ code, result: null, running: false });
+    this.revealLastCell();
+  }
+
+  // The new cell is at the end of the cell column - bring it into view.
+  private revealLastCell(): void {
+    setTimeout(() => {
+      const cells = document.querySelectorAll('.nb-cells app-code-cell');
+      const last = cells[cells.length - 1] as HTMLElement | undefined;
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      last?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    });
   }
 
   onSaveSnippet(request: SnippetSaveRequest): void {
