@@ -59,13 +59,34 @@ class WorkerHandle:
         return self.process.is_alive()
 
     def send(self, message, timeout):
-        """Send a message and wait for the single reply, killing on timeout."""
+        """Send a message and wait for ITS reply.
+
+        Every request carries a sequence number the worker echoes back
+        (`__reply_to`). A reply that arrives after its request already timed
+        out (e.g. a slow first `bind` while the machine is short on memory)
+        used to stay in the queue, and from then on every request received
+        the answer of the previous one - wrong cardinalities, $0 totals.
+        Stale replies are now discarded. A reply without the field is the
+        worker's start-up failure report and is accepted as the answer."""
         self.last_used = time.time()
-        self.input_q.put(message)
-        try:
-            return self.output_q.get(timeout=timeout)
-        except queue.Empty:
-            raise TimeoutError("La ejecución superó el límite de tiempo permitido.")
+        self._seq = getattr(self, "_seq", 0) + 1
+        seq = self._seq
+        self.input_q.put({**message, "__id": seq})
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("La ejecución superó el límite de tiempo permitido.")
+            try:
+                reply = self.output_q.get(timeout=remaining)
+            except queue.Empty:
+                raise TimeoutError("La ejecución superó el límite de tiempo permitido.")
+            if not isinstance(reply, dict):
+                return reply
+            reply_to = reply.pop("__reply_to", None)
+            if reply_to is None or reply_to == seq:
+                return reply
+            # Stale answer to an earlier, timed-out request: drop it.
 
     def terminate(self):
         try:

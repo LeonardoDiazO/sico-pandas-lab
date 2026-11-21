@@ -129,15 +129,23 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
             break
 
         kind = message.get("type")
+        reply_id = message.get("__id")
+
+        def reply(result, _id=reply_id):
+            # Echo the request's sequence number (see WorkerHandle.send).
+            if isinstance(result, dict) and _id is not None:
+                result = {**result, "__reply_to": _id}
+            output_q.put(result)
+
         if kind == "exec":
-            output_q.put(execute_code(message["code"], namespace))
+            reply(execute_code(message["code"], namespace))
         elif kind == "bind":
             # Inject a value (e.g. a DataFrame loaded from Excel or the RDS)
             # under a variable name the user can reference in their cells.
             value = message["value"]
             namespace[message["name"]] = value
             pristine[message["name"]] = value.copy() if hasattr(value, "copy") else value
-            output_q.put({"bound": message["name"]})
+            reply({"bound": message["name"]})
         elif kind == "check":
             # Runs a guided-lesson challenge checker against the learner's own
             # live namespace, right here in the sandboxed process -- the
@@ -145,7 +153,7 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
             # visible from the browser's network tab.
             from app.guided.challenges import run_checker
 
-            output_q.put(
+            reply(
                 run_checker(
                     message["challenge_id"],
                     namespace,
@@ -155,4 +163,4 @@ def worker_loop(input_q, output_q, mem_bytes, cpu_seconds):
                 )
             )
         else:
-            output_q.put({"error": {"type": "ProtocolError", "message": f"tipo desconocido: {kind}", "traceback": ""}})
+            reply({"error": {"type": "ProtocolError", "message": f"tipo desconocido: {kind}", "traceback": ""}})

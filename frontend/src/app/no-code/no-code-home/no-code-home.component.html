@@ -161,7 +161,26 @@
         <span></span>
       }
       <span class="nav-progress">Paso {{ activeStep }} de {{ steps.length }}</span>
-      @if (nextStep) {
+      @if (step2Action) {
+        <div class="nav-next">
+          @if (classificationMissing) {
+            <span class="nav-reason">{{ classificationMissing }}</span>
+          }
+          <button type="button" class="nav-btn next" [disabled]="step2Action !== 'next' && step2ActionDisabled" (click)="runStep2Action()">
+            @if (generatingAnalysis) {
+              Generando…
+            } @else if (step2Action === 'update') {
+              Actualizar tablero
+            } @else if (step2Action === 'generate') {
+              Generar tablero
+            } @else {
+              <span class="nav-next-label">{{ nextLabel }}</span>
+              <span class="nav-next-short">Siguiente</span>
+            }
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+          </button>
+        </div>
+      } @else if (nextStep) {
         <div class="nav-next">
           @if (nextBlockedReason) {
             <span class="nav-reason">{{ nextBlockedReason }}</span>

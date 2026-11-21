@@ -80,3 +80,38 @@ def test_reap_idle_clears_assistant_usage_for_stale_sessions(monkeypatch):
     monkeypatch.setattr(time, "time", lambda: real_now + 1000)
     # any call that triggers _reap_idle() should have forgotten s1 by now
     assert manager.check_and_increment_assistant_usage("s1") is True
+
+
+def test_send_discards_a_stale_reply_from_a_timed_out_request():
+    """Regression (live test, low-memory machine): a reply that arrived after
+    its request timed out stayed in the queue, and every later request got
+    the PREVIOUS answer (wrong cardinalities, $0 totals on the dashboard)."""
+    import queue
+
+    from app.notebook.worker_manager import WorkerHandle
+
+    handle = WorkerHandle.__new__(WorkerHandle)
+    handle.input_q = queue.Queue()
+    handle.output_q = queue.Queue()
+    handle._seq = 4
+    # Late answer to request #4, still sitting in the queue...
+    handle.output_q.put({"result_text": "respuesta vieja", "__reply_to": 4})
+    # ...and the real answer to the next request (#5).
+    handle.output_q.put({"result_text": "respuesta correcta", "__reply_to": 5})
+
+    reply = handle.send({"type": "exec", "code": "1"}, timeout=2)
+
+    assert reply == {"result_text": "respuesta correcta"}
+    assert handle.input_q.get_nowait()["__id"] == 5
+
+
+def test_send_accepts_the_start_up_failure_report_without_an_id():
+    import queue
+
+    from app.notebook.worker_manager import WorkerHandle
+
+    handle = WorkerHandle.__new__(WorkerHandle)
+    handle.input_q = queue.Queue()
+    handle.output_q = queue.Queue()
+    handle.output_q.put({"error": {"type": "ImportError", "message": "x", "traceback": ""}})
+    assert handle.send({"type": "exec", "code": "1"}, timeout=2)["error"]["type"] == "ImportError"
