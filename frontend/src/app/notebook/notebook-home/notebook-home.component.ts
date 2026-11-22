@@ -1,5 +1,8 @@
 import { AfterViewInit, Component, HostListener, OnDestroy, ViewChild } from '@angular/core';
 
+import { Subscription } from 'rxjs';
+
+import { DatasetService } from '../../core/dataset.service';
 import { ToastService } from '../../core/toast.service';
 import { NotebookDraftService } from '../../core/notebook-draft.service';
 import { Snippet, SnippetsService } from '../../core/snippets.service';
@@ -45,6 +48,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   knownVariables: KnownVariable[] = [];
   snippets: Snippet[] = [];
   restoredDraft = false;
+  private datasetSub?: Subscription;
   // Tools live in a side panel with tabs (user feedback: scrolling past the
   // data/saved/chart panels to reach the cells was uncomfortable).
   toolTab: 'datos' | 'guardadas' | 'graficas' = 'datos';
@@ -55,7 +59,13 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
     private draftService: NotebookDraftService,
     private snippetsService: SnippetsService,
     private toast: ToastService,
+    private dataset: DatasetService,
   ) {
+    // Loaded tables come from the shared session state, so a file loaded
+    // in Sin código or the guided module shows up here too.
+    this.datasetSub = this.dataset.state$.subscribe((state) => {
+      this.knownVariables = state.variables.map((v) => ({ name: v.name, columns: v.columns }));
+    });
     const draft = this.draftService.load();
     const isTrivial = !draft || (draft.length === 1 && draft[0] === STARTER);
     if (draft && !isTrivial) {
@@ -82,6 +92,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   // needs to capture the latest draft, so one method serves both triggers.
   @HostListener('window:beforeunload')
   ngOnDestroy(): void {
+    this.datasetSub?.unsubscribe();
     this.saveDraft();
   }
 
@@ -127,7 +138,7 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
     this.notebook.restart().subscribe({
       next: (res) => {
         this.cells = [{ code: STARTER, result: null, running: false }];
-        this.knownVariables = [];
+        this.dataset.reset('notebook');
         this.draftService.clear();
         this.restoredDraft = false;
         this.showBanner(res.message, true);
@@ -149,7 +160,6 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
   onLoaded(result: LoadResult): void {
     // Drop a ready-to-run cell that shows the freshly loaded DataFrame.
     this.cells.push({ code: `${result.variable}.head()`, result: null, running: false });
-    this.rememberVariable(result.variable, result.columns);
   }
 
   insertCode(code: string): void {
@@ -178,15 +188,6 @@ export class NotebookHomeComponent implements AfterViewInit, OnDestroy {
 
   onMessage(message: { text: string; ok: boolean }): void {
     this.showBanner(message.text, message.ok);
-  }
-
-  private rememberVariable(name: string, columns: string[]): void {
-    const existing = this.knownVariables.find((v) => v.name === name);
-    if (existing) {
-      existing.columns = columns;
-    } else {
-      this.knownVariables = [...this.knownVariables, { name, columns }];
-    }
   }
 
   private showBanner(text: string, ok: boolean): void {

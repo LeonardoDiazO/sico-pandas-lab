@@ -1,8 +1,9 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, OnInit, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { finalize, retry, timer } from 'rxjs';
 
 import { ApiResponse, ExcelProfile, LoadResult, SheetSummary, TableInfo } from '../../models/api.models';
+import { DatasetOrigin, DatasetService } from '../../core/dataset.service';
 import { NotebookService } from '../../notebook/services/notebook.service';
 
 /**
@@ -19,6 +20,8 @@ import { NotebookService } from '../../notebook/services/notebook.service';
   styleUrl: './data-source-panel.component.scss',
 })
 export class DataSourcePanelComponent implements OnInit {
+  // Which screen this panel lives in (for the shared DatasetService).
+  @Input() origin: DatasetOrigin = 'notebook';
   @Output() loaded = new EventEmitter<LoadResult>();
   @Output() message = new EventEmitter<{ text: string; ok: boolean }>();
 
@@ -45,7 +48,10 @@ export class DataSourcePanelComponent implements OnInit {
   // confirm-excel-cleanup so they never end up in the bound DataFrame.
   excludedColumns = new Set<string>();
 
-  constructor(private notebook: NotebookService) {}
+  constructor(
+    private notebook: NotebookService,
+    private dataset: DatasetService,
+  ) {}
 
   ngOnInit(): void {
     this.refreshTables();
@@ -91,7 +97,7 @@ export class DataSourcePanelComponent implements OnInit {
           this.loadingTable = null;
           this.emitMessage(res.message, res.success);
           if (res.success && res.data) {
-            this.loaded.emit(res.data);
+            this.emitLoaded(res.data);
           }
         },
         error: () => {
@@ -181,7 +187,7 @@ export class DataSourcePanelComponent implements OnInit {
     if (!profile || profile.verdict === 'usable') {
       // Ya limpio (o una respuesta sin profile, ej. carga de tabla): comportamiento de siempre.
       this.emitMessage(res.message, true);
-      this.loaded.emit(res.data);
+      this.emitLoaded(res.data);
     } else if (profile.verdict === 'usable_con_limpieza') {
       // No se emite `loaded` todavía -- el DataFrame no está bindeado hasta confirmar (Story 4.2).
       this.pendingCleanup = { variable: res.data.variable, profile };
@@ -244,7 +250,7 @@ export class DataSourcePanelComponent implements OnInit {
         this.excludedColumns = new Set<string>();
         this.emitMessage(res.message, res.success);
         if (res.success && res.data) {
-          this.loaded.emit(res.data);
+          this.emitLoaded(res.data);
         }
       },
       error: (err: HttpErrorResponse) => {
@@ -290,6 +296,13 @@ export class DataSourcePanelComponent implements OnInit {
     this.cleanupBusy = false;
     this.excelBusy = false;
     this.excludedColumns = new Set<string>();
+  }
+
+  // Every successful bind goes through the shared state first, so the
+  // other (kept-alive) screens learn the session's data changed.
+  private emitLoaded(result: LoadResult): void {
+    this.dataset.registerLoad(result, this.origin);
+    this.loaded.emit(result);
   }
 
   private emitMessage(text: string, ok: boolean): void {

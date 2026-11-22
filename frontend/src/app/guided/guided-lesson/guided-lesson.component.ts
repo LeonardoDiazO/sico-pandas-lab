@@ -1,10 +1,12 @@
+import { DatasetService } from '../../core/dataset.service';
 import { ToastService } from '../../core/toast.service';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 import { TourService } from '../../core/tour.service';
 import { UserProfileService } from '../../core/user-profile.service';
-import { CellResult, Lesson, LoadResult } from '../../models/api.models';
+import { CellResult, Lesson } from '../../models/api.models';
 import { NotebookService } from '../../notebook/services/notebook.service';
 import { KnownVariable } from '../../shared/chart-helper/chart-helper.component';
 import { GuidedService } from '../services/guided.service';
@@ -41,7 +43,7 @@ const CONNECTION_ERROR_RESULT: CellResult = {
   templateUrl: './guided-lesson.component.html',
   styleUrl: './guided-lesson.component.scss',
 })
-export class GuidedLessonComponent implements OnInit {
+export class GuidedLessonComponent implements OnInit, OnDestroy {
   lesson: Lesson | null = null;
   steps: GuidedStep[] = [];
   knownVariables: KnownVariable[] = [];
@@ -61,6 +63,7 @@ export class GuidedLessonComponent implements OnInit {
     private profile: UserProfileService,
     private tour: TourService,
     private toast: ToastService,
+    private dataset: DatasetService,
   ) {}
 
   get pages(): LessonPage[] {
@@ -114,11 +117,16 @@ export class GuidedLessonComponent implements OnInit {
     return 'Siguiente paso';
   }
 
+  ngOnDestroy(): void {
+    this.datasetSub?.unsubscribe();
+  }
+
   startTour(): void {
     this.tour.start('guided', GUIDED_TOUR_STEPS);
   }
 
   ngOnInit(): void {
+    this.followDataset();
     // Reacts to param changes so clicking "Siguiente lección" (same route
     // pattern, different :id) actually reloads the content instead of Angular
     // reusing the component instance with stale data.
@@ -206,14 +214,20 @@ export class GuidedLessonComponent implements OnInit {
     this.toast.show(message.text, message.ok);
   }
 
-  onLoaded(result: LoadResult): void {
-    const existing = this.knownVariables.find((v) => v.name === result.variable);
-    if (existing) {
-      existing.columns = result.columns;
-    } else {
-      this.knownVariables = [...this.knownVariables, { name: result.variable, columns: result.columns }];
-    }
-    this.refreshStepContent();
+  // Shared session data: a file loaded here or in another screen updates the
+  // lesson (its examples can switch to the learner's own columns).
+  private appliedDatasetVersion = -1;
+  private datasetSub?: Subscription;
+
+  private followDataset(): void {
+    this.datasetSub = this.dataset.state$.subscribe((state) => {
+      this.knownVariables = state.variables.map((v) => ({ name: v.name, columns: v.columns }));
+      const changed = this.appliedDatasetVersion !== -1 && state.version !== this.appliedDatasetVersion;
+      this.appliedDatasetVersion = state.version;
+      if (changed) {
+        this.refreshStepContent();
+      }
+    });
   }
 
   // After uploading an Excel mid-lesson, the backend can now generate example

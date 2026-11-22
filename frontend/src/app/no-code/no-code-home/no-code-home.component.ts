@@ -16,8 +16,8 @@ import {
   ColumnFilter,
   DataQuality,
   ExcelProfileColumn,
-  LoadResult,
 } from '../../models/api.models';
+import { DatasetService, DatasetState, ExcelDataset, ORIGIN_LABELS } from '../../core/dataset.service';
 import { ToastService } from '../../core/toast.service';
 import { NotebookService } from '../../notebook/services/notebook.service';
 import { ColumnClassificationComponent } from '../../shared/column-classification/column-classification.component';
@@ -66,14 +66,69 @@ export class NoCodeHomeComponent implements OnDestroy {
   // overwrite the newer one.
   private analysisSub?: Subscription;
   private lastClassifications: ColumnClassification[] | null = null;
+  // Shared session data (DatasetService): this screen stays alive while you
+  // switch tabs, so it follows loads/restarts made from the other screens.
+  private appliedVersion = -1;
+  private appliedExcel: ExcelDataset | null = null;
+  private datasetSub?: Subscription;
+  // Shown when the data changed from another screen (dismissible).
+  dataChangedNote: string | null = null;
 
   constructor(
     private notebook: NotebookService,
     private toast: ToastService,
-  ) {}
+    private dataset: DatasetService,
+  ) {
+    this.datasetSub = this.dataset.state$.subscribe((state) => this.onDatasetChange(state));
+  }
 
   ngOnDestroy(): void {
     this.analysisSub?.unsubscribe();
+    this.datasetSub?.unsubscribe();
+  }
+
+  private onDatasetChange(state: DatasetState): void {
+    if (state.version === this.appliedVersion) {
+      return;
+    }
+    const first = this.appliedVersion === -1;
+    this.appliedVersion = state.version;
+    if (state.excel === this.appliedExcel) {
+      return; // e.g. a sico table loaded under its own df_<tabla>: the Excel is unchanged
+    }
+    const fromElsewhere = !first && state.lastChange.origin !== 'sin-codigo';
+    const where = state.lastChange.origin ? ORIGIN_LABELS[state.lastChange.origin] : 'otra pantalla';
+    const hadWork = !!this.excelProfile;
+    this.appliedExcel = state.excel;
+    if (!state.excel) {
+      this.resetAll();
+      if (fromElsewhere && hadWork) {
+        this.dataChangedNote = `La sesión se reinició desde ${where}: vuelve a subir tu archivo.`;
+      }
+      return;
+    }
+    this.applyExcel(state.excel);
+    if (fromElsewhere && hadWork) {
+      this.dataChangedNote = `Se cargó un archivo nuevo desde ${where}. Confirma de nuevo sus columnas para generar el tablero.`;
+    }
+  }
+
+  dismissDataNote(): void {
+    this.dataChangedNote = null;
+  }
+
+  private resetAll(): void {
+    this.analysisSub?.unsubscribe();
+    this.generatingAnalysis = false;
+    this.analysisError = null;
+    this.bloques = [];
+    this.resumen = null;
+    this.lastClassifications = null;
+    this.excelProfile = null;
+    this.fileLabel = null;
+    this.quality = null;
+    this.sheetsUsed = [];
+    this.activeStep = 1;
   }
 
   isDone(n: WizardStep): boolean {
@@ -167,18 +222,22 @@ export class NoCodeHomeComponent implements OnDestroy {
     return next ? `Siguiente: ${this.steps[next - 1].title.toLowerCase()}` : '';
   }
 
-  onLoaded(result: LoadResult): void {
+  // A new Excel in the session (from this screen or another): start the
+  // analysis over on it. The classification step re-suggests roles itself.
+  private applyExcel(excel: ExcelDataset): void {
     this.analysisSub?.unsubscribe();
     this.generatingAnalysis = false;
     this.analysisError = null;
     this.bloques = [];
     this.resumen = null;
     this.lastClassifications = null;
-    this.quality = result.profile?.quality ?? null;
-    this.sheetsUsed = result.sheetsUsed ?? [];
-    if (result.profile) {
-      this.excelProfile = { variable: result.variable, columns: result.profile.columns, rows: result.rows };
-      this.fileLabel = `${result.rows.toLocaleString('es-CO')} filas · ${result.profile.columns.length} columnas`;
+    this.dataChangedNote = null;
+    this.quality = excel.quality;
+    this.sheetsUsed = excel.sheetsUsed;
+    this.excelProfile = { variable: excel.variable, columns: excel.columns, rows: excel.rows };
+    this.fileLabel = `${excel.rows.toLocaleString('es-CO')} filas · ${excel.columns.length} columnas`;
+    if (this.activeStep > 1) {
+      this.activeStep = 1;
     }
   }
 

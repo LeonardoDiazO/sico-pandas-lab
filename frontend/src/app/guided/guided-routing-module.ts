@@ -6,7 +6,7 @@ import { GuidedLessonComponent } from './guided-lesson/guided-lesson.component';
 
 const routes: Routes = [
   { path: '', component: GuidedHomeComponent },
-  { path: ':id', component: GuidedLessonComponent },
+  { path: ':id', component: GuidedLessonComponent, data: { keepAlive: true } },
 ];
 
 @NgModule({

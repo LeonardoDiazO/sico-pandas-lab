@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 
 import { LoadResult } from '../../models/api.models';
+import { DatasetService } from '../../core/dataset.service';
 import { NotebookService } from '../../notebook/services/notebook.service';
 import { DataSourcePanelComponent } from './data-source-panel.component';
 
@@ -18,7 +19,7 @@ describe('DataSourcePanelComponent sheet selection', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
     http = TestBed.inject(HttpTestingController);
-    component = new DataSourcePanelComponent(TestBed.inject(NotebookService));
+    component = new DataSourcePanelComponent(TestBed.inject(NotebookService), TestBed.inject(DatasetService));
     loaded = [];
     component.loaded.subscribe((r) => loaded.push(r));
   });

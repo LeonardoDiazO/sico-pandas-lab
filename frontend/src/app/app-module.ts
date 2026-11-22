@@ -2,6 +2,7 @@ import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@a
 import { LOCALE_ID, NgModule, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BrowserModule } from '@angular/platform-browser';
+import { RouteReuseStrategy } from '@angular/router';
 import { MonacoEditorModule } from 'ngx-monaco-editor-v2';
 
 import { registerLocaleData } from '@angular/common';
@@ -15,6 +16,7 @@ registerLocaleData(localeEsCO);
 
 import { App } from './app';
 import { AppRoutingModule } from './app-routing-module';
+import { KeepAliveRouteReuseStrategy } from './core/keep-alive-route-reuse.strategy';
 import { SessionInterceptor } from './core/session.interceptor';
 import { ToastHostComponent } from './core/toast-host/toast-host.component';
 import { TourOverlayComponent } from './core/tour-overlay/tour-overlay.component';
@@ -36,6 +38,8 @@ import { TourOverlayComponent } from './core/tour-overlay/tour-overlay.component
     provideHttpClient(withInterceptorsFromDi()),
     { provide: HTTP_INTERCEPTORS, useClass: SessionInterceptor, multi: true },
     { provide: LOCALE_ID, useValue: 'es-CO' },
+    // Main screens stay alive while switching tabs (see the strategy).
+    { provide: RouteReuseStrategy, useClass: KeepAliveRouteReuseStrategy },
   ],
   bootstrap: [App],
 })
